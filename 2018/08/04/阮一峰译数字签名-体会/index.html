@@ -1,0 +1,722 @@
+<!DOCTYPE html>
+
+
+
+  
+
+
+<html class="theme-next mist use-motion" lang="zh-Hans">
+<head>
+  <meta charset="UTF-8"/>
+<meta http-equiv="X-UA-Compatible" content="IE=edge" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1"/>
+<meta name="theme-color" content="#222">
+
+
+
+
+
+
+
+
+
+<meta http-equiv="Cache-Control" content="no-transform" />
+<meta http-equiv="Cache-Control" content="no-siteapp" />
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  
+  
+  <link href="/lib/fancybox/source/jquery.fancybox.css?v=2.1.5" rel="stylesheet" type="text/css" />
+
+
+
+
+
+
+
+<link href="/lib/font-awesome/css/font-awesome.min.css?v=4.6.2" rel="stylesheet" type="text/css" />
+
+<link href="/css/main.css?v=5.1.4" rel="stylesheet" type="text/css" />
+
+
+  <link rel="apple-touch-icon" sizes="180x180" href="/images/apple-touch-icon-next.png?v=5.1.4">
+
+
+  <link rel="icon" type="image/png" sizes="32x32" href="/images/favicon-32x32-next.png?v=5.1.4">
+
+
+  <link rel="icon" type="image/png" sizes="16x16" href="/images/favicon-16x16-next.png?v=5.1.4">
+
+
+  <link rel="mask-icon" href="/images/logo.svg?v=5.1.4" color="#222">
+
+
+
+
+
+  <meta name="keywords" content="Hexo, NexT" />
+
+
+
+
+
+
+
+
+
+
+<meta name="description" content="阮一峰译数字签名–读后感数字签名简单概念数字签名   就是只有信息的发送者才能产生的别人无法伪造的一段数字串，这段数字同时也是对信息的发送者发送信息的真实性的一个有效证明。是对非对称密钥加密技术和数字摘要技术的应用。先对原文信息作数字摘要处理（通过hash算法，md5、sha之类的），得到定长的hash值，再用密钥对中的私钥对hash值以及相关算法信息进行加密。  数字签名的信息完整性   数字签">
+<meta property="og:type" content="article">
+<meta property="og:title" content="阮一峰译数字签名--体会">
+<meta property="og:url" content="http://yoursite.com/2018/08/04/阮一峰译数字签名-体会/index.html">
+<meta property="og:site_name" content="Sarom&#39;s Blog">
+<meta property="og:description" content="阮一峰译数字签名–读后感数字签名简单概念数字签名   就是只有信息的发送者才能产生的别人无法伪造的一段数字串，这段数字同时也是对信息的发送者发送信息的真实性的一个有效证明。是对非对称密钥加密技术和数字摘要技术的应用。先对原文信息作数字摘要处理（通过hash算法，md5、sha之类的），得到定长的hash值，再用密钥对中的私钥对hash值以及相关算法信息进行加密。  数字签名的信息完整性   数字签">
+<meta property="og:locale" content="zh-Hans">
+<meta property="og:updated_time" content="2018-08-03T19:03:47.545Z">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:title" content="阮一峰译数字签名--体会">
+<meta name="twitter:description" content="阮一峰译数字签名–读后感数字签名简单概念数字签名   就是只有信息的发送者才能产生的别人无法伪造的一段数字串，这段数字同时也是对信息的发送者发送信息的真实性的一个有效证明。是对非对称密钥加密技术和数字摘要技术的应用。先对原文信息作数字摘要处理（通过hash算法，md5、sha之类的），得到定长的hash值，再用密钥对中的私钥对hash值以及相关算法信息进行加密。  数字签名的信息完整性   数字签">
+
+
+
+<script type="text/javascript" id="hexo.configurations">
+  var NexT = window.NexT || {};
+  var CONFIG = {
+    root: '/',
+    scheme: 'Mist',
+    version: '5.1.4',
+    sidebar: {"position":"left","display":"post","offset":12,"b2t":false,"scrollpercent":false,"onmobile":false},
+    fancybox: true,
+    tabs: true,
+    motion: {"enable":true,"async":false,"transition":{"post_block":"fadeIn","post_header":"slideDownIn","post_body":"slideDownIn","coll_header":"slideLeftIn","sidebar":"slideUpIn"}},
+    duoshuo: {
+      userId: '0',
+      author: '博主'
+    },
+    algolia: {
+      applicationID: '',
+      apiKey: '',
+      indexName: '',
+      hits: {"per_page":10},
+      labels: {"input_placeholder":"Search for Posts","hits_empty":"We didn't find any results for the search: ${query}","hits_stats":"${hits} results found in ${time} ms"}
+    }
+  };
+</script>
+
+
+
+  <link rel="canonical" href="http://yoursite.com/2018/08/04/阮一峰译数字签名-体会/"/>
+
+
+
+
+
+  <title>阮一峰译数字签名--体会 | Sarom's Blog</title>
+  
+
+
+
+
+
+
+
+
+</head>
+
+<body itemscope itemtype="http://schema.org/WebPage" lang="zh-Hans">
+
+  
+  
+    
+  
+
+  <div class="container sidebar-position-left page-post-detail">
+    <div class="headband"></div>
+
+    <header id="header" class="header" itemscope itemtype="http://schema.org/WPHeader">
+      <div class="header-inner"><div class="site-brand-wrapper">
+  <div class="site-meta ">
+    
+
+    <div class="custom-logo-site-title">
+      <a href="/"  class="brand" rel="start">
+        <span class="logo-line-before"><i></i></span>
+        <span class="site-title">Sarom's Blog</span>
+        <span class="logo-line-after"><i></i></span>
+      </a>
+    </div>
+      
+        <p class="site-subtitle"></p>
+      
+  </div>
+
+  <div class="site-nav-toggle">
+    <button>
+      <span class="btn-bar"></span>
+      <span class="btn-bar"></span>
+      <span class="btn-bar"></span>
+    </button>
+  </div>
+</div>
+
+<nav class="site-nav">
+  
+
+  
+    <ul id="menu" class="menu">
+      
+        
+        <li class="menu-item menu-item-home">
+          <a href="/" rel="section">
+            
+              <i class="menu-item-icon fa fa-fw fa-home"></i> <br />
+            
+            首页
+          </a>
+        </li>
+      
+        
+        <li class="menu-item menu-item-about">
+          <a href="/about/" rel="section">
+            
+              <i class="menu-item-icon fa fa-fw fa-user"></i> <br />
+            
+            关于
+          </a>
+        </li>
+      
+        
+        <li class="menu-item menu-item-tags">
+          <a href="/tags/" rel="section">
+            
+              <i class="menu-item-icon fa fa-fw fa-tags"></i> <br />
+            
+            标签
+          </a>
+        </li>
+      
+        
+        <li class="menu-item menu-item-categories">
+          <a href="/categories/" rel="section">
+            
+              <i class="menu-item-icon fa fa-fw fa-th"></i> <br />
+            
+            分类
+          </a>
+        </li>
+      
+        
+        <li class="menu-item menu-item-archives">
+          <a href="/archives/" rel="section">
+            
+              <i class="menu-item-icon fa fa-fw fa-archive"></i> <br />
+            
+            归档
+          </a>
+        </li>
+      
+
+      
+    </ul>
+  
+
+  
+</nav>
+
+
+
+ </div>
+    </header>
+
+    <main id="main" class="main">
+      <div class="main-inner">
+        <div class="content-wrap">
+          <div id="content" class="content">
+            
+
+  <div id="posts" class="posts-expand">
+    
+
+  
+
+  
+  
+  
+
+  <article class="post post-type-normal" itemscope itemtype="http://schema.org/Article">
+  
+  
+  
+  <div class="post-block">
+    <link itemprop="mainEntityOfPage" href="http://yoursite.com/2018/08/04/阮一峰译数字签名-体会/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="name" content="Sarom Chars">
+      <meta itemprop="description" content="">
+      <meta itemprop="image" content="/images/avatar.gif">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="Sarom's Blog">
+    </span>
+
+    
+      <header class="post-header">
+
+        
+        
+          <h1 class="post-title" itemprop="name headline">阮一峰译数字签名--体会</h1>
+        
+
+        <div class="post-meta">
+          <span class="post-time">
+            
+              <span class="post-meta-item-icon">
+                <i class="fa fa-calendar-o"></i>
+              </span>
+              
+                <span class="post-meta-item-text">发表于</span>
+              
+              <time title="创建于" itemprop="dateCreated datePublished" datetime="2018-08-04T02:55:15+08:00">
+                2018-08-04
+              </time>
+            
+
+            
+
+            
+          </span>
+
+          
+
+          
+            
+          
+
+          
+          
+
+          
+
+          
+
+          
+
+        </div>
+      </header>
+    
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody">
+
+      
+      
+
+      
+        <h1 id="阮一峰译数字签名–读后感"><a href="#阮一峰译数字签名–读后感" class="headerlink" title="阮一峰译数字签名–读后感"></a><a href="http://www.ruanyifeng.com/blog/2011/08/what_is_a_digital_signature.html" title="数字签名是什么？" target="_blank" rel="noopener">阮一峰译数字签名</a>–读后感</h1><h2 id="数字签名简单概念"><a href="#数字签名简单概念" class="headerlink" title="数字签名简单概念"></a>数字签名简单概念</h2><p>数字签名</p>
+<blockquote>
+<p> 就是只有信息的发送者才能产生的别人无法伪造的一段数字串，这段数字同时也是对信息的发送者发送信息的真实性的一个有效证明。是对非对称密钥加密技术和数字摘要技术的应用。先对原文信息作数字摘要处理（通过hash算法，md5、sha之类的），得到定长的hash值，再用密钥对中的私钥对hash值以及相关算法信息进行加密。</p>
+</blockquote>
+<p>数字签名的信息完整性</p>
+<blockquote>
+<p> 数字签名的验签，将原文产生的数字摘要信息和使用公钥解密得到的数字摘要信息进行比对，进而确认信息的完整性。</p>
+</blockquote>
+<p>数字签名的不可抵赖性</p>
+<blockquote>
+<p> 发送者的不可抵赖性，是由于私钥只有发送者拥有，而密钥对唯一，即公私钥存在一一对应的关系。要想确保发送者，则应该先确保公钥可靠获取、保存。最后通过比对数字摘要信息，进而确认发送者的身份，<strong>（个人理解）换句话说，数字签名的不可抵赖性建立在信息完整性之上。</strong></p>
+</blockquote>
+<h2 id="数字证书的简单概念"><a href="#数字证书的简单概念" class="headerlink" title="数字证书的简单概念"></a>数字证书的简单概念</h2><p>数字认证中心<br>:  电子签证的机关，简称CA（Certificate Authority），自身持有机构的私钥，也负责发行包含所认证的客户、设备等公钥的数字证书。作为可信的第三方，为交易、通信提供保障。</p>
+<p>数字证书<br>:  CA为客户生成的密钥对，用CA自身的私钥对客户的公钥以及相关信息作数字签名后得到的文件，即为数字证书。CA的数字证书可以通过CA的公钥进行验签，确保可信。通常是系统自带或直接在网上下载CA根证书，用当中的公钥，对得到的数字证书验签，进而获取到客户的公钥。通过信任CA，进而信任CA所信任的客户（组织或者个人）的身份，存在一个信任链的关系。</p>
+<p>信任链<br>:  数字证书的信任关系是，层级传递的，链式的。即A信任CA，CA信任B，那A就可以信任B了。</p>
+<p>根证书<br>:  数字证书的信任关系是链式的，需要验证的客户的数字证书是信任链的末端，自然有信任链的首端。而首端的是否可信，如果仍采取数字签名的方式去确保证书可信，则无法找到信任链的源头。理应存在一个信任链的首端–根证书，CA自己颁发给自己的数字证书。应该是使用CA自己的私钥给自己的公钥以及相关信息签名。</p>
+<h2 id="文章大概例子"><a href="#文章大概例子" class="headerlink" title="文章大概例子"></a>文章大概例子</h2><p>首先有Bob，Pady，Doge，Susan四个人（用户），Bob自己通过了非对称加密算法生成了密钥对，然后将自己的公钥给了其余三个。</p>
+<p>于是乎，根据非对称加密算法的特性，其他三个用公钥加密的消息，只有持有私钥的Bob自身能够解密。</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br></pre></td><td class="code"><pre><span class="line">start=&gt;start: 开始</span><br><span class="line">message=&gt;inputoutput: 正常数据</span><br><span class="line">encrypt=&gt;subroutine: 使用公钥加密</span><br><span class="line">encryptText=&gt;inputoutput: 密文</span><br><span class="line">decrypt=&gt;subroutine: 使用私钥解密</span><br><span class="line">transText=&gt;inputoutput: 译文</span><br><span class="line">end=&gt;end: 结束</span><br><span class="line"></span><br><span class="line">start-&gt;message-&gt;encrypt-&gt;encryptText-&gt;decrypt-&gt;transText-&gt;end</span><br></pre></td></tr></table></figure>
+<p>同理，Bob用私钥加密的消息，则其余三人都能够解密。</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line">Title: 以Bob与Pady通信为例子</span><br><span class="line">Bob-&gt;Pady: 公钥</span><br><span class="line">Bob--&gt;Pady: 私钥加密过的消息</span><br><span class="line">Pady--&gt;Bob: 公钥加密过的消息</span><br></pre></td></tr></table></figure>
+<p>所以发送密邮，应该事先交换彼此的公钥。</p>
+<p>对于有时候，Bob得为自己的言行负责，写下言出必行的承诺书，又要保证自己的承诺书没有被篡改（通常承诺书不必加密，明文，是公开的）。</p>
+<p>就必须在承诺书上留下自己的签名，首先用数字摘要算法获取承诺书的指纹（定长hash值），再用自己独有的私钥对这个指纹进行加密，附在承诺书后面，方便他人检验（相当于落款的大名）。</p>
+<p>Bob对Susan的承诺书：<br><figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br></pre></td><td class="code"><pre><span class="line">A=&gt;start: start writing</span><br><span class="line">B=&gt;inputoutput: message</span><br><span class="line">C=&gt;operation: hash the message</span><br><span class="line">D=&gt;operation: encrpyt the hash result via the private key</span><br><span class="line">E=&gt;operation: append the message</span><br><span class="line">F=&gt;inputoutput: message with signature</span><br><span class="line">G=&gt;end: end writing</span><br><span class="line">A-&gt;B-&gt;C-&gt;D-&gt;E-&gt;F-&gt;G</span><br></pre></td></tr></table></figure></p>
+<p>Susan拿到后，获取承诺书的指纹和用Bob的公钥解密后得到的hash，二者相比较：<br><figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br></pre></td><td class="code"><pre><span class="line">A=&gt;start: start verifying</span><br><span class="line">B=&gt;inputoutput: message with signature</span><br><span class="line">C=&gt;operation: hash the message</span><br><span class="line">D=&gt;operation: decrpyt the hash result via the public key</span><br><span class="line">E=&gt;condition: compare the hash value and decrypt value</span><br><span class="line">F=&gt;inputoutput: the message is real</span><br><span class="line">G=&gt;inputoutput: the message is fake</span><br><span class="line">H=&gt;end: end verifying</span><br><span class="line">A-&gt;B-&gt;C-&gt;D-&gt;E</span><br><span class="line">E(yes)-&gt;F</span><br><span class="line">E(no)-&gt;G</span><br><span class="line">F-&gt;H</span><br><span class="line">G-&gt;H</span><br></pre></td></tr></table></figure></p>
+<p>相等，说明这个承诺书没有改动，真的是Bob写的啊。</p>
+<p>但是呢，假设Doge是个不怀好意的人，事先生成属于自己的一套密钥对，由于Bob给Susan密钥对的时候，没有其他的安全保障，或者说Susan一开始就错拿了Doge的公钥。</p>
+<p>这样就可怕了，Doge就可以堂而皇之的成为了中间人，所以说，不要天天给心仪的女生写信、请购物车，不然，可能成为了邮差或者快递的女朋友。。。</p>
+<p>这就是简单的“中间人攻击”。</p>
+<p>Bob以为是这样的：<br><figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">Bob-&gt;Susan: love message</span><br><span class="line">Susan-&gt;Bob: oh shit</span><br></pre></td></tr></table></figure></p>
+<p>实际上，经过了Doge的偷龙转凤：<br><figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line">Bob-&gt;Doge: love message</span><br><span class="line">Doge-&gt;Susan: fxxk U</span><br><span class="line">Bob--&gt;Susan: fxxk U</span><br><span class="line">Susan-&gt;Bob: oh shit</span><br></pre></td></tr></table></figure></p>
+<p>这样Susan还以为这一切都是Bob写的，但是觉得不对劲，和Bob当面商量之后才发现，根本不是Bob一开始写的内容。虽然将信将疑，Susan觉得还是找个公证人可靠些，让公证人给Bob的公钥做数字签名，让公证人负责审核公钥是不是Bob的，这样不用Susan自己逐一确保别人给的公钥。</p>
+<p>这个公证人，就是数字认证机构（CA）,所颁发的就是数字签名、审核过的公钥以及一些相关的消息，就是数字证书。</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br></pre></td><td class="code"><pre><span class="line">participant CA</span><br><span class="line">participant Bob</span><br><span class="line">participant Susan</span><br><span class="line"></span><br><span class="line">Bob-&gt;CA: 1、请求审核身份，并颁发数字证书</span><br><span class="line">CA-&gt;Bob: 2、通过后，颁发数字证书</span><br><span class="line">Bob-&gt;Susan: 3、签名后的\nlove message，\n并带上了公钥数字证书</span><br><span class="line">Susan-&gt;CA: 4、请求根证书，\n用于验证Bob给的公钥数字证书</span><br><span class="line">CA-&gt;Susan: 5、返回根证书</span><br><span class="line">Susan-&gt;Susan: 6、CA保证了公钥\n确实是Bob的，\n（确认了公钥的申请人）</span><br><span class="line">Susan-&gt;Susan: 7、Susan知道了\nBob的真实想法后，\n十分感动</span><br><span class="line">Susan-&gt;Bob: 8、(使用公钥加密过的)\nsorry, u r a good man</span><br><span class="line">Bob-&gt;Bob: 9、Bob认为，\nSusan泄漏了公钥，\n绝对不是Susan发的消息</span><br><span class="line">Bob-&gt;Susan: 10、继续，\n签名后的love message，\n并带上了公钥数字证书</span><br><span class="line"></span><br><span class="line">Susan-&gt;Susan: 11、Susan苦恼如何自证</span><br><span class="line">Susan-&gt;CA: 12、Susan也去申请证书，\n请求审核身份，\n并颁发数字证书</span><br><span class="line">CA-&gt;Susan: 13、通过后，\n颁发数字证书</span><br><span class="line">Susan-&gt;Bob: 14、签名后的明文：\nsorry, u r a good man，\n并带上了公钥数字证书</span><br><span class="line">Bob-&gt;CA: 15、Bob不相信，\n去CA那边自取其辱</span><br><span class="line">CA-&gt;Susan: 16、返回根证书，\n（耸肩。。）</span><br><span class="line">Bob-&gt;Bob: 17、CA保证了公钥\n确实是Bob的，\n（确认了公钥的申请人）</span><br><span class="line">Bob-&gt;CA: 18、Bob觉得在没\n必要证明自己了，\n申请吊销证书</span><br><span class="line"></span><br><span class="line">CA-&gt;CA: 19、钱交了就行。。\nBob的证书就作废吧</span><br></pre></td></tr></table></figure>
+<p>年度大戏。。不。。。年度大时序啊。。。。</p>
+<p>上面CA说了这个公钥就是Bob的，那就是Bob的，这样Doge也没办法了。</p>
+<p>这样只要有这个CA的公钥就可以，解析这个CA所颁发的数字证书了，管理起来也更加方便。将对各个公钥的验证转话为了对CA公钥的验证，大大减少了Susan验证负担，毕竟Bob可能只是Susan的云备胎之一。。可能还有Effort、Carson等人。</p>
+
+      
+    </div>
+    
+    
+    
+
+    
+
+    
+
+    
+
+    <footer class="post-footer">
+      
+
+      
+      
+      
+
+      
+        <div class="post-nav">
+          <div class="post-nav-next post-nav-item">
+            
+              <a href="/2018/08/03/hello-world/" rel="next" title="Hello World">
+                <i class="fa fa-chevron-left"></i> Hello World
+              </a>
+            
+          </div>
+
+          <span class="post-nav-divider"></span>
+
+          <div class="post-nav-prev post-nav-item">
+            
+          </div>
+        </div>
+      
+
+      
+      
+    </footer>
+  </div>
+  
+  
+  
+  </article>
+
+
+
+    <div class="post-spread">
+      
+    </div>
+  </div>
+
+
+          </div>
+          
+
+
+          
+
+  
+
+
+
+        </div>
+        
+          
+  
+  <div class="sidebar-toggle">
+    <div class="sidebar-toggle-line-wrap">
+      <span class="sidebar-toggle-line sidebar-toggle-line-first"></span>
+      <span class="sidebar-toggle-line sidebar-toggle-line-middle"></span>
+      <span class="sidebar-toggle-line sidebar-toggle-line-last"></span>
+    </div>
+  </div>
+
+  <aside id="sidebar" class="sidebar">
+    
+    <div class="sidebar-inner">
+
+      
+
+      
+        <ul class="sidebar-nav motion-element">
+          <li class="sidebar-nav-toc sidebar-nav-active" data-target="post-toc-wrap">
+            文章目录
+          </li>
+          <li class="sidebar-nav-overview" data-target="site-overview-wrap">
+            站点概览
+          </li>
+        </ul>
+      
+
+      <section class="site-overview-wrap sidebar-panel">
+        <div class="site-overview">
+          <div class="site-author motion-element" itemprop="author" itemscope itemtype="http://schema.org/Person">
+            
+              <p class="site-author-name" itemprop="name">Sarom Chars</p>
+              <p class="site-description motion-element" itemprop="description"></p>
+          </div>
+
+          <nav class="site-state motion-element">
+
+            
+              <div class="site-state-item site-state-posts">
+              
+                <a href="/archives/">
+              
+                  <span class="site-state-item-count">2</span>
+                  <span class="site-state-item-name">日志</span>
+                </a>
+              </div>
+            
+
+            
+
+            
+
+          </nav>
+
+          
+
+          
+
+          
+          
+
+          
+          
+
+          
+
+        </div>
+      </section>
+
+      
+      <!--noindex-->
+        <section class="post-toc-wrap motion-element sidebar-panel sidebar-panel-active">
+          <div class="post-toc">
+
+            
+              
+            
+
+            
+              <div class="post-toc-content"><ol class="nav"><li class="nav-item nav-level-1"><a class="nav-link" href="#阮一峰译数字签名–读后感"><span class="nav-number">1.</span> <span class="nav-text">阮一峰译数字签名–读后感</span></a><ol class="nav-child"><li class="nav-item nav-level-2"><a class="nav-link" href="#数字签名简单概念"><span class="nav-number">1.1.</span> <span class="nav-text">数字签名简单概念</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#数字证书的简单概念"><span class="nav-number">1.2.</span> <span class="nav-text">数字证书的简单概念</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#文章大概例子"><span class="nav-number">1.3.</span> <span class="nav-text">文章大概例子</span></a></li></ol></li></ol></div>
+            
+
+          </div>
+        </section>
+      <!--/noindex-->
+      
+
+      
+
+    </div>
+  </aside>
+
+
+        
+      </div>
+    </main>
+
+    <footer id="footer" class="footer">
+      <div class="footer-inner">
+        <div class="copyright">&copy; <span itemprop="copyrightYear">2018</span>
+  <span class="with-love">
+    <i class="fa fa-user"></i>
+  </span>
+  <span class="author" itemprop="copyrightHolder">Sarom Chars</span>
+
+  
+</div>
+
+
+  <div class="powered-by">由 <a class="theme-link" target="_blank" href="https://hexo.io">Hexo</a> 强力驱动</div>
+
+
+
+  <span class="post-meta-divider">|</span>
+
+
+
+  <div class="theme-info">主题 &mdash; <a class="theme-link" target="_blank" href="https://github.com/iissnan/hexo-theme-next">NexT.Mist</a> v5.1.4</div>
+
+
+
+
+        
+
+
+
+
+
+
+
+        
+      </div>
+    </footer>
+
+    
+      <div class="back-to-top">
+        <i class="fa fa-arrow-up"></i>
+        
+      </div>
+    
+
+    
+
+  </div>
+
+  
+
+<script type="text/javascript">
+  if (Object.prototype.toString.call(window.Promise) !== '[object Function]') {
+    window.Promise = null;
+  }
+</script>
+
+
+
+
+
+
+
+
+
+  
+
+
+
+
+
+
+
+
+
+
+
+
+  
+  
+    <script type="text/javascript" src="/lib/jquery/index.js?v=2.1.3"></script>
+  
+
+  
+  
+    <script type="text/javascript" src="/lib/fastclick/lib/fastclick.min.js?v=1.0.6"></script>
+  
+
+  
+  
+    <script type="text/javascript" src="/lib/jquery_lazyload/jquery.lazyload.js?v=1.9.7"></script>
+  
+
+  
+  
+    <script type="text/javascript" src="/lib/velocity/velocity.min.js?v=1.2.1"></script>
+  
+
+  
+  
+    <script type="text/javascript" src="/lib/velocity/velocity.ui.min.js?v=1.2.1"></script>
+  
+
+  
+  
+    <script type="text/javascript" src="/lib/fancybox/source/jquery.fancybox.pack.js?v=2.1.5"></script>
+  
+
+
+  
+
+
+  <script type="text/javascript" src="/js/src/utils.js?v=5.1.4"></script>
+
+  <script type="text/javascript" src="/js/src/motion.js?v=5.1.4"></script>
+
+
+
+  
+  
+
+  
+  <script type="text/javascript" src="/js/src/scrollspy.js?v=5.1.4"></script>
+<script type="text/javascript" src="/js/src/post-details.js?v=5.1.4"></script>
+
+
+
+  
+
+
+  <script type="text/javascript" src="/js/src/bootstrap.js?v=5.1.4"></script>
+
+
+
+  
+
+
+  
+
+
+
+
+	
+
+
+
+
+
+  
+
+
+
+
+
+  
+
+
+
+
+
+
+
+
+
+
+
+
+  
+
+
+
+
+
+  
+
+  
+
+  
+
+  
+  
+
+  
+
+  
+
+  
+
+</body>
+</html>
