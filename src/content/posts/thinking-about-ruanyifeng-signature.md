@@ -81,8 +81,8 @@ Bob以为是这样的：
 
 <div style="max-width:100%;overflow-x:auto" id="sequence-1"></div>
 
-  
-实际上，经过了Doge的偷龙转凤：  
+
+实际上，经过了Doge的偷龙转凤：<br>
 
 <div style="max-width:100%;overflow-x:auto" id="sequence-2"></div>
 
@@ -114,7 +114,7 @@ start-&gt;message-&gt;encrypt-&gt;encryptText-&gt;decrypt-&gt;transText-&gt;end<
 
 <textarea id="flowchart-0-options" style="display: none">{"theme":"simple","scale":1,"line-width":2,"line-length":50,"text-margin":10,"font-size":12}</textarea>
 
- 
+
 
 <script> var code = document.getElementById("flowchart-0-code").value; var options = JSON.parse(decodeURIComponent(document.getElementById("flowchart-0-options").value)); var diagram = flowchart.parse(code); diagram.drawSVG("flowchart-0", options);</script>
 
@@ -129,7 +129,7 @@ A-&gt;B-&gt;C-&gt;D-&gt;E-&gt;F-&gt;G</textarea>
 
 <textarea id="flowchart-1-options" style="display: none">{"theme":"simple","scale":1,"line-width":2,"line-length":50,"text-margin":10,"font-size":12}</textarea>
 
- 
+
 
 <script> var code = document.getElementById("flowchart-1-code").value; var options = JSON.parse(decodeURIComponent(document.getElementById("flowchart-1-options").value)); var diagram = flowchart.parse(code); diagram.drawSVG("flowchart-1", options);</script>
 
@@ -149,7 +149,7 @@ G-&gt;H</textarea>
 
 <textarea id="flowchart-2-options" style="display: none">{"theme":"simple","scale":1,"line-width":2,"line-length":50,"text-margin":10,"font-size":12}</textarea>
 
- 
+
 
 <script> var code = document.getElementById("flowchart-2-code").value; var options = JSON.parse(decodeURIComponent(document.getElementById("flowchart-2-options").value)); var diagram = flowchart.parse(code); diagram.drawSVG("flowchart-2", options);</script>
 
@@ -168,7 +168,7 @@ Pady--&gt;Bob: 公钥加密过的消息</textarea>
 
 <textarea id="sequence-0-options" style="display: none">{"theme":"simple","scale":1,"line-width":2,"line-length":50,"text-margin":10,"font-size":12}</textarea>
 
- 
+
 
 <script> var code = document.getElementById("sequence-0-code").value; var options = JSON.parse(decodeURIComponent(document.getElementById("sequence-0-options").value)); var diagram = Diagram.parse(code); diagram.drawSVG("sequence-0", options);</script>
 
@@ -177,7 +177,7 @@ Susan-&gt;Bob: oh shit</textarea>
 
 <textarea id="sequence-1-options" style="display: none">{"theme":"simple","scale":1,"line-width":2,"line-length":50,"text-margin":10,"font-size":12}</textarea>
 
- 
+
 
 <script> var code = document.getElementById("sequence-1-code").value; var options = JSON.parse(decodeURIComponent(document.getElementById("sequence-1-options").value)); var diagram = Diagram.parse(code); diagram.drawSVG("sequence-1", options);</script>
 
@@ -188,7 +188,7 @@ Susan-&gt;Bob: oh shit</textarea>
 
 <textarea id="sequence-2-options" style="display: none">{"theme":"simple","scale":1,"line-width":2,"line-length":50,"text-margin":10,"font-size":12}</textarea>
 
- 
+
 
 <script> var code = document.getElementById("sequence-2-code").value; var options = JSON.parse(decodeURIComponent(document.getElementById("sequence-2-options").value)); var diagram = Diagram.parse(code); diagram.drawSVG("sequence-2", options);</script>
 
@@ -220,6 +220,6 @@ CA-&gt;CA: 19、钱交了就行。。\nBob的证书就作废吧</textarea>
 
 <textarea id="sequence-3-options" style="display: none">{"theme":"simple","scale":1,"line-width":2,"line-length":50,"text-margin":10,"font-size":12}</textarea>
 
- 
+
 
 <script> var code = document.getElementById("sequence-3-code").value; var options = JSON.parse(decodeURIComponent(document.getElementById("sequence-3-options").value)); var diagram = Diagram.parse(code); diagram.drawSVG("sequence-3", options);</script>
