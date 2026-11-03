@@ -1,0 +1,68 @@
+name: Deploy blog to GitHub Pages
+on:
+  push:
+    branches: [master]
+    paths-ignore:
+      - README.md
+      - AGENTS.md
+      - UPSTREAM.md
+      - .site-foundry/**
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: blog-pages
+  cancel-in-progress: false
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pages: read
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+          cache: npm
+      - run: npm ci
+      - name: Verify preview build and regression suite
+        run: npm run build && npm test
+        env:
+          PUBLIC_DEPLOY_ENV: preview
+          PUBLIC_ENABLE_ANALYTICS: 'false'
+      - name: Configure this repository's Pages
+        uses: actions/configure-pages@v5
+        id: pages
+      - name: Build production blog
+        run: npm run build
+        env:
+          SITE_URL: https://www.saromchars.tech
+          SITE_BASE_PATH: /
+          PUBLIC_DEPLOY_ENV: production
+          PUBLIC_ENABLE_ANALYTICS: ${{ vars.PUBLIC_ENABLE_ANALYTICS || 'false' }}
+          PUBLIC_GA4_MEASUREMENT_ID: ${{ vars.PUBLIC_GA4_MEASUREMENT_ID }}
+          PUBLIC_GOOGLE_SITE_VERIFICATION: ${{ vars.PUBLIC_GOOGLE_SITE_VERIFICATION }}
+      - name: Verify deploy artifact
+        run: node --test test/project-pages.test.mjs
+        env:
+          PAGES_TEST_DIR: dist
+          PAGES_TEST_SITE: https://www.saromchars.tech
+          PAGES_TEST_BASE: /
+          PAGES_TEST_ENV: production
+      - uses: actions/upload-pages-artifact@v4
+        with:
+          path: dist
+  deploy:
+    runs-on: ubuntu-latest
+    needs: build
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy this repository's production artifact
+        id: deployment
+        uses: actions/deploy-pages@v4

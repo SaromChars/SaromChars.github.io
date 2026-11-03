@@ -1,0 +1,14 @@
+---
+import { getCollection } from "astro:content";
+import PostPage from "@/components/PostPage.astro";
+import { getSortedPosts } from "@/utils/getSortedPosts";
+import { legacyPostRoutes } from "@/site/legacy-routes";
+export async function getStaticPaths() {
+  const posts = getSortedPosts(await getCollection("posts"));
+  return posts.map((post, index) => ({
+    params: { legacy: legacyPostRoutes[post.id]?.replace(/^\/|\/$/g, "") },
+    props: { post, prevPost: posts[index + 1] ? { id: posts[index + 1].id, title: posts[index + 1].data.title, filePath: posts[index + 1].filePath } : null, nextPost: posts[index - 1] ? { id: posts[index - 1].id, title: posts[index - 1].data.title, filePath: posts[index - 1].filePath } : null },
+  })).filter(entry => legacyPostRoutes[entry.props.post.id]);
+}
+---
+<PostPage {...Astro.props} />

@@ -1,0 +1,9 @@
+---
+import Layout from "@/layouts/Layout.astro";
+import { getAssetPath } from "@/utils/withBase";
+import Header from "@/components/Header.astro";
+import Footer from "@/components/Footer.astro";
+---
+<Layout title="分类 | Sarom's Blog" description="博客文章分类。">
+  <Header /><main id="main-content" class="app-layout my-8"><h1 class="text-3xl font-bold">分类</h1><p class="my-6">目前还没有分类。可以查看<a href={getAssetPath("posts/")} class="underline">全部文章</a>。</p></main><Footer />
+</Layout>

@@ -1,0 +1,25 @@
+---
+import { getCollection } from "astro:content";
+import Layout from "@/layouts/Layout.astro";
+import Header from "@/components/Header.astro";
+import Footer from "@/components/Footer.astro";
+import Card from "@/components/Card.astro";
+import { getSortedPosts } from "@/utils/getSortedPosts";
+export async function getStaticPaths() {
+  const posts = getSortedPosts(await getCollection("posts"));
+  const periods = new Set(posts.flatMap(p => {
+    const date = new Intl.DateTimeFormat("sv-SE", { timeZone: "Asia/Shanghai", year: "numeric", month: "2-digit" }).format(p.data.pubDatetime).replace("-", "/");
+    return [date.slice(0, 4), date];
+  }));
+  return [...periods].map(period => ({ params: { period }, props: { period, posts: posts.filter(p => {
+    const date = new Intl.DateTimeFormat("sv-SE", { timeZone: "Asia/Shanghai", year: "numeric", month: "2-digit" }).format(p.data.pubDatetime).replace("-", "/");
+    return date.startsWith(period);
+  }) } }));
+}
+const { period, posts } = Astro.props;
+---
+<Layout title={`${period} 归档 | Sarom's Blog`} description={`${period} 的博客文章归档。`}>
+  <Header />
+  <main id="main-content" class="app-layout my-8"><h1 class="text-3xl font-bold">{period} 归档</h1><ul>{posts.map(post => <Card {...post} />)}</ul></main>
+  <Footer />
+</Layout>
