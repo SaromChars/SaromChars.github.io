@@ -3,19 +3,19 @@
 <head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="robots" content="noindex,follow">
-<title>TLS 1.2 / 1.3 握手示意动画</title>
+<title>TLS 1.2 / TLS 1.3 draft-28 握手示意动画</title>
 <style>
 :root{color-scheme:light dark;--bg:#f5f8fc;--ink:#182b45;--muted:#52647c;--line:#94a3b8;--accent:#12665e;--card:#fff}*{box-sizing:border-box}body{margin:0;padding:18px;font:15px/1.6 system-ui,sans-serif;background:var(--bg);color:var(--ink)}h1{font-size:19px;margin:0 0 6px}p{margin:8px 0}.intro{font-size:13px;color:var(--muted)}.controls{display:flex;gap:8px;flex-wrap:wrap;margin:12px 0}button,select{font:inherit;border:1px solid var(--line);border-radius:7px;padding:6px 10px;color:var(--ink);background:var(--card);cursor:pointer}button:focus-visible,select:focus-visible{outline:3px solid #14b8a6;outline-offset:2px}canvas{display:block;width:100%;height:275px;border:1px solid var(--line);border-radius:8px;background:var(--card)}#status{min-height:76px;font-size:14px}a{color:var(--accent)}@media(prefers-color-scheme:dark){:root{--bg:#101c2c;--ink:#e1ebfa;--muted:#a5b5cd;--line:#61738f;--accent:#6ee7d3;--card:#16263c}}@media(max-width:420px){body{padding:12px}button,select{font-size:14px}#status{min-height:100px}} 
 </style>
 </head>
 <body>
-<h1>TLS 握手：消息怎样往返？</h1>
+<h1>TLS 握手：1.2 与 1.3 draft-28</h1>
 <p class="intro">已建立底层连接 · 服务器证书认证 · 无恢复、无重试 · 箭头表示消息组，非 TCP 分包</p>
-<div class="controls"><label for="version">版本 <select id="version"><option value="13">TLS 1.3 · 1-RTT</option><option value="12">TLS 1.2 · 2-RTT</option></select></label><button id="play" type="button">播放</button><button id="next" type="button">下一步</button><button id="reset" type="button">重置</button></div>
+<div class="controls"><label for="version">版本 <select id="version"><option value="13">TLS 1.3 草案 · 1-RTT</option><option value="12">TLS 1.2 · 2-RTT</option></select></label><button id="play" type="button">播放</button><button id="next" type="button">下一步</button><button id="reset" type="button">重置</button></div>
 <canvas width="800" height="330" role="img" aria-label="客户端与服务器之间的握手消息；每一步的完整解释见下方文字">握手顺序：客户端问候 → 服务器身份与密钥参数 → 客户端确认 → 应用数据。详见文章中的对比表。</canvas>
 <p id="status" aria-live="polite"></p>
 <p class="intro">TLS 1.2 示例采用 ECDHE；TLS 1.3 服务器在 ServerHello 后加密握手消息。这里不计 DNS 与底层连接建立时间，不展示 0-RTT。默认不自动播放。</p>
-<p class="intro">依据 RFC 5246 §7.3 与 TLS 1.3 握手规范制作；完整来源见正文。</p>
+<p class="intro">依据 RFC 5246 §7.3 与 2018-03-20 的 TLS 1.3 draft-28 §2；知识截止 2018-08-08。</p>
 <noscript>动画需要 JavaScript。请阅读完整文章中的静态握手表；全部关键事实均可在无脚本情况下阅读。</noscript>
 <script>
 (() => {
