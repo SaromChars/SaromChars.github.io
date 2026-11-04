@@ -1,6 +1,6 @@
 ---
 title: "TLS 的起源与演进：从 Netscape SSL 到 TLS 1.3"
-pubDatetime: 2026-11-04T16:40:00+08:00
+pubDatetime: 2018-08-08T16:40:00+08:00
 description: "梳理 TLS 从 Netscape SSL 到 TLS 1.0、1.2、1.3 的历史，解释 HTTPS、证书、密钥交换和 0-RTT，并用 Canvas 动画对比握手过程，附 RFC 来源与 Agent 信息提取提示词。"
 author: Sarom Chars
 draft: false
@@ -9,7 +9,7 @@ tags: [TLS, SSL, HTTPS, 网络安全, 协议历史]
 
 **TLS（Transport Layer Security，传输层安全协议）源于 Netscape 的 SSL。1999 年，IETF 发布 TLS 1.0；2018 年，TLS 1.3 首次以 RFC 8446 发布。它要解决的核心问题是：让两端在不可信的网络上建立能够抵抗窃听、篡改和身份冒充的通信通道。** [TLS 1.0：RFC 2246](https://www.rfc-editor.org/rfc/rfc2246) · [TLS 1.3 初版：RFC 8446](https://www.rfc-editor.org/rfc/rfc8446)
 
-本文沿着“为什么需要它 → 从哪里来 → 每次演进解决什么”展开，适合了解 HTTP、希望补齐 HTTPS 背景的开发者。文中的握手图是教学简化，不是报文抓包记录；事实核对日期为 **2026 年 11 月 4 日**。
+本文沿着“为什么需要它 → 从哪里来 → 每次演进解决什么”展开，适合了解 HTTP、希望补齐 HTTPS 背景的开发者。文中的握手图是教学简化，不是报文抓包记录；系列归档日期为 **2018 年 8 月 8 日**，本文编写与事实核对日期为 **2026 年 11 月 4 日**，包含归档日期之后的标准进展。
 
 ## TLS 为什么会出现：可靠送达不等于安全送达
 
