@@ -1,0 +1,828 @@
+<!DOCTYPE html><html dir="ltr" lang="zh-CN" class="overflow-y-scroll scroll-smooth"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1"><link rel="icon" type="image/png" href="/images/favicon-32x32-next.png"><link rel="icon" href="/favicon.ico"><link rel="canonical" href="https://www.saromchars.tech/posts/transformer-attention-is-all-you-need/"><meta name="generator" content="Astro v7.4.5"><!-- Primary meta --><title>Transformer为什么需要Attention？从《Attention Is All You Need》读起 | Sarom&#39;s Blog</title><meta name="title" content="Transformer为什么需要Attention？从《Attention Is All You Need》读起 | Sarom's Blog"><meta name="description" content="从序列建模的连接瓶颈出发，梳理自注意力（Self-Attention）与Q/K/V投影、缩放点积、多头机制、位置编码与原版Encoder-Decoder架构的设计逻辑与计算边界。"><meta name="author" content="Sarom Chars"><link rel="sitemap" href="/sitemap-index.xml"><!-- Open Graph --><meta property="og:type" content="article"><meta property="og:site_name" content="Sarom's Blog"><meta property="og:title" content="Transformer为什么需要Attention？从《Attention Is All You Need》读起 | Sarom's Blog"><meta property="og:description" content="从序列建模的连接瓶颈出发，梳理自注意力（Self-Attention）与Q/K/V投影、缩放点积、多头机制、位置编码与原版Encoder-Decoder架构的设计逻辑与计算边界。"><meta property="og:url" content="https://www.saromchars.tech/posts/transformer-attention-is-all-you-need/"><meta property="og:image" content="https://www.saromchars.tech/og.png"><!-- Twitter / X --><meta property="twitter:card" content="summary_large_image"><meta property="twitter:url" content="https://www.saromchars.tech/posts/transformer-attention-is-all-you-need/"><meta property="twitter:title" content="Transformer为什么需要Attention？从《Attention Is All You Need》读起 | Sarom's Blog"><meta property="twitter:description" content="从序列建模的连接瓶颈出发，梳理自注意力（Self-Attention）与Q/K/V投影、缩放点积、多头机制、位置编码与原版Encoder-Decoder架构的设计逻辑与计算边界。"><meta property="twitter:image" content="https://www.saromchars.tech/og.png"><!-- RSS autodiscovery --><link rel="alternate" type="application/rss+xml" title="Sarom's Blog" href="https://www.saromchars.tech/rss.xml"><!-- Filled at runtime by theme.ts to match the current background colour --><meta name="theme-color" content=""><!-- Extra head content injected by child layouts (e.g. JSON-LD, article meta) --><meta property="article:published_time" content="2022-03-04T02:00:00.000Z"><script type="application/ld+json">{"@context":"https://schema.org","@type":"BlogPosting","headline":"Transformer为什么需要Attention？从《Attention Is All You Need》读起","mainEntityOfPage":"https://www.saromchars.tech/posts/transformer-attention-is-all-you-need/","datePublished":"2022-03-04T02:00:00.000Z","author":[{"@type":"Person","name":"Sarom Chars","url":"https://github.com/SaromChars"}]}</script><!--
+      Inline FOUC-prevention script: sets data-theme on <html> before
+      the browser paints. Runs synchronously, no defer/async.
+    --><script>
+      (function () {
+        const stored = localStorage.getItem("theme");
+        const prefersDark = window.matchMedia(
+          "(prefers-color-scheme: dark)"
+        ).matches;
+        const theme = stored ?? (prefersDark ? "dark" : "light");
+        const root = document.firstElementChild;
+        root?.setAttribute("data-theme", theme);
+        root?.classList.toggle("dark", theme === "dark");
+        // Expose value so theme.ts can skip re-detection.
+        window.__theme = { value: theme };
+      })();
+    </script><meta name="robots" content="index, follow"><script async src="https://www.googletagmanager.com/gtag/js?id=G-WJJJTJ4FWX"></script><script>(function(){const measurementId = "G-WJJJTJ4FWX";
+
+    window.dataLayer = window.dataLayer || [];
+    function gtag(){ window.dataLayer.push(arguments); }
+    gtag('js', new Date());
+    gtag('config', measurementId);
+  })();</script><style>@keyframes astroFadeInOut{0%{opacity:1}to{opacity:0}}@keyframes astroFadeIn{0%{opacity:0;mix-blend-mode:plus-lighter}to{opacity:1;mix-blend-mode:plus-lighter}}@keyframes astroFadeOut{0%{opacity:1;mix-blend-mode:plus-lighter}to{opacity:0;mix-blend-mode:plus-lighter}}@keyframes astroSlideFromRight{0%{transform:translate(100%)}}@keyframes astroSlideFromLeft{0%{transform:translate(-100%)}}@keyframes astroSlideToRight{to{transform:translate(100%)}}@keyframes astroSlideToLeft{to{transform:translate(-100%)}}@media (prefers-reduced-motion){::view-transition-group(*),::view-transition-old(*),::view-transition-new(*),[data-astro-transition-scope]{animation:none!important}}
+</style><link rel="stylesheet" href="/_astro/Footer.DC6qDsIp.css"><style>[data-astro-transition-scope="astro-bztu2lml-1"] { view-transition-name: ai; }@layer astro { ::view-transition-old(ai) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }::view-transition-new(ai) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }[data-astro-transition=back]::view-transition-old(ai) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition=back]::view-transition-new(ai) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; } }[data-astro-transition-fallback="old"] [data-astro-transition-scope="astro-bztu2lml-1"],
+			[data-astro-transition-fallback="old"][data-astro-transition-scope="astro-bztu2lml-1"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition-fallback="new"] [data-astro-transition-scope="astro-bztu2lml-1"],
+			[data-astro-transition-fallback="new"][data-astro-transition-scope="astro-bztu2lml-1"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }[data-astro-transition=back][data-astro-transition-fallback="old"] [data-astro-transition-scope="astro-bztu2lml-1"],
+			[data-astro-transition=back][data-astro-transition-fallback="old"][data-astro-transition-scope="astro-bztu2lml-1"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition=back][data-astro-transition-fallback="new"] [data-astro-transition-scope="astro-bztu2lml-1"],
+			[data-astro-transition=back][data-astro-transition-fallback="new"][data-astro-transition-scope="astro-bztu2lml-1"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }</style><style>[data-astro-transition-scope="astro-bztu2lml-2"] { view-transition-name: transformer; }@layer astro { ::view-transition-old(transformer) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }::view-transition-new(transformer) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }[data-astro-transition=back]::view-transition-old(transformer) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition=back]::view-transition-new(transformer) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; } }[data-astro-transition-fallback="old"] [data-astro-transition-scope="astro-bztu2lml-2"],
+			[data-astro-transition-fallback="old"][data-astro-transition-scope="astro-bztu2lml-2"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition-fallback="new"] [data-astro-transition-scope="astro-bztu2lml-2"],
+			[data-astro-transition-fallback="new"][data-astro-transition-scope="astro-bztu2lml-2"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }[data-astro-transition=back][data-astro-transition-fallback="old"] [data-astro-transition-scope="astro-bztu2lml-2"],
+			[data-astro-transition=back][data-astro-transition-fallback="old"][data-astro-transition-scope="astro-bztu2lml-2"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition=back][data-astro-transition-fallback="new"] [data-astro-transition-scope="astro-bztu2lml-2"],
+			[data-astro-transition=back][data-astro-transition-fallback="new"][data-astro-transition-scope="astro-bztu2lml-2"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }</style><style>[data-astro-transition-scope="astro-bztu2lml-3"] { view-transition-name: attention; }@layer astro { ::view-transition-old(attention) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }::view-transition-new(attention) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }[data-astro-transition=back]::view-transition-old(attention) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition=back]::view-transition-new(attention) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; } }[data-astro-transition-fallback="old"] [data-astro-transition-scope="astro-bztu2lml-3"],
+			[data-astro-transition-fallback="old"][data-astro-transition-scope="astro-bztu2lml-3"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition-fallback="new"] [data-astro-transition-scope="astro-bztu2lml-3"],
+			[data-astro-transition-fallback="new"][data-astro-transition-scope="astro-bztu2lml-3"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }[data-astro-transition=back][data-astro-transition-fallback="old"] [data-astro-transition-scope="astro-bztu2lml-3"],
+			[data-astro-transition=back][data-astro-transition-fallback="old"][data-astro-transition-scope="astro-bztu2lml-3"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition=back][data-astro-transition-fallback="new"] [data-astro-transition-scope="astro-bztu2lml-3"],
+			[data-astro-transition=back][data-astro-transition-fallback="new"][data-astro-transition-scope="astro-bztu2lml-3"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }</style></head><body class="bg-background font-app text-foreground selection:bg-accent/75 selection:text-accent-foreground flex min-h-svh flex-col"><a id="skip-to-content" href="#main-content" class="bg-background text-accent absolute inset-s-16 -top-full z-50 px-3 py-2 backdrop-blur-lg transition-all focus:top-4">跳到正文</a><header class="app-layout flex flex-col items-center justify-between sm:flex-row"><div class="border-border bg-background relative flex w-full items-baseline justify-between border-b py-4 sm:items-center sm:py-6"><a href="/" class="absolute py-1 text-xl leading-8 font-semibold whitespace-nowrap sm:static sm:my-auto sm:text-2xl sm:leading-none">Sarom&#39;s Blog</a><nav id="nav-menu" class="flex w-full flex-col items-center sm:ms-2 sm:flex-row sm:justify-end sm:space-x-4 sm:py-0"><button id="menu-btn" class="focus-outline self-end p-2 sm:hidden" aria-label="展开菜单" aria-expanded="false" aria-controls="menu-items" data-label-open="展开菜单" data-label-close="收起菜单"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="hidden" viewBox="0 0 24 24" id="close-icon"><path stroke="none" d="M0 0h24v24H0z" /><path d="M18 6 6 18M6 6l12 12" /></svg><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="icon icon-tabler icons-tabler-outline icon-tabler-menu-deep" viewBox="0 0 24 24" id="menu-icon"><path stroke="none" d="M0 0h24v24H0z" /><path d="M4 6h16M7 12h13M10 18h10" /></svg></button><ul id="menu-items" class="[&amp;&gt;li&gt;a]:hover:text-accent mt-4 hidden w-44 grid-cols-2 place-content-center gap-2 sm:mt-0 sm:flex sm:w-auto sm:gap-x-5 sm:gap-y-0 sm:[&amp;&gt;li]:h-8 [&amp;&gt;li&gt;a]:block [&amp;&gt;li&gt;a]:px-4 [&amp;&gt;li&gt;a]:py-3 [&amp;&gt;li&gt;a]:text-center [&amp;&gt;li&gt;a]:font-medium sm:[&amp;&gt;li&gt;a]:px-2 sm:[&amp;&gt;li&gt;a]:py-1"><li class="col-span-2"><a href="/posts/" class="active-nav">文章</a></li><li class="col-span-2"><a href="/tags/">标签</a></li><li class="col-span-2"><a href="/about/">关于</a></li><li class="col-span-2"><a href="/archives/" title="归档" aria-label="归档" class="group inline-flex items-center gap-1 hover:text-accent focus-outline flex size-full justify-center p-3 sm:relative sm:size-8 sm:p-0"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="hidden sm:absolute sm:top-1/2 sm:left-1/2 sm:block sm:size-6 sm:-translate-x-1/2 sm:-translate-y-1/2" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M3 6a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2 2 2 0 0 1-2 2H5a2 2 0 0 1-2-2M5 8v10a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8M10 12h4" /></svg><span class="sm:sr-only">归档</span></a></li><li class="col-span-1 flex items-center justify-center"><a href="/search/" title="搜索" aria-label="搜索" class="group inline-flex items-center gap-1 hover:text-accent focus-outline relative size-8"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="absolute top-1/2 left-1/2 size-6 -translate-x-1/2 -translate-y-1/2" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M3 10a7 7 0 1 0 14 0 7 7 0 1 0-14 0M21 21l-6-6" /></svg><span class="sr-only">搜索</span></a></li><li class="col-span-1 flex items-center justify-center"><button id="theme-btn" class="focus-outline hover:[&amp;&gt;svg]:stroke-accent relative size-12 p-4 sm:size-8" title="切换主题" aria-label="auto" aria-live="polite"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="absolute top-[50%] left-[50%] translate-[-50%] scale-100 rotate-0 transition-all dark:scale-0 dark:-rotate-90" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M12 3h.393a7.5 7.5 0 0 0 7.92 12.446A9 9 0 1 1 12 2.992z" /></svg><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="absolute top-[50%] left-[50%] translate-[-50%] scale-0 rotate-90 transition-all dark:scale-100 dark:rotate-0" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M14.828 14.828a4 4 0 1 0-5.656-5.656 4 4 0 0 0 5.656 5.656M6.343 17.657l-1.414 1.414M6.343 6.343 4.929 4.929M17.657 6.343l1.414-1.414M17.657 17.657l1.414 1.414M4 12H2M12 4V2M20 12h2M12 20v2" /></svg></button></li></ul></nav></div></header><script type="module">function e(){let e=document.querySelector(`#menu-btn`),t=document.querySelector(`#menu-items`),n=document.querySelector(`#menu-icon`),r=document.querySelector(`#close-icon`);if(!e||!t||!n||!r)return;let i=e.dataset.labelOpen??`Open menu`,a=e.dataset.labelClose??`Close menu`;e.addEventListener(`click`,()=>{let o=e.getAttribute(`aria-expanded`)===`true`;e.setAttribute(`aria-expanded`,o?`false`:`true`),e.setAttribute(`aria-label`,o?i:a),t.classList.toggle(`hidden`),t.classList.toggle(`grid`),n.classList.toggle(`hidden`),r.classList.toggle(`hidden`)})}function t(){let e=document.getElementById(`skip-to-content`);e&&e.addEventListener(`click`,e=>{if(e.defaultPrevented||e.metaKey||e.ctrlKey||e.shiftKey||e.button!==0)return;e.preventDefault();let t=document.getElementById(`main-content`);t&&(t.setAttribute(`tabindex`,`-1`),t.addEventListener(`blur`,()=>t.removeAttribute(`tabindex`),{once:!0}),t.focus(),t.scrollIntoView({behavior:`smooth`}))})}e(),document.addEventListener(`astro:after-swap`,e),t(),document.addEventListener(`astro:after-swap`,t);</script><div class="app-layout flex items-center justify-start"><a id="back-button" href="/" class="group inline-flex items-center gap-1 hover:text-accent focus-outline hover:text-foreground/75 -ms-2 mt-8 mb-2"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="inline-block size-6 rtl:rotate-180" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="m15 6-6 6 6 6" /></svg><span>返回</span></a></div><script type="module">function e(){let e=document.querySelector(`#back-button`),t=sessionStorage.getItem(`backUrl`);t&&e&&(e.href=t)}document.addEventListener(`astro:page-load`,e),e();</script><main id="main-content" class="app-layout" data-pagefind-body><h1 style="view-transition-name:transformer-attention-is-all-you-need" class="text-accent inline-block text-2xl font-bold sm:text-3xl">Transformer为什么需要Attention？从《Attention Is All You Need》读起</h1><div class="my-2 flex items-center gap-2"><div class="text-muted-foreground flex items-center gap-x-2"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="inline-block size-6 min-w-5.5" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M4 7a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2zM16 3v4M8 3v4M4 11h16M7 14h.013M10.01 14h.005M13.01 14h.005M16.015 14h.005M13.015 17h.005M7.01 17h.005M10.01 17h.005" /></svg><time class="text-sm sm:text-base" datetime="2022-03-04T02:00:00.000Z">2022年3月4日</time></div><span aria-hidden="true" class="text-muted-foreground max-sm:hidden hidden">|</span></div><article id="article" class="mt-8 w-full app-prose max-w-app prose-pre:bg-(--shiki-light-bg) dark:prose-pre:bg-(--shiki-dark-bg)"><p>在序列转导（Sequence Transduction）任务——特别是机器翻译中，模型需要处理词与词之间跨越长距离的依赖关系。例如在句子“The animal didn’t cross the street because it was too tired”中，要准确翻译代词“it”，模型必须推断它究竟指代前面的“animal”还是“street”。</p>
+<p>在 2017 年之前，主流的序列模型依赖循环神经网络（RNN、LSTM 或 GRU）。这类网络沿着时间步逐步推进计算：当前位置的隐藏状态依赖于前一位置的隐藏状态。这种按顺序推进的机制带来了两项制约：第一，相距较远的词之间，信号必须跨越多个循环步依次传递，长程信息容易在逐步递归中损耗；第二，在训练时，第 t 步的计算必须等待第 t-1 步完成，无法沿序列长度方向展开并行计算。虽然卷积神经网络（如 ConvS2S、ByteNet）允许各位置并行计算特征，但要建立远距离词之间的关联，需要堆叠多层卷积逐步扩大感受野，两点之间的交互路径长度仍随距离线性或对数增长。</p>
+<p>2017 年，Ashish Vaswani 等人在 6 月首次提交、12 月修订的论文《Attention Is All You Need》<a href="#ref-vaswani-2017"><span id="citation-1">1</span></a> 中，提出了一种抛弃循环与卷积的架构——Transformer。它的核心思想是通过自注意力机制（Self-Attention），让序列中任意两个位置之间只需一步直接交互即可建立联系。在当前语言模型体系中，Attention 已成为基础结构；但要理解它的工作方式，需要先回到原论文的推导起点。</p>
+<h2 id="自注意力与-qkv-角色投影">自注意力与 Q、K、V 角色投影</h2>
+<p>在传统 Seq2Seq 模型中，注意力机制通常用于连接编码器与解码器；而在 Transformer 中，自注意力被用来在同一序列内部计算各位置之间的上下文表示。</p>
+<p>从数学抽象来看，注意力函数的作用是将一个查询向量（Query）和一组键值对（Key-Value pairs）映射为一个输出向量。输出结果是这组值向量（Values）的加权求和，而赋予每个 Value 的权重，则取决于 Query 与对应 Key 的匹配程度。</p>
+<p>为什么同一个输入词需要拆分出 Query、Key 和 Value 三种表示？</p>
+<p>对于输入序列的隐藏状态矩阵 X（维度为 n × d_model），单头注意力在概念上使用三个可学习的线性投影矩阵 W^Q、W^K、W^V 对其进行变换，分别得到：</p>
+<pre class="astro-code astro-code-themes min-light night-owl" style="--shiki-light:#24292eff;--shiki-dark:#d6deeb;--shiki-light-bg:#ffffff;--shiki-dark-bg:#011627; overflow-x: auto;--file-name-offset: -0.75rem;" tabindex="0" data-language="text"><code><span class="line"><span>Q = X * W^Q  (查询矩阵)</span></span>
+<span class="line"><span>K = X * W^K  (键矩阵)</span></span>
+<span class="line"><span>V = X * W^V  (值矩阵)</span></span></code></pre>
+<p>这三种投影赋予了同一个词不同的功能职责：</p>
+<ul>
+<li><strong>Query（查询）</strong>：代表当前位置主动发出的“寻址请求”，负责向其他位置查询与自己相关的信息。</li>
+<li><strong>Key（键）</strong>：代表当前位置向外暴露的“索引特征”，用于响应其他位置的 Query 匹配。</li>
+<li><strong>Value（值）</strong>：代表当前位置所包含的“实质内容”，一旦匹配成功，这部分内容将按权重汇入最终表示中。</li>
+</ul>
+<p>同一个词在序列中具有多重角色：它既需要作为观察者去检索上下文（Query），也需要作为被观察对象供其他词检索（Key），同时还要提供自己的语义信息（Value）。如果直接用未经投影的原始向量做内积与加权，这三重角色将被迫共享同一套特征空间，限制了模型捕捉复杂依赖的能力。</p>
+<p>需要明确区分的是，在自注意力中，Q、K、V 来自同一个序列的上一层输出；而在后文提到的跨注意力（Cross-Attention）中，Q 来自解码器内部当前交叉注意力子层前一步的输出，而 K 和 V 则来自编码器栈顶部的最终输出表示。</p>
+<h2 id="缩放点积注意力计算过程与示意">缩放点积注意力：计算过程与示意</h2>
+<p>原论文采用的具体计算形式被称为“缩放点积注意力”（Scaled Dot-Product Attention）<a href="#ref-vaswani-2017"><span id="citation-1-sdp">1 (Vaswani et al., §3.2.1)</span></a>：</p>
+<pre class="astro-code astro-code-themes min-light night-owl" style="--shiki-light:#24292eff;--shiki-dark:#d6deeb;--shiki-light-bg:#ffffff;--shiki-dark-bg:#011627; overflow-x: auto;--file-name-offset: -0.75rem;" tabindex="0" data-language="text"><code><span class="line"><span>Attention(Q, K, V) = softmax( (Q * K^T) / sqrt(d_k) ) * V</span></span></code></pre>
+<p>整个计算包含四个步骤：</p>
+<ol>
+<li><strong>计算兼容性得分</strong>：将 Query 矩阵与 Key 矩阵的转置相乘（Q * K^T），得到各位置两两之间的点积。点积同时受向量方向与模长的影响，并非归一化的余弦相似度。在其他得分固定的前提下，点积数值越大，表明兼容性得分越高，后续分配到的 Softmax 权重也越高。</li>
+<li><strong>缩放因子 sqrt(d_k)</strong>：如果键向量的维度 d_k 较大，假设 q 和 k 的各分量是均值为 0、方差为 1 的独立随机变量，其点积的方差就会增长至 d_k。当点积方差过大时，得分之间的差距容易被拉大，导致经过 Softmax 计算后的概率分布趋向两极，使得梯度处于极平缓的饱和区域。为了抵消这种方差放大效应，论文将点积除以 sqrt(d_k)，使数值分布更加平稳。</li>
+<li><strong>逐行 Softmax 归一化</strong>：对每一行（即针对每个 Query）的得分进行 Softmax 处理，将原始得分转换为一组非负且和为 1 的权重系数。</li>
+<li><strong>与 Value 加权求和</strong>：用 Softmax 得到的权重对 Value 矩阵进行加权组合，得到当前层融合了上下文信息的最终输出。</li>
+</ol>
+<p>为了直观展示这一过程，以下构造一个简化的人为数值示意（<strong>注：本例纯属为了展示矩阵流向而手工设定的示意数据，非真实模型测试结果，亦非真实分词器输出</strong>）：</p>
+<p>假设序列中有 3 个词项：<code>["The", "animal", "tired"]</code>，设定特征维度 d_k = 2。</p>
+<p>对于词项 <code>"tired"</code> 发出的查询向量 q_3 = [1.0, 0.5]，它与序列中 3 个词项的 Key 向量分别做点积并除以缩放因子 sqrt(2) ≈ 1.414：</p>
+<div class="table-wrapper" tabindex="0">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<table><thead><tr><th align="left">词项 (i)</th><th align="left">Key 向量 (k_i)</th><th align="left">点积 (q_3 · k_i)</th><th align="left">缩放后得分 (/ 1.414)</th><th align="left">Softmax 权重</th></tr></thead><tbody><tr><td align="left">1. “The”</td><td align="left">[0.2, 0.1]</td><td align="left">0.25</td><td align="left">0.18</td><td align="left">0.19</td></tr><tr><td align="left">2. “animal”</td><td align="left">[1.2, 0.8]</td><td align="left">1.60</td><td align="left">1.13</td><td align="left">0.49</td></tr><tr><td align="left">3. “tired”</td><td align="left">[0.8, 0.4]</td><td align="left">1.00</td><td align="left">0.71</td><td align="left">0.32</td></tr></tbody></table></div>
+<p>从计算结果可见，查询词 <code>"tired"</code> 与 <code>"animal"</code> 的兼容性最高，分得了约 0.49 的权重，自身保留约 0.32，对 <code>"The"</code> 分配约 0.19。最后将各词的 Value 向量按此权重求和：</p>
+<pre class="astro-code astro-code-themes min-light night-owl" style="--shiki-light:#24292eff;--shiki-dark:#d6deeb;--shiki-light-bg:#ffffff;--shiki-dark-bg:#011627; overflow-x: auto;--file-name-offset: -0.75rem;" tabindex="0" data-language="text"><code><span class="line"><span>Output_3 ≈ 0.19 * v_1 + 0.49 * v_2 + 0.32 * v_3</span></span></code></pre>
+<p>这样，词项 <code>"tired"</code> 的新表示就动态吸收了来自 <code>"animal"</code> 的关键信息。</p>
+<h2 id="多头注意力拓展表征子空间">多头注意力：拓展表征子空间</h2>
+<p>如果只用单头注意力，对于每个Query位置，各特征维度共享同一组对各Key位置的权重；用这组权重对不同位置的Value向量做加权求和，很难同时保持不同类型的相对依赖（例如句法搭配、指代关联与相邻修饰）<a href="#ref-vaswani-2017"><span id="citation-1-mha">1 (Vaswani et al., §3.2.2)</span></a>。</p>
+<p>为此，Transformer 提出了多头注意力（Multi-Head Attention）：</p>
+<pre class="astro-code astro-code-themes min-light night-owl" style="--shiki-light:#24292eff;--shiki-dark:#d6deeb;--shiki-light-bg:#ffffff;--shiki-dark-bg:#011627; overflow-x: auto;--file-name-offset: -0.75rem;" tabindex="0" data-language="text"><code><span class="line"><span>MultiHead(X) = Concat(head_1, ..., head_h) * W^O  (本节自注意力情形)</span></span>
+<span class="line"><span>其中 head_i = Attention(X * W_i^Q, X * W_i^K, X * W_i^V)</span></span></code></pre>
+<p>在原论文的基础配置中，模型采用 h = 8 个并行注意力头。对于输入表示矩阵 X（n × d_model，其中 d_model = 512），每个头直接使用独立的投影矩阵进行线性映射：</p>
+<pre class="astro-code astro-code-themes min-light night-owl" style="--shiki-light:#24292eff;--shiki-dark:#d6deeb;--shiki-light-bg:#ffffff;--shiki-dark-bg:#011627; overflow-x: auto;--file-name-offset: -0.75rem;" tabindex="0" data-language="text"><code><span class="line"><span>W_i^Q ∈ R^(d_model × d_k)</span></span>
+<span class="line"><span>W_i^K ∈ R^(d_model × d_k)</span></span>
+<span class="line"><span>W_i^V ∈ R^(d_model × d_v)</span></span></code></pre>
+<p>其中设定投影维度 d_k = d_v = d_model / h = 64。每个头在各自的 64 维子空间中独立计算注意力，生成维度为 n × d_v（即 n × 64）的输出；随后将 8 个头的输出在特征维度上拼接为 n × (h · d_v) = n × 512 的矩阵，最后通过输出投影矩阵 W^O ∈ R^(512 × 512) 整合为最终的 n × d_model 输出。由于每个头的维度缩小为原来的 1/8，8 个头并行计算的总计算量与全维度的单头注意力大体相当。</p>
+<p>需要注意的是，论文作者在附录中观察到，不同注意力头在训练后呈现出不同的关注倾向，有的关注动宾关系，有的关注代词指代。但这属于多子空间联合表征经验性涌现出的结果，并不代表网络结构在数学上强行保证“第 1 个头必然学习句法、第 2 个头必然学习词性”。将注意力权重直接解读为模型确凿的语法规则或因果解释，超出了该机制本身的数学保证。</p>
+<h2 id="为什么自注意力天生不知道词序">为什么自注意力天生不知道词序？</h2>
+<p>在不包含位置编码且没有依赖位置的固定掩码前提下，自注意力运算具有一项固有特征：<strong>置换等变性（Permutation Equivariance）</strong>。</p>
+<p>具体而言，对于任意置换矩阵 P，若将输入矩阵行置换为 P * X，自注意力层函数的输出相应地满足 F(P * X) = P * F(X)，其内部的注意力权重矩阵 A 也会变换为 P * A * P^T。这意味着词与词之间的对应注意力权重保持不变，只是伴随序列顺序同步重排。自注意力运算本身无法感知词项在序列中的绝对与相对先后次序。</p>
+<p>自然语言的语义高度依赖词序。为了让模型能够区分先后，原版 Transformer 在输入端将词嵌入（Token Embedding）与位置编码（Positional Encoding）直接相加注入顺序信息 <a href="#ref-vaswani-2017"><span id="citation-1-pe">1 (Vaswani et al., §3.5)</span></a>：</p>
+<pre class="astro-code astro-code-themes min-light night-owl" style="--shiki-light:#24292eff;--shiki-dark:#d6deeb;--shiki-light-bg:#ffffff;--shiki-dark-bg:#011627; overflow-x: auto;--file-name-offset: -0.75rem;" tabindex="0" data-language="text"><code><span class="line"><span>X_input = Token_Embedding + Positional_Encoding</span></span></code></pre>
+<p>原论文采用正弦与余弦交替的周期函数生成固定位置编码：</p>
+<pre class="astro-code astro-code-themes min-light night-owl" style="--shiki-light:#24292eff;--shiki-dark:#d6deeb;--shiki-light-bg:#ffffff;--shiki-dark-bg:#011627; overflow-x: auto;--file-name-offset: -0.75rem;" tabindex="0" data-language="text"><code><span class="line"><span>PE(pos, 2i)   = sin( pos / (10000^(2i / d_model)) )</span></span>
+<span class="line"><span>PE(pos, 2i+1) = cos( pos / (10000^(2i / d_model)) )</span></span></code></pre>
+<p>其中 pos 表示词在序列中的绝对位置，i 表示特征维度的索引。选择三角函数的一个依据是：对于任意固定的相对偏移 k，PE_{pos+k} 都可以表示为 PE_{pos} 的线性函数，这有助于模型推断相对位置。论文也对比了可学习的位置嵌入，实验显示两者翻译表现相当，而三角函数方案具备推断超出训练长度序列的潜在可能。</p>
+<h2 id="原版-encoder-decoder-结构与运行边界">原版 Encoder-Decoder 结构与运行边界</h2>
+<p>2017 年的 Transformer 并不是一个纯解码器（Decoder-only）文本生成模型，而是一个标准的编码器—解码器（Encoder-Decoder）结构，专为机器翻译设计 <a href="#ref-vaswani-2017"><span id="citation-1-arch">1 (Vaswani et al., §3.1, §3.2.3)</span></a>。</p>
+<p>整个网络由编码器栈和解码器栈构成，原论文各堆叠了 N = 6 层：</p>
+<ul>
+<li><strong>编码器（Encoder）</strong>：每层包含两个子层：
+<ol>
+<li>多头自注意力机制（Self-Attention）；</li>
+<li>逐位置前馈网络（Position-wise Feed-Forward Network，由两层线性变换和 ReLU 构成，d_ff = 2048）。
+每个子层外都包含残差连接（Residual Connection）和层归一化（Layer Normalization）。</li>
+</ol>
+</li>
+<li><strong>解码器（Decoder）</strong>：每层包含三个子层：
+<ol>
+<li><strong>带因果掩码的多头自注意力（Masked Self-Attention）</strong>；</li>
+<li><strong>编码器—解码器交叉注意力（Cross-Attention）</strong>：Query 来自解码器当前层中此前自注意力子层的输出，Key 和 Value 取自编码器栈顶部的输出表示；</li>
+<li>逐位置前馈网络，附带残差连接和 LayerNorm。</li>
+</ol>
+</li>
+</ul>
+<p>这里涉及训练阶段与推理阶段的关键运行机制区别：</p>
+<p>在训练阶段，为了防止解码器在预测第 i 个目标词时提前看到真实标签，原论文设计了双重防护：<strong>目标序列右移（Offset by one position）与因果掩码（Causal Masking）</strong>。训练时解码器的输入序列是在真实目标序列前端添加起始符号并右移一位（例如输入 <code>[&#x3C;BOS>, y_1, y_2, ...]</code> 来监督预测 <code>[y_1, y_2, y_3, ...]</code>）。在此基础上，因果掩码在计算 Softmax 之前将未来位置的注意力得分设为负无穷，确保预测第 i 个位置的目标时，注意力只能覆盖该位置此前的已知目标。由于训练时监督数据完整已知，整个目标序列的所有位置可以在单次前向传播中并行计算损失。</p>
+<p>而在推理生成阶段，模型无法预先知道后续的输出内容。解码器必须采用自回归（Auto-Regressive）方式逐步生成：先依据源句和起始符预测第 1 个词，再将生成的词追加到解码器输入中去预测第 2 个词，单步推进直至生成终止符。训练时的位置并行不等于推理时的整句单步生成。</p>
+<p>后续以 GPT-3（Brown et al., 2020）<a href="#ref-brown-2020"><span id="citation-2">2</span></a> 为代表的生成模型，在架构上采用了纯解码器（Decoder-only）形式：移除了编码器和交叉注意力子层，由多层带因果掩码的自注意力、前馈网络（FFN）、残差连接和层归一化堆叠而成。2017 年的原版 Transformer 是面向 Seq2Seq 翻译任务的编码器—解码器设计，不能将其与后续的纯解码器大语言模型架构混为一谈。</p>
+<h2 id="计算复杂度的收益与现实代价">计算复杂度的收益与现实代价</h2>
+<p>Transformer 常被视作克服了序列串行计算的瓶颈，但这种计算特征伴随着具体的复杂度边界。原论文在第 4 节通过 Table 1 对比了不同网络层的计算性质 <a href="#ref-vaswani-2017"><span id="citation-1-table1">1 (Vaswani et al., §4)</span></a>：</p>
+<div class="table-wrapper" tabindex="0">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<table><thead><tr><th align="left">层类型 (Layer Type)</th><th align="left">单层计算复杂度 (Complexity per Layer)</th><th align="left">串行操作步数 (Sequential Operations)</th><th align="left">最大路径长度 (Maximum Path Length)</th></tr></thead><tbody><tr><td align="left"><strong>自注意力 (Self-Attention)</strong></td><td align="left">O(n^2 · d)</td><td align="left">O(1)</td><td align="left">O(1)</td></tr><tr><td align="left"><strong>循环层 (Recurrent)</strong></td><td align="left">O(n · d^2)</td><td align="left">O(n)</td><td align="left">O(n)</td></tr><tr><td align="left"><strong>卷积层 (Convolutional)</strong></td><td align="left">O(k · n · d^2)</td><td align="left">O(1)</td><td align="left">连续卷积 O(n/k)，扩张卷积 O(log_k n)</td></tr></tbody></table></div>
+<p>从表中可以看到两项理论优势：</p>
+<ol>
+<li><strong>最大路径长度为 O(1)</strong>：循环网络在两点间传递信息需要 O(n) 步，核宽度为 k 的连续卷积需要 O(n/k) 层、扩张卷积需要 O(log_k n) 层，而自注意力在单层内即可让任意两个位置直接交互，缩短了长程依赖的信号传递路径。</li>
+<li><strong>串行步数为 O(1)</strong>：自注意力计算不依赖时序递归，各位置操作可直接向量化并行。</li>
+</ol>
+<p>但在单层复杂度上，自注意力是 O(n^2 · d)，而循环层是 O(n · d^2)。</p>
+<p>论文指出：当序列长度 n 小于表征维度 d 时，自注意力层在每层理论操作数上少于循环层。然而，理论渐近复杂度并不直接等同于工程实际中的执行时间或显存开销。标准全注意力需要实例化并计算一个 n × n 的注意力权重矩阵，其实际运行成本与表征维度 d 的具体取值、底层矩阵算子实现、显存访问瓶颈以及硬件架构密切相关。全量自注意力关于序列长度 n 的二次方复杂度，使其在长序列扩展时面临显著的算力与存储代价，并不能无条件概括为在任何场景下都更轻量或更高效。</p>
+<h2 id="总结">总结</h2>
+<p>《Attention Is All You Need》的关键突破，在于证实了仅依靠注意力机制与前馈网络的协同，即可建立高质量的序列全局依赖。它通过 Q、K、V 线性投影解耦功能角色，通过除以 sqrt(d_k) 稳定点积分布，通过多头机制拓宽表征子空间，并通过位置编码补充了词序信息。</p>
+<p>然而，注意力机制本身并不产生输入向量——在这些矩阵运算发生之前，文本必须先被转化为离散的符号与数值向量。分词器如何切分词项、嵌入层如何为符号赋予连续空间表示，构成了 Transformer 消化语言的第一道关卡。</p>
+<hr>
+<h2 id="参考资料">参考资料</h2>
+<ol>
+  <li>
+    Vaswani, A., Shazeer, N., Parmar, N., Uszkoreit, J., Jones, L., Gomez, A. N., Kaiser, Ł., &#x26; Polosukhin, I. (2017). <i>Attention Is All You Need</i>. arXiv:1706.03762v5 [cs.CL].
+    <br>
+    首次提交日期：2017-06-12；本篇依据版本：2017-12-06 (arXiv:1706.03762v5).
+    <br>
+    原文链接：<a id="ref-vaswani-2017" href="https://arxiv.org/abs/1706.03762v5" target="_blank" rel="noopener noreferrer">https://arxiv.org/abs/1706.03762v5</a>
+  </li>
+  <li>
+    Brown, T. B., Mann, B., Ryder, N., Subbiah, M., Kaplan, J., Dhariwal, P., Neelakantan, A., Shyam, P., Sastry, G., Askell, A., Agarwal, S., Herbert-Voss, A., Krueger, G., Henighan, T., Child, R., Ramesh, A., Ziegler, D. M., Wu, J., Winter, C., Hesse, C., Chen, M., Sigler, E., Litwin, M., Gray, S., Chess, B., Clark, J., Berner, C., McCandlish, S., Radford, A., Sutskever, I., &#x26; Amodei, D. (2020). <i>Language Models are Few-Shot Learners</i>. arXiv:2005.14165v4 [cs.CL].
+    <br>
+    首次提交日期：2020-05-28；本篇依据版本：2020-07-22 (arXiv:2005.14165v4).
+    <br>
+    原文链接：<a id="ref-brown-2020" href="https://arxiv.org/abs/2005.14165v4" target="_blank" rel="noopener noreferrer">https://arxiv.org/abs/2005.14165v4</a>
+  </li>
+</ol></article><hr class="my-8 border-dashed"><div id="btt-btn-container" class="fixed inset-e-4 bottom-8 z-50 md:sticky md:inset-e-auto md:float-end md:me-1 translate-y-14 opacity-0 transition duration-500"><button data-button="back-to-top" class="group bg-background relative px-2 py-1 size-14 rounded-full shadow-xl md:h-8 md:w-fit md:rounded-md md:shadow-none md:focus-visible:rounded-none md:bg-background/35 md:bg-clip-padding md:backdrop-blur-lg"><span id="progress-indicator" class="absolute inset-0 -z-10 block size-14 scale-110 rounded-full bg-transparent md:hidden md:h-8 md:rounded-md"></span><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="inline-block rotate-90 md:hidden" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M5 12h14M5 12l6 6M5 12l6-6" /></svg><span class="group-hover:text-accent sr-only text-sm md:not-sr-only"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="inline-block size-4" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M12 5v14M16 9l-4-4M8 9l4-4" /></svg> 回到顶部</span></button></div><script data-astro-rerun>
+  function backToTop() {
+    const rootElement = document.documentElement;
+    const btnContainer = document.querySelector("#btt-btn-container");
+    const backToTopBtn = document.querySelector("[data-button='back-to-top']");
+    const progressIndicator = document.querySelector("#progress-indicator");
+
+    if (!rootElement || !btnContainer || !backToTopBtn || !progressIndicator)
+      return;
+
+    backToTopBtn.addEventListener("click", () => {
+      document.body.scrollTop = 0;
+      document.documentElement.scrollTop = 0;
+    });
+
+    let lastVisible = null;
+    function handleScroll() {
+      const scrollTotal = rootElement.scrollHeight - rootElement.clientHeight;
+      const scrollTop = rootElement.scrollTop;
+      const scrollPercent = Math.floor((scrollTop / scrollTotal) * 100);
+
+      progressIndicator.style.setProperty(
+        "background-image",
+        `conic-gradient(var(--accent), var(--accent) ${scrollPercent}%, transparent ${scrollPercent}%)`
+      );
+
+      const isVisible = scrollTop / scrollTotal > 0.3;
+
+      if (isVisible !== lastVisible) {
+        btnContainer.classList.toggle("opacity-100", isVisible);
+        btnContainer.classList.toggle("translate-y-0", isVisible);
+        btnContainer.classList.toggle("opacity-0", !isVisible);
+        btnContainer.classList.toggle("translate-y-14", !isVisible);
+        lastVisible = isVisible;
+      }
+    }
+
+    let ticking = false;
+    document.addEventListener("scroll", () => {
+      if (!ticking) {
+        window.requestAnimationFrame(() => {
+          handleScroll();
+          ticking = false;
+        });
+        ticking = true;
+      }
+    });
+  }
+  backToTop();
+</script><ul class="mt-4 mb-8 flex flex-wrap gap-4 sm:my-8"><li><a data-astro-transition-scope="astro-bztu2lml-1" href="/tags/ai/" class="flex items-center gap-0.5 border-foreground border-b-2 border-dashed hover:border-accent hover:text-accent hover:-mt-0.5 focus-visible:text-accent focus-visible:border-none text-sm"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="opacity-80 size-4" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M5 9h14M5 15h14M11 4 7 20M17 4l-4 16" /></svg>AI</a></li><li><a data-astro-transition-scope="astro-bztu2lml-2" href="/tags/transformer/" class="flex items-center gap-0.5 border-foreground border-b-2 border-dashed hover:border-accent hover:text-accent hover:-mt-0.5 focus-visible:text-accent focus-visible:border-none text-sm"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="opacity-80 size-4" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M5 9h14M5 15h14M11 4 7 20M17 4l-4 16" /></svg>Transformer</a></li><li><a data-astro-transition-scope="astro-bztu2lml-3" href="/tags/attention/" class="flex items-center gap-0.5 border-foreground border-b-2 border-dashed hover:border-accent hover:text-accent hover:-mt-0.5 focus-visible:text-accent focus-visible:border-none text-sm"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="opacity-80 size-4" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M5 9h14M5 15h14M11 4 7 20M17 4l-4 16" /></svg>Attention</a></li></ul><hr class="my-8 border-dashed"><div data-pagefind-ignore class="my-8 grid grid-cols-1 gap-6 sm:grid-cols-2"><a href="/posts/trust-store-configuration/" class="flex w-full gap-1 hover:opacity-75"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="inline-block flex-none rtl:rotate-180" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M5 12h14M5 12l6 6M5 12l6-6" /></svg><div><span>上一篇</span><div class="text-accent/85 text-sm">浏览器能访问，Java 却报证书错误？——Java、Linux、Windows 与 macOS 信任库配置</div></div></a></div></main><footer class="app-layout mt-auto"><div class="border-border flex flex-col items-center justify-between border-t py-6 sm:flex-row-reverse sm:py-4"><div class="flex flex-wrap items-center gap-1"><a href="https://github.com/SaromChars" title="Sarom Chars 的 GitHub" class="group inline-flex items-center gap-1 hover:text-accent p-2 hover:rotate-6 sm:p-1"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="inline-block size-6 scale-125 fill-transparent stroke-current stroke-2 opacity-90 group-hover:fill-transparent sm:scale-110" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M9 19c-4.3 1.4-4.3-2.5-6-3m12 5v-3.5c0-1 .1-1.4-.5-2 2.8-.3 5.5-1.4 5.5-6a4.6 4.6 0 0 0-1.3-3.2 4.2 4.2 0 0 0-.1-3.2s-1.1-.3-3.5 1.3a12.3 12.3 0 0 0-6.2 0C6.5 2.8 5.4 3.1 5.4 3.1a4.2 4.2 0 0 0-.1 3.2A4.6 4.6 0 0 0 4 9.5c0 4.6 2.7 5.7 5.5 6-.6.6-.6 1.2-.5 2V21" /></svg><span class="sr-only">Sarom Chars 的 GitHub</span></a></div><div class="my-2 flex flex-col items-center whitespace-nowrap sm:flex-row"><span>版权 &#169; 2026</span><span class="hidden sm:inline">&nbsp;|&nbsp;</span><span>保留所有权利。</span></div></div></footer><script type="module">var e=`theme`,t=`light`,n=`dark`;function r(){return localStorage.getItem(e)||(window.matchMedia(`(prefers-color-scheme: dark)`).matches?n:t)}var i=window.__theme?.value??r();function a(){localStorage.setItem(e,i),o()}function o(){let e=document.firstElementChild;e?.setAttribute(`data-theme`,i),e?.classList.toggle(`dark`,i===n),document.querySelector(`#theme-btn`)?.setAttribute(`aria-label`,i);let t=window.getComputedStyle(document.body).backgroundColor;document.querySelector(`meta[name='theme-color']`)?.setAttribute(`content`,t)}function s(){o(),document.querySelector(`#theme-btn`)?.addEventListener(`click`,()=>{i=i===t?n:t,a()})}s(),document.addEventListener(`astro:after-swap`,s),document.addEventListener(`astro:before-swap`,e=>{let t=document.querySelector(`meta[name='theme-color']`)?.getAttribute(`content`);t&&e.newDocument.querySelector(`meta[name='theme-color']`)?.setAttribute(`content`,t)}),window.matchMedia(`(prefers-color-scheme: dark)`).addEventListener(`change`,({matches:e})=>{i=e?n:t,a()});</script></body></html><script type="module">var e=document.querySelector(`#article`);if(e?.querySelector(`a[href^="#ref-"]`)){let t=null,n=!1,r=document.createElement(`button`);r.type=`button`,r.className=`citation-return`,r.textContent=`返回阅读位置`,r.setAttribute(`data-pagefind-ignore`,``),e.addEventListener(`click`,n=>{if(n.button!==0||n.metaKey||n.ctrlKey||n.shiftKey||n.altKey)return;let i=n.target instanceof Element?n.target.closest(`a[href^="#ref-"]`):null;if(!i||!e.contains(i))return;let a=i.hash,o=document.getElementById(decodeURIComponent(a.slice(1)));o&&e.contains(o)&&(t={source:i,url:window.location.href,top:window.scrollY,left:window.scrollX,targetHash:a},o.insertAdjacentElement(`afterend`,r))}),r.addEventListener(`click`,()=>{if(!t||n)return;let e=t,i=i=>{r.remove(),window.requestAnimationFrame(()=>{window.requestAnimationFrame(()=>{e.source.focus({preventScroll:!0}),window.scrollTo({top:e.top,left:e.left,behavior:`instant`}),t=null,n=!1,i?.()})})};window.location.href===e.url?i():(n=!0,window.addEventListener(`popstate`,()=>{let e=window.history.scrollRestoration;window.history.scrollRestoration=`manual`,window.setTimeout(()=>{i(()=>{window.history.scrollRestoration=e})},0)},{once:!0}),window.history.back())}),window.addEventListener(`hashchange`,()=>{!n&&t&&window.location.hash!==t.targetHash&&(r.remove(),t=null)})}</script><script data-astro-rerun>
+  function createProgressBar() {
+    const progressContainer = document.createElement("div");
+    progressContainer.className =
+      "progress-container fixed top-0 z-10 h-1 w-full bg-background";
+
+    const progressBar = document.createElement("div");
+    progressBar.className = "progress-bar h-1 w-0 bg-accent";
+    progressBar.id = "myBar";
+
+    progressContainer.appendChild(progressBar);
+    document.body.appendChild(progressContainer);
+  }
+  createProgressBar();
+
+  function updateScrollProgress() {
+    document.addEventListener("scroll", () => {
+      const winScroll =
+        document.body.scrollTop || document.documentElement.scrollTop;
+      const height =
+        document.documentElement.scrollHeight -
+        document.documentElement.clientHeight;
+      const scrolled = (winScroll / height) * 100;
+      if (document) {
+        const myBar = document.getElementById("myBar");
+        if (myBar) {
+          myBar.style.width = scrolled + "%";
+        }
+      }
+    });
+  }
+  updateScrollProgress();
+
+  function addHeadingLinks() {
+    const headings = Array.from(
+      document.querySelectorAll("h2, h3, h4, h5, h6")
+    );
+    for (const heading of headings) {
+      heading.classList.add("group");
+      const link = document.createElement("a");
+      link.className =
+        "heading-link ms-2 no-underline opacity-75 md:opacity-0 md:group-hover:opacity-100 md:focus:opacity-100";
+      link.href = "#" + heading.id;
+
+      const span = document.createElement("span");
+      span.ariaHidden = "true";
+      span.innerText = "#";
+      link.appendChild(span);
+      heading.appendChild(link);
+    }
+  }
+  addHeadingLinks();
+
+  function attachCopyButtons() {
+    const copyButtonLabel = "Copy";
+    const codeBlocks = Array.from(document.querySelectorAll("pre"));
+
+    for (const codeBlock of codeBlocks) {
+      const wrapper = document.createElement("div");
+      wrapper.style.position = "relative";
+
+      const computedStyle = getComputedStyle(codeBlock);
+      const hasFileNameOffset =
+        computedStyle.getPropertyValue("--file-name-offset").trim() !== "";
+
+      const topClass = hasFileNameOffset
+        ? "top-(--file-name-offset)"
+        : "-top-3";
+
+      const copyButton = document.createElement("button");
+      copyButton.className = `copy-code absolute end-3 ${topClass} rounded bg-muted border border-muted px-2 py-1 text-xs leading-4 text-foreground font-medium`;
+      copyButton.innerHTML = copyButtonLabel;
+      codeBlock.setAttribute("tabindex", "0");
+      codeBlock.appendChild(copyButton);
+
+      codeBlock?.parentNode?.insertBefore(wrapper, codeBlock);
+      wrapper.appendChild(codeBlock);
+
+      copyButton.addEventListener("click", async () => {
+        await copyCode(codeBlock, copyButton);
+      });
+    }
+
+    async function copyCode(block, button) {
+      const code = block.querySelector("code");
+      const text = code?.innerText;
+
+      await navigator.clipboard.writeText(text ?? "");
+
+      button.innerText = "Copied";
+
+      setTimeout(() => {
+        button.innerText = copyButtonLabel;
+      }, 700);
+    }
+  }
+  attachCopyButtons();
+
+  /** Accessible image lightbox for article images. */
+  function initLightbox() {
+    const article = document.getElementById("article");
+    if (!article) return;
+
+    const prefersReducedMotion = () =>
+      window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+    let overlay = null;
+    let lastFocused = null;
+    let removeDragListeners = null;
+
+    // Defer attribute mutations so they don't push the LCP timestamp.
+    // Event listeners below use delegation and don't need the attributes to exist yet.
+    requestAnimationFrame(() => {
+      const images = Array.from(article.querySelectorAll("img"));
+      for (const image of images) {
+        if (image.closest("a")) continue;
+        image.setAttribute("role", "button");
+        image.setAttribute("tabindex", "0");
+        image.setAttribute("aria-haspopup", "dialog");
+        image.setAttribute(
+          "aria-label",
+          image.alt ? `Zoom image: ${image.alt}` : "Zoom image"
+        );
+      }
+    });
+
+    function open(src, alt, trigger) {
+      if (overlay) return;
+      lastFocused = trigger ?? document.activeElement;
+
+      overlay = document.createElement("div");
+      overlay.setAttribute("role", "dialog");
+      overlay.setAttribute("aria-modal", "true");
+      overlay.setAttribute(
+        "aria-label",
+        alt ? `Image preview: ${alt}` : "Image preview"
+      );
+      overlay.className =
+        "fixed inset-0 z-50 flex cursor-zoom-out items-center justify-center bg-black/70 backdrop-blur-sm opacity-0 transition-opacity duration-200 motion-reduce:transition-none";
+
+      const closeButton = document.createElement("button");
+      closeButton.type = "button";
+      closeButton.setAttribute("aria-label", "Close image preview");
+      closeButton.className =
+        "absolute end-4 top-4 z-1 flex size-11 items-center justify-center rounded bg-black/50 text-3xl leading-none text-white";
+      closeButton.innerHTML = "&#10005;";
+      closeButton.addEventListener("click", close);
+
+      const image = document.createElement("img");
+      image.src = src;
+      image.alt = "";
+      image.className =
+        "max-h-[90dvh] max-w-[90dvw] cursor-default object-contain transition-transform duration-100 ease-out motion-reduce:transition-none data-[zoom=drag]:cursor-grabbing data-[zoom=drag]:transition-none data-[zoom=in]:cursor-grab";
+
+      overlay.append(closeButton, image);
+      overlay.addEventListener("click", e => {
+        if (e.target === overlay && currentScale <= 1) close();
+      });
+
+      let currentScale = 1;
+      let translateX = 0;
+      let translateY = 0;
+      let initialDist = 0;
+      let initialScale = 1;
+      let panStartX = 0;
+      let panStartY = 0;
+      let panStartTranslateX = 0;
+      let panStartTranslateY = 0;
+      let lastTapTime = 0;
+
+      function applyTransform() {
+        image.style.transform = `scale(${currentScale}) translate(${translateX}px, ${translateY}px)`;
+        // A backdrop click only closes at fit size, so drop the zoom-out cursor while zoomed.
+        overlay?.classList.toggle("cursor-zoom-out", currentScale <= 1);
+      }
+
+      function resetTransform() {
+        currentScale = 1;
+        translateX = 0;
+        translateY = 0;
+        image.style.transform = "";
+        image.removeAttribute("data-zoom");
+        overlay?.classList.add("cursor-zoom-out");
+      }
+
+      // Keep the zoomed image from being panned past its edges.
+      function clampTranslate() {
+        if (!overlay) return;
+        const maxX = Math.max(
+          0,
+          (image.clientWidth - overlay.clientWidth / currentScale) / 2
+        );
+        const maxY = Math.max(
+          0,
+          (image.clientHeight - overlay.clientHeight / currentScale) / 2
+        );
+        translateX = Math.min(maxX, Math.max(-maxX, translateX));
+        translateY = Math.min(maxY, Math.max(-maxY, translateY));
+      }
+
+      overlay.addEventListener(
+        "touchstart",
+        e => {
+          const t = e.touches;
+          if (t.length === 2) {
+            image.setAttribute("data-zoom", "drag");
+            initialDist = Math.hypot(
+              t[1].clientX - t[0].clientX,
+              t[1].clientY - t[0].clientY
+            );
+            initialScale = currentScale;
+          } else if (t.length === 1) {
+            const now = Date.now();
+            if (now - lastTapTime < 300) {
+              e.preventDefault();
+              if (currentScale > 1) {
+                resetTransform();
+              } else {
+                currentScale = 2;
+                translateX = 0;
+                translateY = 0;
+                applyTransform();
+                image.setAttribute("data-zoom", "in");
+              }
+              lastTapTime = 0;
+              panStartX = t[0].clientX;
+              panStartY = t[0].clientY;
+              panStartTranslateX = translateX;
+              panStartTranslateY = translateY;
+            } else {
+              lastTapTime = now;
+              if (currentScale > 1) {
+                image.setAttribute("data-zoom", "drag");
+                panStartX = t[0].clientX;
+                panStartY = t[0].clientY;
+                panStartTranslateX = translateX;
+                panStartTranslateY = translateY;
+              }
+            }
+          }
+        },
+        { passive: false }
+      );
+
+      overlay.addEventListener(
+        "touchmove",
+        e => {
+          const t = e.touches;
+          if (t.length === 2) {
+            e.preventDefault();
+            const dist = Math.hypot(
+              t[1].clientX - t[0].clientX,
+              t[1].clientY - t[0].clientY
+            );
+            const oldScale = currentScale;
+            currentScale = Math.min(
+              4,
+              Math.max(1, initialScale * (dist / initialDist))
+            );
+
+            // Zoom to the geometric center of the two fingers
+            const midX = (t[0].clientX + t[1].clientX) / 2;
+            const midY = (t[0].clientY + t[1].clientY) / 2;
+            const ox = overlay.clientWidth / 2;
+            const oy = overlay.clientHeight / 2;
+            translateX =
+              (midX - ox) * (1 / currentScale - 1 / oldScale) + translateX;
+            translateY =
+              (midY - oy) * (1 / currentScale - 1 / oldScale) + translateY;
+            clampTranslate();
+            applyTransform();
+          } else if (t.length === 1) {
+            if (currentScale > 1) {
+              e.preventDefault();
+              image.setAttribute("data-zoom", "drag");
+              translateX =
+                panStartTranslateX + (t[0].clientX - panStartX) / currentScale;
+              translateY =
+                panStartTranslateY + (t[0].clientY - panStartY) / currentScale;
+              clampTranslate();
+              applyTransform();
+            } else {
+              e.preventDefault();
+            }
+          }
+        },
+        { passive: false }
+      );
+
+      overlay.addEventListener("touchend", e => {
+        if (e.touches.length === 0) {
+          if (currentScale > 1) {
+            image.setAttribute("data-zoom", "in");
+          } else {
+            image.removeAttribute("data-zoom");
+          }
+          if (currentScale <= 1.05) resetTransform();
+        }
+      });
+
+      overlay.addEventListener("touchcancel", e => {
+        if (e.touches.length === 0) {
+          if (currentScale > 1) {
+            image.setAttribute("data-zoom", "in");
+          } else {
+            image.removeAttribute("data-zoom");
+          }
+          if (currentScale <= 1.05) resetTransform();
+        }
+      });
+
+      overlay.addEventListener(
+        "wheel",
+        e => {
+          e.preventDefault();
+          const oldScale = currentScale;
+          const delta = -e.deltaY * 0.001;
+          currentScale = Math.min(4, Math.max(1, currentScale * (1 + delta)));
+
+          if (currentScale <= 1.05) {
+            resetTransform();
+          } else {
+            image.setAttribute("data-zoom", "in");
+            // Zoom to cursor: adjust translate so the point under cursor stays fixed
+            const ox = overlay.clientWidth / 2;
+            const oy = overlay.clientHeight / 2;
+            translateX =
+              (e.clientX - ox) * (1 / currentScale - 1 / oldScale) + translateX;
+            translateY =
+              (e.clientY - oy) * (1 / currentScale - 1 / oldScale) + translateY;
+            clampTranslate();
+            applyTransform();
+          }
+        },
+        { passive: false }
+      );
+
+      let isMouseDown = false;
+      let mouseStartX = 0;
+      let mouseStartY = 0;
+
+      overlay.addEventListener("mousedown", e => {
+        if (e.button !== 0 || currentScale <= 1) return;
+        if (e.target.closest("button")) return;
+        isMouseDown = true;
+        mouseStartX = e.clientX;
+        mouseStartY = e.clientY;
+        panStartTranslateX = translateX;
+        panStartTranslateY = translateY;
+        image.setAttribute("data-zoom", "drag");
+        e.preventDefault();
+      });
+
+      function onMouseMove(e) {
+        if (!isMouseDown || !overlay) return;
+        translateX =
+          panStartTranslateX + (e.clientX - mouseStartX) / currentScale;
+        translateY =
+          panStartTranslateY + (e.clientY - mouseStartY) / currentScale;
+        clampTranslate();
+        applyTransform();
+      }
+
+      function onMouseUp() {
+        if (!isMouseDown) return;
+        isMouseDown = false;
+        if (currentScale > 1) {
+          image.setAttribute("data-zoom", "in");
+        } else {
+          image.removeAttribute("data-zoom");
+        }
+      }
+
+      document.addEventListener("mousemove", onMouseMove);
+      document.addEventListener("mouseup", onMouseUp);
+      removeDragListeners = () => {
+        document.removeEventListener("mousemove", onMouseMove);
+        document.removeEventListener("mouseup", onMouseUp);
+      };
+
+      document.body.appendChild(overlay);
+      document.documentElement.style.overflow = "hidden";
+      document.addEventListener("keydown", onKeyDown);
+      window.__closeLightbox = close;
+
+      requestAnimationFrame(() => overlay?.classList.add("opacity-100"));
+      closeButton.focus();
+    }
+
+    function close() {
+      if (!overlay) return;
+      const el = overlay;
+      overlay = null;
+      el.classList.add("pointer-events-none");
+      window.__closeLightbox = null;
+
+      document.removeEventListener("keydown", onKeyDown);
+      removeDragListeners?.();
+      removeDragListeners = null;
+      document.documentElement.style.overflow = "";
+      lastFocused?.focus();
+      lastFocused = null;
+
+      if (prefersReducedMotion()) {
+        el.remove();
+        return;
+      }
+      const remove = () => el.remove();
+      el.addEventListener("transitionend", remove, { once: true });
+      setTimeout(remove, 250); // fallback in case transitionend never fires
+      el.classList.remove("opacity-100");
+    }
+
+    function onKeyDown(e) {
+      if (e.key === "Escape") {
+        close();
+      } else if (e.key === "Tab") {
+        trapFocus(e);
+      }
+    }
+
+    // Keep keyboard focus inside the open dialog.
+    function trapFocus(e) {
+      if (!overlay) return;
+      const focusables = overlay.querySelectorAll(
+        'a[href], button, [tabindex]:not([tabindex="-1"])'
+      );
+      if (focusables.length === 0) return;
+      const first = focusables[0];
+      const last = focusables[focusables.length - 1];
+      if (e.shiftKey && document.activeElement === first) {
+        e.preventDefault();
+        last.focus();
+      } else if (!e.shiftKey && document.activeElement === last) {
+        e.preventDefault();
+        first.focus();
+      }
+    }
+
+    function triggerFromEvent(e) {
+      const image = e.target.closest("img");
+      if (!image || !article.contains(image) || image.closest("a")) return null;
+      return image;
+    }
+
+    function activate(image) {
+      open(image.currentSrc || image.src, image.alt, image);
+    }
+
+    article.addEventListener("click", e => {
+      const image = triggerFromEvent(e);
+      if (!image) return;
+      e.preventDefault();
+      activate(image);
+    });
+
+    article.addEventListener("keydown", e => {
+      if (e.key !== "Enter" && e.key !== " " && e.key !== "Spacebar") return;
+      const image = triggerFromEvent(e);
+      if (!image) return;
+      e.preventDefault();
+      activate(image);
+    });
+  }
+  initLightbox();
+
+  if (!window.__lightboxSwapBound) {
+    window.__lightboxSwapBound = true;
+    document.addEventListener("astro:before-swap", () =>
+      window.__closeLightbox?.()
+    );
+  }
+
+  document.addEventListener("astro:after-swap", () =>
+    window.scrollTo({ left: 0, top: 0, behavior: "instant" })
+  );
+</script>
