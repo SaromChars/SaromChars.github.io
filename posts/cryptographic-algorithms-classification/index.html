@@ -1,0 +1,998 @@
+<!DOCTYPE html><html dir="ltr" lang="zh-CN" class="overflow-y-scroll scroll-smooth"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1"><link rel="icon" type="image/png" href="/images/favicon-32x32-next.png"><link rel="icon" href="/favicon.ico"><link rel="canonical" href="https://www.saromchars.tech/posts/cryptographic-algorithms-classification/"><meta name="generator" content="Astro v7.4.5"><!-- Primary meta --><title>密码算法分类笔记：加密、哈希、签名与密钥协商 | Sarom&#39;s Blog</title><meta name="title" content="密码算法分类笔记：加密、哈希、签名与密钥协商 | Sarom's Blog"><meta name="description" content="把零散的密码学算法按功能与维度梳理清楚：保密、摘要、消息认证、签名、密钥协商与密钥派生各自解决什么问题，常见算法如何分工协作。"><meta name="author" content="Sarom Chars"><link rel="sitemap" href="/sitemap-index.xml"><!-- Open Graph --><meta property="og:type" content="article"><meta property="og:site_name" content="Sarom's Blog"><meta property="og:title" content="密码算法分类笔记：加密、哈希、签名与密钥协商 | Sarom's Blog"><meta property="og:description" content="把零散的密码学算法按功能与维度梳理清楚：保密、摘要、消息认证、签名、密钥协商与密钥派生各自解决什么问题，常见算法如何分工协作。"><meta property="og:url" content="https://www.saromchars.tech/posts/cryptographic-algorithms-classification/"><meta property="og:image" content="https://www.saromchars.tech/og.png"><!-- Twitter / X --><meta property="twitter:card" content="summary_large_image"><meta property="twitter:url" content="https://www.saromchars.tech/posts/cryptographic-algorithms-classification/"><meta property="twitter:title" content="密码算法分类笔记：加密、哈希、签名与密钥协商 | Sarom's Blog"><meta property="twitter:description" content="把零散的密码学算法按功能与维度梳理清楚：保密、摘要、消息认证、签名、密钥协商与密钥派生各自解决什么问题，常见算法如何分工协作。"><meta property="twitter:image" content="https://www.saromchars.tech/og.png"><!-- RSS autodiscovery --><link rel="alternate" type="application/rss+xml" title="Sarom's Blog" href="https://www.saromchars.tech/rss.xml"><!-- Filled at runtime by theme.ts to match the current background colour --><meta name="theme-color" content=""><!-- Extra head content injected by child layouts (e.g. JSON-LD, article meta) --><meta property="article:published_time" content="2018-08-21T02:00:00.000Z"><script type="application/ld+json">{"@context":"https://schema.org","@type":"BlogPosting","headline":"密码算法分类笔记：加密、哈希、签名与密钥协商","mainEntityOfPage":"https://www.saromchars.tech/posts/cryptographic-algorithms-classification/","datePublished":"2018-08-21T02:00:00.000Z","author":[{"@type":"Person","name":"Sarom Chars","url":"https://github.com/SaromChars"}]}</script><!--
+      Inline FOUC-prevention script: sets data-theme on <html> before
+      the browser paints. Runs synchronously, no defer/async.
+    --><script>
+      (function () {
+        const stored = localStorage.getItem("theme");
+        const prefersDark = window.matchMedia(
+          "(prefers-color-scheme: dark)"
+        ).matches;
+        const theme = stored ?? (prefersDark ? "dark" : "light");
+        const root = document.firstElementChild;
+        root?.setAttribute("data-theme", theme);
+        root?.classList.toggle("dark", theme === "dark");
+        // Expose value so theme.ts can skip re-detection.
+        window.__theme = { value: theme };
+      })();
+    </script><meta name="robots" content="index, follow"><script async src="https://www.googletagmanager.com/gtag/js?id=G-WJJJTJ4FWX"></script><script>(function(){const measurementId = "G-WJJJTJ4FWX";
+
+    window.dataLayer = window.dataLayer || [];
+    function gtag(){ window.dataLayer.push(arguments); }
+    gtag('js', new Date());
+    gtag('config', measurementId);
+  })();</script><style>@keyframes astroFadeInOut{0%{opacity:1}to{opacity:0}}@keyframes astroFadeIn{0%{opacity:0;mix-blend-mode:plus-lighter}to{opacity:1;mix-blend-mode:plus-lighter}}@keyframes astroFadeOut{0%{opacity:1;mix-blend-mode:plus-lighter}to{opacity:0;mix-blend-mode:plus-lighter}}@keyframes astroSlideFromRight{0%{transform:translate(100%)}}@keyframes astroSlideFromLeft{0%{transform:translate(-100%)}}@keyframes astroSlideToRight{to{transform:translate(100%)}}@keyframes astroSlideToLeft{to{transform:translate(-100%)}}@media (prefers-reduced-motion){::view-transition-group(*),::view-transition-old(*),::view-transition-new(*),[data-astro-transition-scope]{animation:none!important}}
+</style><link rel="stylesheet" href="/_astro/Footer.DC6qDsIp.css"><style>[data-astro-transition-scope="astro-bztu2lml-1"] { view-transition-name: \5BC6\7801\5B66; }@layer astro { ::view-transition-old(\5BC6\7801\5B66) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }::view-transition-new(\5BC6\7801\5B66) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }[data-astro-transition=back]::view-transition-old(\5BC6\7801\5B66) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition=back]::view-transition-new(\5BC6\7801\5B66) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; } }[data-astro-transition-fallback="old"] [data-astro-transition-scope="astro-bztu2lml-1"],
+			[data-astro-transition-fallback="old"][data-astro-transition-scope="astro-bztu2lml-1"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition-fallback="new"] [data-astro-transition-scope="astro-bztu2lml-1"],
+			[data-astro-transition-fallback="new"][data-astro-transition-scope="astro-bztu2lml-1"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }[data-astro-transition=back][data-astro-transition-fallback="old"] [data-astro-transition-scope="astro-bztu2lml-1"],
+			[data-astro-transition=back][data-astro-transition-fallback="old"][data-astro-transition-scope="astro-bztu2lml-1"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition=back][data-astro-transition-fallback="new"] [data-astro-transition-scope="astro-bztu2lml-1"],
+			[data-astro-transition=back][data-astro-transition-fallback="new"][data-astro-transition-scope="astro-bztu2lml-1"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }</style><style>[data-astro-transition-scope="astro-bztu2lml-2"] { view-transition-name: \52A0\5BC6\7B97\6CD5; }@layer astro { ::view-transition-old(\52A0\5BC6\7B97\6CD5) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }::view-transition-new(\52A0\5BC6\7B97\6CD5) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }[data-astro-transition=back]::view-transition-old(\52A0\5BC6\7B97\6CD5) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition=back]::view-transition-new(\52A0\5BC6\7B97\6CD5) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; } }[data-astro-transition-fallback="old"] [data-astro-transition-scope="astro-bztu2lml-2"],
+			[data-astro-transition-fallback="old"][data-astro-transition-scope="astro-bztu2lml-2"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition-fallback="new"] [data-astro-transition-scope="astro-bztu2lml-2"],
+			[data-astro-transition-fallback="new"][data-astro-transition-scope="astro-bztu2lml-2"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }[data-astro-transition=back][data-astro-transition-fallback="old"] [data-astro-transition-scope="astro-bztu2lml-2"],
+			[data-astro-transition=back][data-astro-transition-fallback="old"][data-astro-transition-scope="astro-bztu2lml-2"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition=back][data-astro-transition-fallback="new"] [data-astro-transition-scope="astro-bztu2lml-2"],
+			[data-astro-transition=back][data-astro-transition-fallback="new"][data-astro-transition-scope="astro-bztu2lml-2"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }</style><style>[data-astro-transition-scope="astro-bztu2lml-3"] { view-transition-name: \54C8\5E0C\7B97\6CD5; }@layer astro { ::view-transition-old(\54C8\5E0C\7B97\6CD5) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }::view-transition-new(\54C8\5E0C\7B97\6CD5) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }[data-astro-transition=back]::view-transition-old(\54C8\5E0C\7B97\6CD5) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition=back]::view-transition-new(\54C8\5E0C\7B97\6CD5) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; } }[data-astro-transition-fallback="old"] [data-astro-transition-scope="astro-bztu2lml-3"],
+			[data-astro-transition-fallback="old"][data-astro-transition-scope="astro-bztu2lml-3"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition-fallback="new"] [data-astro-transition-scope="astro-bztu2lml-3"],
+			[data-astro-transition-fallback="new"][data-astro-transition-scope="astro-bztu2lml-3"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }[data-astro-transition=back][data-astro-transition-fallback="old"] [data-astro-transition-scope="astro-bztu2lml-3"],
+			[data-astro-transition=back][data-astro-transition-fallback="old"][data-astro-transition-scope="astro-bztu2lml-3"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition=back][data-astro-transition-fallback="new"] [data-astro-transition-scope="astro-bztu2lml-3"],
+			[data-astro-transition=back][data-astro-transition-fallback="new"][data-astro-transition-scope="astro-bztu2lml-3"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }</style><style>[data-astro-transition-scope="astro-bztu2lml-4"] { view-transition-name: \6570\5B57\7B7E\540D; }@layer astro { ::view-transition-old(\6570\5B57\7B7E\540D) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }::view-transition-new(\6570\5B57\7B7E\540D) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }[data-astro-transition=back]::view-transition-old(\6570\5B57\7B7E\540D) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition=back]::view-transition-new(\6570\5B57\7B7E\540D) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; } }[data-astro-transition-fallback="old"] [data-astro-transition-scope="astro-bztu2lml-4"],
+			[data-astro-transition-fallback="old"][data-astro-transition-scope="astro-bztu2lml-4"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition-fallback="new"] [data-astro-transition-scope="astro-bztu2lml-4"],
+			[data-astro-transition-fallback="new"][data-astro-transition-scope="astro-bztu2lml-4"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }[data-astro-transition=back][data-astro-transition-fallback="old"] [data-astro-transition-scope="astro-bztu2lml-4"],
+			[data-astro-transition=back][data-astro-transition-fallback="old"][data-astro-transition-scope="astro-bztu2lml-4"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition=back][data-astro-transition-fallback="new"] [data-astro-transition-scope="astro-bztu2lml-4"],
+			[data-astro-transition=back][data-astro-transition-fallback="new"][data-astro-transition-scope="astro-bztu2lml-4"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }</style><style>[data-astro-transition-scope="astro-bztu2lml-5"] { view-transition-name: \5BC6\94A5\534F\5546; }@layer astro { ::view-transition-old(\5BC6\94A5\534F\5546) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }::view-transition-new(\5BC6\94A5\534F\5546) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }[data-astro-transition=back]::view-transition-old(\5BC6\94A5\534F\5546) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition=back]::view-transition-new(\5BC6\94A5\534F\5546) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; } }[data-astro-transition-fallback="old"] [data-astro-transition-scope="astro-bztu2lml-5"],
+			[data-astro-transition-fallback="old"][data-astro-transition-scope="astro-bztu2lml-5"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition-fallback="new"] [data-astro-transition-scope="astro-bztu2lml-5"],
+			[data-astro-transition-fallback="new"][data-astro-transition-scope="astro-bztu2lml-5"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }[data-astro-transition=back][data-astro-transition-fallback="old"] [data-astro-transition-scope="astro-bztu2lml-5"],
+			[data-astro-transition=back][data-astro-transition-fallback="old"][data-astro-transition-scope="astro-bztu2lml-5"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition=back][data-astro-transition-fallback="new"] [data-astro-transition-scope="astro-bztu2lml-5"],
+			[data-astro-transition=back][data-astro-transition-fallback="new"][data-astro-transition-scope="astro-bztu2lml-5"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }</style><style>[data-astro-transition-scope="astro-bztu2lml-6"] { view-transition-name: \6D88\606F\8BA4\8BC1\7801; }@layer astro { ::view-transition-old(\6D88\606F\8BA4\8BC1\7801) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }::view-transition-new(\6D88\606F\8BA4\8BC1\7801) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }[data-astro-transition=back]::view-transition-old(\6D88\606F\8BA4\8BC1\7801) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition=back]::view-transition-new(\6D88\606F\8BA4\8BC1\7801) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; } }[data-astro-transition-fallback="old"] [data-astro-transition-scope="astro-bztu2lml-6"],
+			[data-astro-transition-fallback="old"][data-astro-transition-scope="astro-bztu2lml-6"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition-fallback="new"] [data-astro-transition-scope="astro-bztu2lml-6"],
+			[data-astro-transition-fallback="new"][data-astro-transition-scope="astro-bztu2lml-6"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }[data-astro-transition=back][data-astro-transition-fallback="old"] [data-astro-transition-scope="astro-bztu2lml-6"],
+			[data-astro-transition=back][data-astro-transition-fallback="old"][data-astro-transition-scope="astro-bztu2lml-6"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition=back][data-astro-transition-fallback="new"] [data-astro-transition-scope="astro-bztu2lml-6"],
+			[data-astro-transition=back][data-astro-transition-fallback="new"][data-astro-transition-scope="astro-bztu2lml-6"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }</style></head><body class="bg-background font-app text-foreground selection:bg-accent/75 selection:text-accent-foreground flex min-h-svh flex-col"><a id="skip-to-content" href="#main-content" class="bg-background text-accent absolute inset-s-16 -top-full z-50 px-3 py-2 backdrop-blur-lg transition-all focus:top-4">跳到正文</a><header class="app-layout flex flex-col items-center justify-between sm:flex-row"><div class="border-border bg-background relative flex w-full items-baseline justify-between border-b py-4 sm:items-center sm:py-6"><a href="/" class="absolute py-1 text-xl leading-8 font-semibold whitespace-nowrap sm:static sm:my-auto sm:text-2xl sm:leading-none">Sarom&#39;s Blog</a><nav id="nav-menu" class="flex w-full flex-col items-center sm:ms-2 sm:flex-row sm:justify-end sm:space-x-4 sm:py-0"><button id="menu-btn" class="focus-outline self-end p-2 sm:hidden" aria-label="展开菜单" aria-expanded="false" aria-controls="menu-items" data-label-open="展开菜单" data-label-close="收起菜单"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="hidden" viewBox="0 0 24 24" id="close-icon"><path stroke="none" d="M0 0h24v24H0z" /><path d="M18 6 6 18M6 6l12 12" /></svg><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="icon icon-tabler icons-tabler-outline icon-tabler-menu-deep" viewBox="0 0 24 24" id="menu-icon"><path stroke="none" d="M0 0h24v24H0z" /><path d="M4 6h16M7 12h13M10 18h10" /></svg></button><ul id="menu-items" class="[&amp;&gt;li&gt;a]:hover:text-accent mt-4 hidden w-44 grid-cols-2 place-content-center gap-2 sm:mt-0 sm:flex sm:w-auto sm:gap-x-5 sm:gap-y-0 sm:[&amp;&gt;li]:h-8 [&amp;&gt;li&gt;a]:block [&amp;&gt;li&gt;a]:px-4 [&amp;&gt;li&gt;a]:py-3 [&amp;&gt;li&gt;a]:text-center [&amp;&gt;li&gt;a]:font-medium sm:[&amp;&gt;li&gt;a]:px-2 sm:[&amp;&gt;li&gt;a]:py-1"><li class="col-span-2"><a href="/posts/" class="active-nav">文章</a></li><li class="col-span-2"><a href="/tags/">标签</a></li><li class="col-span-2"><a href="/about/">关于</a></li><li class="col-span-2"><a href="/archives/" title="归档" aria-label="归档" class="group inline-flex items-center gap-1 hover:text-accent focus-outline flex size-full justify-center p-3 sm:relative sm:size-8 sm:p-0"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="hidden sm:absolute sm:top-1/2 sm:left-1/2 sm:block sm:size-6 sm:-translate-x-1/2 sm:-translate-y-1/2" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M3 6a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2 2 2 0 0 1-2 2H5a2 2 0 0 1-2-2M5 8v10a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8M10 12h4" /></svg><span class="sm:sr-only">归档</span></a></li><li class="col-span-1 flex items-center justify-center"><a href="/search/" title="搜索" aria-label="搜索" class="group inline-flex items-center gap-1 hover:text-accent focus-outline relative size-8"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="absolute top-1/2 left-1/2 size-6 -translate-x-1/2 -translate-y-1/2" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M3 10a7 7 0 1 0 14 0 7 7 0 1 0-14 0M21 21l-6-6" /></svg><span class="sr-only">搜索</span></a></li><li class="col-span-1 flex items-center justify-center"><button id="theme-btn" class="focus-outline hover:[&amp;&gt;svg]:stroke-accent relative size-12 p-4 sm:size-8" title="切换主题" aria-label="auto" aria-live="polite"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="absolute top-[50%] left-[50%] translate-[-50%] scale-100 rotate-0 transition-all dark:scale-0 dark:-rotate-90" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M12 3h.393a7.5 7.5 0 0 0 7.92 12.446A9 9 0 1 1 12 2.992z" /></svg><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="absolute top-[50%] left-[50%] translate-[-50%] scale-0 rotate-90 transition-all dark:scale-100 dark:rotate-0" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M14.828 14.828a4 4 0 1 0-5.656-5.656 4 4 0 0 0 5.656 5.656M6.343 17.657l-1.414 1.414M6.343 6.343 4.929 4.929M17.657 6.343l1.414-1.414M17.657 17.657l1.414 1.414M4 12H2M12 4V2M20 12h2M12 20v2" /></svg></button></li></ul></nav></div></header><script type="module">function e(){let e=document.querySelector(`#menu-btn`),t=document.querySelector(`#menu-items`),n=document.querySelector(`#menu-icon`),r=document.querySelector(`#close-icon`);if(!e||!t||!n||!r)return;let i=e.dataset.labelOpen??`Open menu`,a=e.dataset.labelClose??`Close menu`;e.addEventListener(`click`,()=>{let o=e.getAttribute(`aria-expanded`)===`true`;e.setAttribute(`aria-expanded`,o?`false`:`true`),e.setAttribute(`aria-label`,o?i:a),t.classList.toggle(`hidden`),t.classList.toggle(`grid`),n.classList.toggle(`hidden`),r.classList.toggle(`hidden`)})}function t(){let e=document.getElementById(`skip-to-content`);e&&e.addEventListener(`click`,e=>{if(e.defaultPrevented||e.metaKey||e.ctrlKey||e.shiftKey||e.button!==0)return;e.preventDefault();let t=document.getElementById(`main-content`);t&&(t.setAttribute(`tabindex`,`-1`),t.addEventListener(`blur`,()=>t.removeAttribute(`tabindex`),{once:!0}),t.focus(),t.scrollIntoView({behavior:`smooth`}))})}e(),document.addEventListener(`astro:after-swap`,e),t(),document.addEventListener(`astro:after-swap`,t);</script><div class="app-layout flex items-center justify-start"><a id="back-button" href="/" class="group inline-flex items-center gap-1 hover:text-accent focus-outline hover:text-foreground/75 -ms-2 mt-8 mb-2"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="inline-block size-6 rtl:rotate-180" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="m15 6-6 6 6 6" /></svg><span>返回</span></a></div><script type="module">function e(){let e=document.querySelector(`#back-button`),t=sessionStorage.getItem(`backUrl`);t&&e&&(e.href=t)}document.addEventListener(`astro:page-load`,e),e();</script><main id="main-content" class="app-layout" data-pagefind-body><h1 style="view-transition-name:cryptographic-algorithms-classification" class="text-accent inline-block text-2xl font-bold sm:text-3xl">密码算法分类笔记：加密、哈希、签名与密钥协商</h1><div class="my-2 flex items-center gap-2"><div class="text-muted-foreground flex items-center gap-x-2"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="inline-block size-6 min-w-5.5" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M4 7a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2zM16 3v4M8 3v4M4 11h16M7 14h.013M10.01 14h.005M13.01 14h.005M16.015 14h.005M13.015 17h.005M7.01 17h.005M10.01 17h.005" /></svg><time class="text-sm sm:text-base" datetime="2018-08-21T02:00:00.000Z">2018年8月21日</time></div><span aria-hidden="true" class="text-muted-foreground max-sm:hidden hidden">|</span></div><article id="article" class="mt-8 w-full app-prose max-w-app prose-pre:bg-(--shiki-light-bg) dark:prose-pre:bg-(--shiki-dark-bg)"><p>在梳理 <a href="/posts/tls-history/">TLS 历史版本与握手流程</a> 以及 <a href="/posts/gm-dual-certificates/">国密双证书体系</a> 时，经常会遇到一长串算法名称：AES、RSA、ECDSA、ECDH、SHA-256、HMAC、ChaCha20、Poly1305、SM2、SM3、SM4。如果把它们混在一个清单里，容易产生困惑：为什么有的地方说 RSA 既能加密又能签名，有的地方又说签名绝对不能叫加密？为什么 SHA-256 不能用来保护传输内容的保密性，算出的哈希值发给对方又为什么不能直接防止篡改？</p>
+<p>密码算法不是按单个“强度榜单”排列的，它们是为解决不同的通信与安全目标而设计的工具。把零散算法放回各自解决的核心问题中，才能看清它们的分工与组合方式。</p>
+<h2 id="两个交织的分类维度">两个交织的分类维度</h2>
+<p>梳理密码算法时，最容易引起混淆的是把不同维度的划分混在同一棵树里。工程中常见的分类维度有两个：</p>
+<ol>
+<li><strong>按密码学功能划分</strong>：即该机制究竟要解决通信中的什么问题——是防偷看的<strong>保密性</strong>（对称加密与公钥加密），防损坏的<strong>单向摘要</strong>，有共享密钥的<strong>数据来源认证（MAC）</strong>，公开可核验且抗抵赖的<strong>数字签名</strong>，在公开信道上生成共识秘密的<strong>密钥协商</strong>，还是把主秘密化整为零的<strong>密钥派生（KDF）</strong>。</li>
+<li><strong>按密钥结构与对称性划分</strong>：参与运算的各方使用的是<strong>相同（或可轻易互推）的秘密密钥</strong>，还是数学上成对出现、职责分离的<strong>公钥与私钥</strong>。</li>
+</ol>
+<p>这两个维度是正交交织的，不能把它们生硬地嵌套。比如，“哈希算法”本身不需要密钥，它既不是对称加密，也不是非对称加密，硬把它塞进“非对称算法”分支是概念错位；同样，“公钥密码”是一个技术家族，其数学体系可以用来构造公钥加密方案、数字签名方案或密钥协商协议，但不能把这三者统称为“公钥加密”。</p>
+<p>下表将常见算法按核心功能与代表方案进行归纳：</p>
+<div class="table-wrapper" tabindex="0">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<table><thead><tr><th align="left">功能类别</th><th align="left">核心解决的问题</th><th align="left">代表算法 / 常见方案</th><th align="left">常见认知误区</th></tr></thead><tbody><tr><td align="left"><strong>对称加密</strong></td><td align="left">双方持有共享密钥，防止窃听，保证机密性</td><td align="left">分组密码：AES、SM4、3DES（旧）<br>流密码：ChaCha20、RC4（旧）</td><td align="left">误以为只要用了 AES 就自然安全，忽略了工作模式、IV/nonce 唯一性与缺少完整性保护的风险；DES/RC4 等旧算法列入仅作历史识别，不代表推荐</td></tr><tr><td align="left"><strong>公钥加密</strong></td><td align="left">发送方用接收方公钥加密，仅接收方私钥可解密，保证机密性</td><td align="left">RSAES-OAEP、SM2 公钥加密</td><td align="left">误以为公钥可以直接加密海量业务数据；误以为公钥体系中加密与签名是一回事</td></tr><tr><td align="left"><strong>密码哈希（摘要）</strong></td><td align="left">将任意长度数据映射为定长摘要，以抗碰撞性与单向性为设计目标</td><td align="left">SHA-2（SHA-256/512）、SHA-3、SM3、MD5（旧）、SHA-1（旧）</td><td align="left">误称为“不可逆加密”；误以为只要附带了哈希值就能防篡改（攻击者可将内容与哈希一同替换）；历史算法列入仅作识别，不作选型推荐</td></tr><tr><td align="left"><strong>消息认证码（MAC）</strong></td><td align="left">双方持有共享密钥，验证消息完整性与确实来自持有共享密钥的一方</td><td align="left">HMAC（如 HMAC-SHA-256）、AES-CMAC、Poly1305</td><td align="left">误以为 MAC 可以向第三方证明来源（持有共享密钥的双方均可计算 MAC，不能充当抗抵赖签名）</td></tr><tr><td align="left"><strong>认证加密（AEAD）</strong></td><td align="left">同时提供密文保密性与明文关联数据认证，结合加密与认证</td><td align="left">AES-GCM、ChaCha20-Poly1305、AES-CCM</td><td align="left">误以为关联数据（AAD）也会被加密隐蔽；误以为认证成功就证明了现实实体身份</td></tr><tr><td align="left"><strong>数字签名</strong></td><td align="left">私钥持有者签署，公钥持有者均可核验，防伪造与抗抵赖</td><td align="left">RSA-PSS、ECDSA、Ed25519、SM2 签名、DSA</td><td align="left">误解为“公钥加密的反向操作”（用私钥加密）；误以为签名本身能保护数据内容不被读取</td></tr><tr><td align="left"><strong>密钥协商</strong></td><td align="left">双方在公开信道中通过交换公钥参数计算出相同的共享秘密</td><td align="left">DH、ECDH、X25519、SM2 密钥交换</td><td align="left">误以为协商出的共享秘密能直接当作传输密钥使用；误以为单独的协商能抵抗中间人攻击</td></tr><tr><td align="left"><strong>密钥派生（KDF）</strong></td><td align="left">从高熵主密钥或低熵口令派生出用途分离的独立工作密钥材料</td><td align="left">伪随机提取-扩展：HKDF<br>口令慢哈希：PBKDF2、scrypt</td><td align="left">误以为慢 KDF 能凭空增加口令本身的熵；误用快速哈希或 HKDF 去派生或校验低熵用户口令</td></tr></tbody></table></div>
+<hr>
+<h2 id="对称密码分组密码与流密码">对称密码：分组密码与流密码</h2>
+<p>对称密码的特点是加解密双方使用相同的秘密密钥（或由同一主密钥直接推导出的对等密钥）。按处理明文的数据流形态，通常分为<strong>分组密码（Block Cipher）<strong>与</strong>流密码（Stream Cipher）</strong>。</p>
+<h3 id="分组密码不是完整的消息加密方案">分组密码不是完整的消息加密方案</h3>
+<p>分组密码以固定长度的“块”（Block）为单位进行变换。例如，AES（Rijndael）的固定块大小为 128 位（16 字节），支持 128、192、256 位密钥长度<a href="#ref-fips197">FIPS 197 §1</a>；SM4 的块大小同样为 128 位，密钥长度为 128 位<a href="#ref-sm4-draft">draft-ribose-cfrg-sm4-10 §1</a>；早期的 DES 块大小为 64 位（56 位有效密钥），3DES 采用三重执行扩充了密钥长度，但块大小依然受限在 64 位。这些旧算法列出仅供维护识别，不代表推荐选用。</p>
+<p>分组密码本身只定义了单个固定块的变换算法。现实中的报文或文件通常远超 128 位，且不一定是 16 字节的整数倍。因此必须引入<strong>工作模式（Mode of Operation）</strong>：</p>
+<ul>
+<li><strong>ECB（电子密码本模式）</strong>：将每个明文块独立加密。相同的明文块永远输出相同的密文块，不仅暴露统计特征与数据轮廓，还容易受到块重排与替换攻击，在工程场景中应严格避免。</li>
+<li><strong>CBC（密文分组链接模式）</strong>：每一个明文块在加密前先与前一个密文块进行异或，第一块引入初始向量（IV）。CBC 要求数据末尾填充对齐（如 PKCS#7 填充），且 IV 必须不可预测。更重要的是，单纯的 CBC 模式无法防止密文被篡改，填充错误容易暴露出侧信道隐患（例如 Padding Oracle 问题）。</li>
+<li><strong>CTR（计数器模式）</strong>：通过加密逐次递增的计数器生成密钥流，再与明文逐位异或。CTR 把分组密码转换为流模式运行，无需填充，支持并行处理。但 CTR 对 IV/nonce 的唯一性要求明确，一旦在相同密钥下计数器发生重复，密钥流重叠会导致明文差分泄露。</li>
+</ul>
+<p>在配置中使用 AES 时，不能脱离工作模式、初始向量与认证机制只谈算法名称。</p>
+<h3 id="流密码">流密码</h3>
+<p>流密码直接生成连续的伪随机密钥流（Keystream），将其与明文逐位或逐字节异或来完成加解密。</p>
+<ul>
+<li><strong>ChaCha20</strong>：由 Daniel J. Bernstein 设计，并在 RFC 8439 中标准化的流密码<a href="#ref-rfc8439">RFC 8439 §2.4</a>。它基于 256 位密钥与 96 位 nonce，内部维护一个 4x4 矩阵状态，通过 20 轮基于加法、旋转和异或（ARX）的运算生成 64 字节的密钥流块。相比老旧的 RC4（存在偏差弱点，列出仅作旧系统识别），ChaCha20 结构清晰，在缺乏专用硬件 AES 指令集的设备上拥有稳定且良好的软件执行表现。</li>
+<li>流密码的关键约束在于 <strong>Nonce 绝不可在相同密钥下重复</strong>。如果两段不同的明文使用了相同的密钥与 nonce，两段密文进行异或后密钥流将相互抵消，使得攻击者能直接得到两份明文的异或结果。</li>
+</ul>
+<hr>
+<h2 id="密码哈希单向摘要不是不可逆加密">密码哈希：单向摘要，不是“不可逆加密”</h2>
+<p>密码哈希函数（Cryptographic Hash Function）接收任意长度的输入，输出固定长度的指纹（Digest / 摘要）。
+代表算法包括：</p>
+<ul>
+<li><strong>SHA-2 家族</strong>：包括 SHA-224、SHA-256、SHA-384、SHA-512 等，基于 Merkle-Damgård 迭代结构<a href="#ref-fips180-4">FIPS 180-4 §4.1</a>。SHA-256 是目前网络基础设施与安全通信中最通用的哈希基石。</li>
+<li><strong>SHA-3 家族</strong>：基于 Keccak 海绵结构（Sponge Construction），提供 SHA3-224 至 SHA3-512 以及可变长输出函数 SHAKE<a href="#ref-fips202">FIPS 202 §1</a>。其内部设计与 SHA-2 完全不同，能够提供独立的算法多样性冗余。</li>
+<li><strong>SM3 密码杂凑算法</strong>：输出长度为 256 位，采用类似 Merkle-Damgård 的压缩函数结构<a href="#ref-sm3-draft">draft-oscca-cfrg-sm3-00 §1</a>。</li>
+</ul>
+<p>关于哈希算法，有两个极易混淆的概念需要厘清：</p>
+<p>第一，<strong>哈希不是“加密”</strong>。加密的目的是保密传输，前提是存在明确的逆过程——持有正确私钥或对称密钥的人能够还原原始明文。而哈希函数是信息压缩映射，从原理上不存在确定的还原映射。将其称为“不可逆加密”混淆了加密与摘要的职责。</p>
+<p>第二，<strong>无密钥哈希不能单独防止恶意篡改</strong>。如果仅将一段明文计算一个 SHA-256 摘要附在文本后面发送，攻击者在链路中间截获后，不仅可以修改明文，还可以为修改后的明文重新计算一个 SHA-256 摘要并同时替换。接收方重新核算哈希只会显示匹配。要检测恶意篡改，必须引入双方共有的秘密材料（MAC）、数字签名，或者依赖带外受信任信道提供的摘要比对。</p>
+<p>对于历史算法（如 MD5 与 SHA-1，列出仅作兼容排查参考），还需区分<strong>碰撞（Collision）<strong>与</strong>原像抗性（Pre-image Resistance）</strong>。产生碰撞是指找到两段不同的输入使其哈希值相同，这会危及依赖抗碰撞性的签名应用；但这并不等同于能够从给定摘要反推出原始明文，也不等同于基于这些哈希构造的 HMAC 机制立即全部失效。</p>
+<hr>
+<h2 id="消息认证码mac共享密钥下的完整性">消息认证码（MAC）：共享密钥下的完整性</h2>
+<p>如果通信双方已经事先安全地共享了一个对称密钥，他们希望在不加密或加密的同时，确保消息在传输过程中<strong>既没有被篡改，又确实来自持有共享密钥的一方</strong>，这时就需要使用消息认证码（Message Authentication Code，简称 MAC）。</p>
+<p>代表构造与算法：</p>
+<ul>
+<li><strong>HMAC（基于哈希的消息认证码）</strong>：通过 RFC 2104 标准化，可以配合任意密码哈希函数工作（例如 HMAC-SHA-256）<a href="#ref-rfc2104">RFC 2104 §1</a>。它在底层哈希结构外层引入了两次带填充密钥的混合迭代，规避了单纯级联哈希容易遭遇的“长度扩展攻击（Length Extension Attack）”。</li>
+<li><strong>AES-CMAC</strong>：基于分组密码 AES 构造的消息认证码<a href="#ref-rfc4493">RFC 4493 §1</a>，适合在已经内置 AES 引擎、希望复用硬件实现的系统中使用。</li>
+<li><strong>Poly1305</strong>：由 D. J. Bernstein 设计的高性能一次一密 MAC 算法<a href="#ref-rfc8439">RFC 8439 §2.5</a>，针对模数 2¹³⁰ − 5 进行多项式求值计算。</li>
+</ul>
+<p>使用 MAC 时需关注其边界：</p>
+<ol>
+<li><strong>MAC 不能提供公开可验证的不可抵赖性</strong>。通信双方拥有相同的对称密钥，Alice 能算出的 MAC，Bob 也能计算出来。Bob 可以向自己证实消息来自持有该密钥的对端，但他无法向第三方证明该消息必定不是由自己伪造的。</li>
+<li><strong>Poly1305 具有一次性密钥约束</strong>。计算 Poly1305 标签必须使用单次唯一的 256 位一次性密钥（通常由流密码配合独立 nonce 临时派生）；如果相同密钥被用于多次消息认证，多项式结构会给攻击者恢复内部参数、伪造后续认证标签提供机会。</li>
+</ol>
+<hr>
+<h2 id="认证加密aead保密与认证的有机结合">认证加密（AEAD）：保密与认证的有机结合</h2>
+<p>早期的密码工程实践中，开发者常常将加密（如 AES-CBC）与认证（如 HMAC-SHA-256）自行组合拼接。这种手工组合若处理不当，容易在实现中引入填充错误或时序漏洞。</p>
+<p>现代密码学普遍推行<strong>认证加密（Authenticated Encryption with Associated Data，简称 AEAD）</strong>。
+AEAD 将保密性加密与完整性认证在一个标准接口中完成，并支持同时对无需保密的关联数据（Associated Data，AAD）进行防篡改校验。</p>
+<p>代表方案：</p>
+<ul>
+<li><strong>AES-GCM（Galois/Counter Mode）</strong>：将 CTR 模式加密与基于 Galois 域 GF(2¹²⁸) 的 GHASH 认证结合<a href="#ref-sp800-38d">NIST SP 800-38D §5</a>。在主流具备硬件加速指令支持的平台上执行效率很高。</li>
+<li><strong>ChaCha20-Poly1305</strong>：在 RFC 8439 中标准化，由 ChaCha20 提供加密，由 Poly1305 提供 16 字节认证标签（Tag）<a href="#ref-rfc8439">RFC 8439 §2.8</a>。</li>
+</ul>
+<pre class="astro-code astro-code-themes min-light night-owl" style="--shiki-light:#24292eff;--shiki-dark:#d6deeb;--shiki-light-bg:#ffffff;--shiki-dark-bg:#011627; overflow-x: auto;--file-name-offset: -0.75rem;" tabindex="0" data-language="text"><code><span class="line"><span>明文 (Plaintext) ─────────┐</span></span>
+<span class="line"><span>                         ▼</span></span>
+<span class="line"><span>关联数据 (AAD) ────────> [ AEAD 运算引擎 ] ──> 密文 (Ciphertext)</span></span>
+<span class="line"><span>                         (密钥 Key + Nonce)   └──> 认证标签 (Tag)</span></span></code></pre>
+<p>在理解与使用 AEAD 时需注意：</p>
+<ul>
+<li><strong>AEAD 不对 AAD 提供保密性</strong>：关联数据可以作为协议明文字段传输，也可以由通信双方根据上下文环境各自生成。AEAD 负责保证 AAD 与密文的完整性绑定，并不隐蔽 AAD 的内容。</li>
+<li><strong>Tag 匹配不代表现实实体认证</strong>：校验 Tag 成功仅证明密文和 AAD 确实是由持有当前对称密钥的一方生成的，并不代表现实中的机构身份。要证明远端主体的合法性，仍需依赖握手初期的数字证书或公钥签名。</li>
+<li><strong>Nonce 的唯一性要求依然明确</strong>：例如 AES-GCM 若在相同密钥下复用了 Nonce，GHASH 的多项式特性可能使攻击者恢复认证信息并伪造标签，严重破坏安全性。</li>
+</ul>
+<hr>
+<h2 id="公钥密码加密签名与协商的职责区分">公钥密码：加密、签名与协商的职责区分</h2>
+<p>公钥密码体制（Asymmetric Cryptography）利用了适当的数学难题构造：每一方拥有一对密钥——<strong>公钥（Public Key）</strong>公开供所有人使用，<strong>私钥（Private Key）</strong>由持有者严格保密。</p>
+<p>公钥密码覆盖了截然不同的安全机制，不能将其与某一种具体运算直接画等号。</p>
+<h3 id="rsa-基础运算与具体方案">RSA 基础运算与具体方案</h3>
+<p>RSA 基于大整数素因数分解难题。在数学层面，RSA 具有幂模运算的形式，但在工程标准中必须区分基础数学变换与具体安全方案：<a href="#ref-rfc8017">RFC 8017 §7、§8</a></p>
+<ul>
+<li><strong>公钥加密方案（RSAES-OAEP）</strong>：发送方使用接收方的公钥，结合基于哈希的最优非对称加密填充（OAEP）对数据进行加密，只有持有对应私钥的接收方能够解密。公钥加密常用于保护较短的对称密钥材料，不适合直接加密海量数据。</li>
+<li><strong>数字签名方案（RSASSA-PSS）</strong>：签名者使用私钥，结合基于概率特征的随机化填充（PSS）生成签名。PSS 方案具有严密的密码学安全归约，将伪造签名的难度直接归约到反演 RSA 难题上。旧式的确定性填充方案（RSASSA-PKCS1-v1_5）则需格外防范填充检查不严带来的风险。</li>
+</ul>
+<h3 id="ecc-是技术家族不是单个替代算法">ECC 是技术家族，不是单个替代算法</h3>
+<p>椭圆曲线密码学（ECC）是一类基于有限域上椭圆曲线离散对数难题的技术家族，而不是单个具体算法。不同的曲线参数与构造方程用于完成完全不同的密码学功能：</p>
+<ul>
+<li><strong>签名功能</strong>：包括 ECDSA 以及在 RFC 8032 中标准化的 Ed25519（EdDSA 方案）<a href="#ref-rfc8032">RFC 8032 §5.1</a>。EdDSA 采用确定性签名机制，避免了传统 ECDSA 因每次签名所需随机数生成不当或偏置而带来的私钥暴露风险。SM2 签名同样基于椭圆曲线体系。</li>
+<li><strong>密钥协商功能</strong>：包括 ECDH 以及在 RFC 7748 中标准化的 X25519 点乘协议<a href="#ref-rfc7748">RFC 7748 §5</a>。</li>
+<li><strong>公钥加密功能</strong>：例如 SM2 公钥加密机制，同样属于椭圆曲线体系下的独立方案。</li>
+<li><strong>国密 SM2 算法集</strong>：国家密码管理局公布的 SM2 标准草案本身是一套组合规范，明确包含了数字签名、密钥交换与公钥加密三种独立功能机制<a href="#ref-sm2-draft">draft-shen-sm2-ecdsa-02 §4、§6、§7</a>。</li>
+</ul>
+<h3 id="澄清概念边界">澄清概念边界</h3>
+<ol>
+<li><strong>“数字签名就是用私钥加密”是概念误解</strong>。虽然 RSA 基础幂模运算在形式上类似，但在现代密码工程中，签名方案与加密方案使用不同的填充与验证机制。在 ECDSA、EdDSA、SM2 等现代椭圆曲线体制中，签名生成与公钥验证使用的是完全不同的点乘方程，根本不存在“用私钥把明文加密包裹起来”的物理过程。</li>
+<li><strong>签名不提供保密性</strong>。签名附在明文数据之后，任何人都能阅读明文，也能用公钥核验签名。签名防伪造，但不防窥视。</li>
+<li><strong>公钥本身需要身份绑定</strong>。任何人都可以生成合法的公钥和私钥并完成签名计算。因此，公钥必须通过受信任的数字证书（PKI 机制）或预置受控配置绑定到明确的实体上，签名才有现实信任意义。</li>
+<li><strong>未认证的独立 DH 无法抵御中间人攻击（MITM）</strong>。如果攻击者劫持了信道，他可以分别与通信双方各自完成一次独立的协商。因此生产协议中，密钥协商参数必须结合数字证书签名或预共享密钥（PSK）进行上下文绑定认证。</li>
+<li><strong>协商出的共享秘密不直接作为业务传输密钥</strong>。点乘计算出的原始坐标数值分布不均匀，必须送入密钥派生函数（KDF）处理后，再派生出相互隔离的对称工作密钥。X25519 的设计便于构造恒定时间实现，但具体实现仍须避免与秘密相关的分支、访存和算术时序<a href="#ref-rfc7748">RFC 7748 §5.1</a>。</li>
+</ol>
+<hr>
+<h2 id="密钥派生函数kdf用途隔离与口令防护">密钥派生函数（KDF）：用途隔离与口令防护</h2>
+<p>密钥派生函数（Key Derivation Function）用于从源秘密材料（Input Keying Material）导出伪随机、定长且在密码学上相互独立的工作密钥。</p>
+<p>根据源材料的熵（随机性与不可预测性）差异，KDF 分为两类应用场景：</p>
+<h3 id="1-高熵主密钥派生提取与扩展hkdf">1. 高熵主密钥派生：提取与扩展（HKDF）</h3>
+<p>在安全协议握手过程中，密钥协商通常已经建立了一个高熵共享秘密。为了从中派生出通信所需的客户端加密密钥、服务端加密密钥、初始向量等参数，需要使用提取-扩展结构的 KDF。</p>
+<ul>
+<li><strong>HKDF（RFC 5869）</strong>：基于 HMAC 构造的标准 KDF<a href="#ref-rfc5869">RFC 5869 §2</a>。
+<ul>
+<li><strong>HKDF-Extract</strong>：使用一个可选的盐（Salt）将可能存在分布偏差的输入材料“提取”为一个伪随机密钥（PRK）。</li>
+<li><strong>HKDF-Expand</strong>：以 PRK 为基础，加入包含应用上下文与用途说明的 <code>info</code> 标签和计数字节，扩展出指定长度的独立子密钥材料。</li>
+</ul>
+</li>
+</ul>
+<h3 id="2-低熵口令派生慢哈希抗暴力破解">2. 低熵口令派生：慢哈希抗暴力破解</h3>
+<p>用户设置的口令通常熵值有限。慢 KDF 并不能增加口令本身的原始熵，它的目标是通过算法设计增加离线穷举的成本。通过引入不可预测的<strong>盐（Salt）</strong>，防止不同口令记录复用预计算结果；通过调整<strong>成本参数（如迭代轮数或内存开销）</strong>，成倍提高单次猜测尝试的计算代价：</p>
+<ul>
+<li><strong>PBKDF2（RFC 8018）</strong>：通过指定盐与迭代轮数（Iteration Count），重复执行成千上万次底层的 HMAC 运算，提高猜测尝试的计算耗时<a href="#ref-rfc8018">RFC 8018 §5.2</a>。</li>
+<li><strong>scrypt（RFC 7914）</strong>：引入“内存硬度（Memory-hard）”设计，在计算过程中要求随机访问大块不可预测的内存区域，增加了专用硬件并行破解的实现成本<a href="#ref-rfc7914">RFC 7914 §2</a>。</li>
+</ul>
+<p>不能把网络流处理中追求吞吐率的快速哈希算法当作口令慢哈希来存储口令；同样，口令慢哈希也不适用于网络通信主路径上的快速报文派生。</p>
+<hr>
+<h2 id="常见外围概念的边界澄清">常见外围概念的边界澄清</h2>
+<p>在开发排查中，有些机制经常与密码算法并列出现，但它们处于不同的技术层次：</p>
+<ol>
+<li><strong>Base64 与字符编码</strong>：Base64 是一种将二进制数据转换为 64 个可见字符的数据表示编码，完全公开可逆，没有任何密钥参与，不提供任何机密性或完整性防护。</li>
+<li><strong>CRC32 与校验和</strong>：循环冗余校验（CRC）是为检测偶发性随机噪声或比特翻转设计的线性校验算法，不具备抗恶意篡改能力。检测恶意篡改需使用 MAC、签名或 AEAD；无密钥哈希需有可信信道提供的摘要等额外信任前提。</li>
+<li><strong>数字证书与 PKI</strong>：数字证书（如 X.509）本身不是密码算法，而是携带主体公钥、主体身份信息、有效期及 CA 签名的标准数据结构容器，解决公钥的可信绑定问题。</li>
+<li><strong>TLS / HTTPS</strong>：TLS 是综合安全传输协议，按具体版本与套件组合身份认证、密钥建立、密钥派生以及数据保密与完整性保护等机制。</li>
+</ol>
+<hr>
+<h2 id="串联协作混合密码系统的示意逻辑">串联协作：混合密码系统的示意逻辑</h2>
+<p>在一次典型的安全通信建立过程中（非完整 TLS 握手时序），上述算法按功能依赖关系协同运作：</p>
+<pre class="astro-code astro-code-themes min-light night-owl" style="--shiki-light:#24292eff;--shiki-dark:#d6deeb;--shiki-light-bg:#ffffff;--shiki-dark-bg:#011627; overflow-x: auto;--file-name-offset: -0.75rem;" tabindex="0" data-language="text"><code><span class="line"><span>[ 阶段一：身份认证与密钥协商 ]</span></span>
+<span class="line"><span>1. 客户端核验服务端 X.509 证书链 (RSA / ECDSA / SM2 签名验证)</span></span>
+<span class="line"><span>2. 验证对端对本次协商参数或握手上下文的签名/认证证明，防止中间人替换</span></span>
+<span class="line"><span>3. 双方在公开信道交换公钥参数，执行密钥协商 (X25519 / ECDH / SM2 交换)</span></span>
+<span class="line"><span>4. 双方独立计算出相同的共享秘密 (Shared Secret)</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>                      │</span></span>
+<span class="line"><span>                      ▼</span></span>
+<span class="line"><span>[ 阶段二：密钥提取与用途分离 ]</span></span>
+<span class="line"><span>5. 将共享秘密送入 KDF (如 HKDF)，结合双方随机数进行提取与扩展</span></span>
+<span class="line"><span>6. 派生出方向隔离的对称加密工作密钥、初始向量与认证参数</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>                      │</span></span>
+<span class="line"><span>                      ▼</span></span>
+<span class="line"><span>[ 阶段三：传输数据保密与认证 ]</span></span>
+<span class="line"><span>7. 应用数据由 AEAD 方案 (如 AES-GCM 或 ChaCha20-Poly1305) 加密保护</span></span>
+<span class="line"><span>8. 协议上下文或报文头关联数据 (AAD) 保持明文，但一同参与计算认证标签 (Tag)</span></span>
+<span class="line"><span>9. 对端核验 Tag，只有认证通过才向应用层交付明文，防止窥视与篡改</span></span></code></pre>
+<p>把算法放回协作链条中，各项职责清晰对应：<strong>签名或认证机制负责确立身份并绑定本次会话，协商机制负责在公开信道产生共同秘密，KDF 负责把秘密加工成用途分离的工作钥匙，而 AEAD 则在数据传输过程中同时把守机密性与防篡改底线</strong>。分清各自的分工与限制，在架构设计与系统排错时才能选对工具、看懂日志。</p>
+<hr>
+<h2 id="参考资料">参考资料</h2>
+<p>所列算法说明采用固定版本标准与历史草案，草案不等同于正式 RFC。</p>
+<ul>
+<li><a id="ref-fips197" href="https://nvlpubs.nist.gov/nistpubs/FIPS/NIST.FIPS.197.pdf" target="_blank" rel="noopener noreferrer">NIST FIPS 197（2001-11）：高级加密标准（AES）规范 ↗</a></li>
+<li><a id="ref-sp800-38d" href="https://nvlpubs.nist.gov/nistpubs/Legacy/SP/nistspecialpublication800-38d.pdf" target="_blank" rel="noopener noreferrer">NIST SP 800-38D（2007-11）：块密码工作模式推荐——Galois/Counter Mode (GCM) ↗</a></li>
+<li><a id="ref-fips180-4" href="https://nvlpubs.nist.gov/nistpubs/FIPS/NIST.FIPS.180-4.pdf" target="_blank" rel="noopener noreferrer">NIST FIPS 180-4（2015-08）：安全哈希标准（SHS）规范 ↗</a></li>
+<li><a id="ref-fips202" href="https://nvlpubs.nist.gov/nistpubs/FIPS/NIST.FIPS.202.pdf" target="_blank" rel="noopener noreferrer">NIST FIPS 202（2015-08）：SHA-3 标准规范 ↗</a></li>
+<li><a id="ref-rfc8439" href="https://www.rfc-editor.org/rfc/rfc8439.html" target="_blank" rel="noopener noreferrer">RFC 8439（2018-06）：ChaCha20 与 Poly1305 密码套件规范 ↗</a></li>
+<li><a id="ref-rfc8017" href="https://www.rfc-editor.org/rfc/rfc8017.html" target="_blank" rel="noopener noreferrer">RFC 8017（2016-11）：PKCS #1: RSA 密码学规范版本 2.2 ↗</a></li>
+<li><a id="ref-rfc8032" href="https://www.rfc-editor.org/rfc/rfc8032.html" target="_blank" rel="noopener noreferrer">RFC 8032（2017-01）：爱德华曲线数字签名算法（EdDSA）↗</a></li>
+<li><a id="ref-rfc7748" href="https://www.rfc-editor.org/rfc/rfc7748.html" target="_blank" rel="noopener noreferrer">RFC 7748（2016-01）：密码学椭圆曲线（X25519 与 X448）↗</a></li>
+<li><a id="ref-rfc5869" href="https://www.rfc-editor.org/rfc/rfc5869.html" target="_blank" rel="noopener noreferrer">RFC 5869（2010-05）：基于 HMAC 的提取-扩展密钥派生函数（HKDF）↗</a></li>
+<li><a id="ref-rfc2104" href="https://www.rfc-editor.org/rfc/rfc2104.html" target="_blank" rel="noopener noreferrer">RFC 2104（1997-02）：HMAC: 用于信息认证的密钥哈希算法 ↗</a></li>
+<li><a id="ref-rfc4493" href="https://www.rfc-editor.org/rfc/rfc4493.html" target="_blank" rel="noopener noreferrer">RFC 4493（2006-06）：AES-CMAC 算法规范 ↗</a></li>
+<li><a id="ref-rfc8018" href="https://www.rfc-editor.org/rfc/rfc8018.html" target="_blank" rel="noopener noreferrer">RFC 8018（2017-01）：PKCS #5: 基于口令的密码学规范版本 2.1（PBKDF2）↗</a></li>
+<li><a id="ref-rfc7914" href="https://www.rfc-editor.org/rfc/rfc7914.html" target="_blank" rel="noopener noreferrer">RFC 7914（2016-08）：scrypt 基于口令的密钥派生函数 ↗</a></li>
+<li><a id="ref-sm2-draft" href="https://datatracker.ietf.org/doc/html/draft-shen-sm2-ecdsa-02" target="_blank" rel="noopener noreferrer">SM2 算法说明草案 draft-shen-sm2-ecdsa-02（2014-02-14）：签名、密钥交换与公钥加密 ↗</a></li>
+<li><a id="ref-sm3-draft" href="https://datatracker.ietf.org/doc/html/draft-oscca-cfrg-sm3-00" target="_blank" rel="noopener noreferrer">SM3 算法说明草案 draft-oscca-cfrg-sm3-00（2017-11-15）↗</a></li>
+<li><a id="ref-sm4-draft" href="https://datatracker.ietf.org/doc/html/draft-ribose-cfrg-sm4-10" target="_blank" rel="noopener noreferrer">SM4 算法及工作模式说明草案 draft-ribose-cfrg-sm4-10（2018-04-21）↗</a></li>
+</ul></article><hr class="my-8 border-dashed"><div id="btt-btn-container" class="fixed inset-e-4 bottom-8 z-50 md:sticky md:inset-e-auto md:float-end md:me-1 translate-y-14 opacity-0 transition duration-500"><button data-button="back-to-top" class="group bg-background relative px-2 py-1 size-14 rounded-full shadow-xl md:h-8 md:w-fit md:rounded-md md:shadow-none md:focus-visible:rounded-none md:bg-background/35 md:bg-clip-padding md:backdrop-blur-lg"><span id="progress-indicator" class="absolute inset-0 -z-10 block size-14 scale-110 rounded-full bg-transparent md:hidden md:h-8 md:rounded-md"></span><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="inline-block rotate-90 md:hidden" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M5 12h14M5 12l6 6M5 12l6-6" /></svg><span class="group-hover:text-accent sr-only text-sm md:not-sr-only"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="inline-block size-4" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M12 5v14M16 9l-4-4M8 9l4-4" /></svg> 回到顶部</span></button></div><script data-astro-rerun>
+  function backToTop() {
+    const rootElement = document.documentElement;
+    const btnContainer = document.querySelector("#btt-btn-container");
+    const backToTopBtn = document.querySelector("[data-button='back-to-top']");
+    const progressIndicator = document.querySelector("#progress-indicator");
+
+    if (!rootElement || !btnContainer || !backToTopBtn || !progressIndicator)
+      return;
+
+    backToTopBtn.addEventListener("click", () => {
+      document.body.scrollTop = 0;
+      document.documentElement.scrollTop = 0;
+    });
+
+    let lastVisible = null;
+    function handleScroll() {
+      const scrollTotal = rootElement.scrollHeight - rootElement.clientHeight;
+      const scrollTop = rootElement.scrollTop;
+      const scrollPercent = Math.floor((scrollTop / scrollTotal) * 100);
+
+      progressIndicator.style.setProperty(
+        "background-image",
+        `conic-gradient(var(--accent), var(--accent) ${scrollPercent}%, transparent ${scrollPercent}%)`
+      );
+
+      const isVisible = scrollTop / scrollTotal > 0.3;
+
+      if (isVisible !== lastVisible) {
+        btnContainer.classList.toggle("opacity-100", isVisible);
+        btnContainer.classList.toggle("translate-y-0", isVisible);
+        btnContainer.classList.toggle("opacity-0", !isVisible);
+        btnContainer.classList.toggle("translate-y-14", !isVisible);
+        lastVisible = isVisible;
+      }
+    }
+
+    let ticking = false;
+    document.addEventListener("scroll", () => {
+      if (!ticking) {
+        window.requestAnimationFrame(() => {
+          handleScroll();
+          ticking = false;
+        });
+        ticking = true;
+      }
+    });
+  }
+  backToTop();
+</script><ul class="mt-4 mb-8 flex flex-wrap gap-4 sm:my-8"><li><a data-astro-transition-scope="astro-bztu2lml-1" href="/tags/密码学/" class="flex items-center gap-0.5 border-foreground border-b-2 border-dashed hover:border-accent hover:text-accent hover:-mt-0.5 focus-visible:text-accent focus-visible:border-none text-sm"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="opacity-80 size-4" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M5 9h14M5 15h14M11 4 7 20M17 4l-4 16" /></svg>密码学</a></li><li><a data-astro-transition-scope="astro-bztu2lml-2" href="/tags/加密算法/" class="flex items-center gap-0.5 border-foreground border-b-2 border-dashed hover:border-accent hover:text-accent hover:-mt-0.5 focus-visible:text-accent focus-visible:border-none text-sm"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="opacity-80 size-4" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M5 9h14M5 15h14M11 4 7 20M17 4l-4 16" /></svg>加密算法</a></li><li><a data-astro-transition-scope="astro-bztu2lml-3" href="/tags/哈希算法/" class="flex items-center gap-0.5 border-foreground border-b-2 border-dashed hover:border-accent hover:text-accent hover:-mt-0.5 focus-visible:text-accent focus-visible:border-none text-sm"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="opacity-80 size-4" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M5 9h14M5 15h14M11 4 7 20M17 4l-4 16" /></svg>哈希算法</a></li><li><a data-astro-transition-scope="astro-bztu2lml-4" href="/tags/数字签名/" class="flex items-center gap-0.5 border-foreground border-b-2 border-dashed hover:border-accent hover:text-accent hover:-mt-0.5 focus-visible:text-accent focus-visible:border-none text-sm"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="opacity-80 size-4" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M5 9h14M5 15h14M11 4 7 20M17 4l-4 16" /></svg>数字签名</a></li><li><a data-astro-transition-scope="astro-bztu2lml-5" href="/tags/密钥协商/" class="flex items-center gap-0.5 border-foreground border-b-2 border-dashed hover:border-accent hover:text-accent hover:-mt-0.5 focus-visible:text-accent focus-visible:border-none text-sm"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="opacity-80 size-4" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M5 9h14M5 15h14M11 4 7 20M17 4l-4 16" /></svg>密钥协商</a></li><li><a data-astro-transition-scope="astro-bztu2lml-6" href="/tags/消息认证码/" class="flex items-center gap-0.5 border-foreground border-b-2 border-dashed hover:border-accent hover:text-accent hover:-mt-0.5 focus-visible:text-accent focus-visible:border-none text-sm"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="opacity-80 size-4" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M5 9h14M5 15h14M11 4 7 20M17 4l-4 16" /></svg>消息认证码</a></li></ul><hr class="my-8 border-dashed"><div data-pagefind-ignore class="my-8 grid grid-cols-1 gap-6 sm:grid-cols-2"><a href="/posts/trust-store-configuration/" class="flex w-full gap-1 hover:opacity-75"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="inline-block flex-none rtl:rotate-180" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M5 12h14M5 12l6 6M5 12l6-6" /></svg><div><span>上一篇</span><div class="text-accent/85 text-sm">浏览器能访问，Java 却报证书错误？——Java、Linux、Windows 与 macOS 信任库配置</div></div></a><a href="/posts/transformer-attention-is-all-you-need/" class="flex w-full justify-end gap-1 text-end hover:opacity-75 sm:col-start-2"><div><span>下一篇</span><div class="text-accent/85 text-sm">Transformer为什么需要Attention？从《Attention Is All You Need》读起</div></div><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="inline-block flex-none rtl:rotate-180" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M5 12h14M13 18l6-6M13 6l6 6" /></svg></a></div></main><footer class="app-layout mt-auto"><div class="border-border flex flex-col items-center justify-between border-t py-6 sm:flex-row-reverse sm:py-4"><div class="flex flex-wrap items-center gap-1"><a href="https://github.com/SaromChars" title="Sarom Chars 的 GitHub" class="group inline-flex items-center gap-1 hover:text-accent p-2 hover:rotate-6 sm:p-1"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="inline-block size-6 scale-125 fill-transparent stroke-current stroke-2 opacity-90 group-hover:fill-transparent sm:scale-110" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M9 19c-4.3 1.4-4.3-2.5-6-3m12 5v-3.5c0-1 .1-1.4-.5-2 2.8-.3 5.5-1.4 5.5-6a4.6 4.6 0 0 0-1.3-3.2 4.2 4.2 0 0 0-.1-3.2s-1.1-.3-3.5 1.3a12.3 12.3 0 0 0-6.2 0C6.5 2.8 5.4 3.1 5.4 3.1a4.2 4.2 0 0 0-.1 3.2A4.6 4.6 0 0 0 4 9.5c0 4.6 2.7 5.7 5.5 6-.6.6-.6 1.2-.5 2V21" /></svg><span class="sr-only">Sarom Chars 的 GitHub</span></a></div><div class="my-2 flex flex-col items-center whitespace-nowrap sm:flex-row"><span>版权 &#169; 2026</span><span class="hidden sm:inline">&nbsp;|&nbsp;</span><span>保留所有权利。</span></div></div></footer><script type="module">var e=`theme`,t=`light`,n=`dark`;function r(){return localStorage.getItem(e)||(window.matchMedia(`(prefers-color-scheme: dark)`).matches?n:t)}var i=window.__theme?.value??r();function a(){localStorage.setItem(e,i),o()}function o(){let e=document.firstElementChild;e?.setAttribute(`data-theme`,i),e?.classList.toggle(`dark`,i===n),document.querySelector(`#theme-btn`)?.setAttribute(`aria-label`,i);let t=window.getComputedStyle(document.body).backgroundColor;document.querySelector(`meta[name='theme-color']`)?.setAttribute(`content`,t)}function s(){o(),document.querySelector(`#theme-btn`)?.addEventListener(`click`,()=>{i=i===t?n:t,a()})}s(),document.addEventListener(`astro:after-swap`,s),document.addEventListener(`astro:before-swap`,e=>{let t=document.querySelector(`meta[name='theme-color']`)?.getAttribute(`content`);t&&e.newDocument.querySelector(`meta[name='theme-color']`)?.setAttribute(`content`,t)}),window.matchMedia(`(prefers-color-scheme: dark)`).addEventListener(`change`,({matches:e})=>{i=e?n:t,a()});</script></body></html><script type="module">var e=document.querySelector(`#article`);if(e?.querySelector(`a[href^="#ref-"]`)){let t=null,n=!1,r=document.createElement(`button`);r.type=`button`,r.className=`citation-return`,r.textContent=`返回阅读位置`,r.setAttribute(`data-pagefind-ignore`,``),e.addEventListener(`click`,n=>{if(n.button!==0||n.metaKey||n.ctrlKey||n.shiftKey||n.altKey)return;let i=n.target instanceof Element?n.target.closest(`a[href^="#ref-"]`):null;if(!i||!e.contains(i))return;let a=i.hash,o=document.getElementById(decodeURIComponent(a.slice(1)));o&&e.contains(o)&&(t={source:i,url:window.location.href,top:window.scrollY,left:window.scrollX,targetHash:a},o.insertAdjacentElement(`afterend`,r))}),r.addEventListener(`click`,()=>{if(!t||n)return;let e=t,i=i=>{r.remove(),window.requestAnimationFrame(()=>{window.requestAnimationFrame(()=>{e.source.focus({preventScroll:!0}),window.scrollTo({top:e.top,left:e.left,behavior:`instant`}),t=null,n=!1,i?.()})})};window.location.href===e.url?i():(n=!0,window.addEventListener(`popstate`,()=>{let e=window.history.scrollRestoration;window.history.scrollRestoration=`manual`,window.setTimeout(()=>{i(()=>{window.history.scrollRestoration=e})},0)},{once:!0}),window.history.back())}),window.addEventListener(`hashchange`,()=>{!n&&t&&window.location.hash!==t.targetHash&&(r.remove(),t=null)})}</script><script data-astro-rerun>
+  function createProgressBar() {
+    const progressContainer = document.createElement("div");
+    progressContainer.className =
+      "progress-container fixed top-0 z-10 h-1 w-full bg-background";
+
+    const progressBar = document.createElement("div");
+    progressBar.className = "progress-bar h-1 w-0 bg-accent";
+    progressBar.id = "myBar";
+
+    progressContainer.appendChild(progressBar);
+    document.body.appendChild(progressContainer);
+  }
+  createProgressBar();
+
+  function updateScrollProgress() {
+    document.addEventListener("scroll", () => {
+      const winScroll =
+        document.body.scrollTop || document.documentElement.scrollTop;
+      const height =
+        document.documentElement.scrollHeight -
+        document.documentElement.clientHeight;
+      const scrolled = (winScroll / height) * 100;
+      if (document) {
+        const myBar = document.getElementById("myBar");
+        if (myBar) {
+          myBar.style.width = scrolled + "%";
+        }
+      }
+    });
+  }
+  updateScrollProgress();
+
+  function addHeadingLinks() {
+    const headings = Array.from(
+      document.querySelectorAll("h2, h3, h4, h5, h6")
+    );
+    for (const heading of headings) {
+      heading.classList.add("group");
+      const link = document.createElement("a");
+      link.className =
+        "heading-link ms-2 no-underline opacity-75 md:opacity-0 md:group-hover:opacity-100 md:focus:opacity-100";
+      link.href = "#" + heading.id;
+
+      const span = document.createElement("span");
+      span.ariaHidden = "true";
+      span.innerText = "#";
+      link.appendChild(span);
+      heading.appendChild(link);
+    }
+  }
+  addHeadingLinks();
+
+  function attachCopyButtons() {
+    const copyButtonLabel = "Copy";
+    const codeBlocks = Array.from(document.querySelectorAll("pre"));
+
+    for (const codeBlock of codeBlocks) {
+      const wrapper = document.createElement("div");
+      wrapper.style.position = "relative";
+
+      const computedStyle = getComputedStyle(codeBlock);
+      const hasFileNameOffset =
+        computedStyle.getPropertyValue("--file-name-offset").trim() !== "";
+
+      const topClass = hasFileNameOffset
+        ? "top-(--file-name-offset)"
+        : "-top-3";
+
+      const copyButton = document.createElement("button");
+      copyButton.className = `copy-code absolute end-3 ${topClass} rounded bg-muted border border-muted px-2 py-1 text-xs leading-4 text-foreground font-medium`;
+      copyButton.innerHTML = copyButtonLabel;
+      codeBlock.setAttribute("tabindex", "0");
+      codeBlock.appendChild(copyButton);
+
+      codeBlock?.parentNode?.insertBefore(wrapper, codeBlock);
+      wrapper.appendChild(codeBlock);
+
+      copyButton.addEventListener("click", async () => {
+        await copyCode(codeBlock, copyButton);
+      });
+    }
+
+    async function copyCode(block, button) {
+      const code = block.querySelector("code");
+      const text = code?.innerText;
+
+      await navigator.clipboard.writeText(text ?? "");
+
+      button.innerText = "Copied";
+
+      setTimeout(() => {
+        button.innerText = copyButtonLabel;
+      }, 700);
+    }
+  }
+  attachCopyButtons();
+
+  /** Accessible image lightbox for article images. */
+  function initLightbox() {
+    const article = document.getElementById("article");
+    if (!article) return;
+
+    const prefersReducedMotion = () =>
+      window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+    let overlay = null;
+    let lastFocused = null;
+    let removeDragListeners = null;
+
+    // Defer attribute mutations so they don't push the LCP timestamp.
+    // Event listeners below use delegation and don't need the attributes to exist yet.
+    requestAnimationFrame(() => {
+      const images = Array.from(article.querySelectorAll("img"));
+      for (const image of images) {
+        if (image.closest("a")) continue;
+        image.setAttribute("role", "button");
+        image.setAttribute("tabindex", "0");
+        image.setAttribute("aria-haspopup", "dialog");
+        image.setAttribute(
+          "aria-label",
+          image.alt ? `Zoom image: ${image.alt}` : "Zoom image"
+        );
+      }
+    });
+
+    function open(src, alt, trigger) {
+      if (overlay) return;
+      lastFocused = trigger ?? document.activeElement;
+
+      overlay = document.createElement("div");
+      overlay.setAttribute("role", "dialog");
+      overlay.setAttribute("aria-modal", "true");
+      overlay.setAttribute(
+        "aria-label",
+        alt ? `Image preview: ${alt}` : "Image preview"
+      );
+      overlay.className =
+        "fixed inset-0 z-50 flex cursor-zoom-out items-center justify-center bg-black/70 backdrop-blur-sm opacity-0 transition-opacity duration-200 motion-reduce:transition-none";
+
+      const closeButton = document.createElement("button");
+      closeButton.type = "button";
+      closeButton.setAttribute("aria-label", "Close image preview");
+      closeButton.className =
+        "absolute end-4 top-4 z-1 flex size-11 items-center justify-center rounded bg-black/50 text-3xl leading-none text-white";
+      closeButton.innerHTML = "&#10005;";
+      closeButton.addEventListener("click", close);
+
+      const image = document.createElement("img");
+      image.src = src;
+      image.alt = "";
+      image.className =
+        "max-h-[90dvh] max-w-[90dvw] cursor-default object-contain transition-transform duration-100 ease-out motion-reduce:transition-none data-[zoom=drag]:cursor-grabbing data-[zoom=drag]:transition-none data-[zoom=in]:cursor-grab";
+
+      overlay.append(closeButton, image);
+      overlay.addEventListener("click", e => {
+        if (e.target === overlay && currentScale <= 1) close();
+      });
+
+      let currentScale = 1;
+      let translateX = 0;
+      let translateY = 0;
+      let initialDist = 0;
+      let initialScale = 1;
+      let panStartX = 0;
+      let panStartY = 0;
+      let panStartTranslateX = 0;
+      let panStartTranslateY = 0;
+      let lastTapTime = 0;
+
+      function applyTransform() {
+        image.style.transform = `scale(${currentScale}) translate(${translateX}px, ${translateY}px)`;
+        // A backdrop click only closes at fit size, so drop the zoom-out cursor while zoomed.
+        overlay?.classList.toggle("cursor-zoom-out", currentScale <= 1);
+      }
+
+      function resetTransform() {
+        currentScale = 1;
+        translateX = 0;
+        translateY = 0;
+        image.style.transform = "";
+        image.removeAttribute("data-zoom");
+        overlay?.classList.add("cursor-zoom-out");
+      }
+
+      // Keep the zoomed image from being panned past its edges.
+      function clampTranslate() {
+        if (!overlay) return;
+        const maxX = Math.max(
+          0,
+          (image.clientWidth - overlay.clientWidth / currentScale) / 2
+        );
+        const maxY = Math.max(
+          0,
+          (image.clientHeight - overlay.clientHeight / currentScale) / 2
+        );
+        translateX = Math.min(maxX, Math.max(-maxX, translateX));
+        translateY = Math.min(maxY, Math.max(-maxY, translateY));
+      }
+
+      overlay.addEventListener(
+        "touchstart",
+        e => {
+          const t = e.touches;
+          if (t.length === 2) {
+            image.setAttribute("data-zoom", "drag");
+            initialDist = Math.hypot(
+              t[1].clientX - t[0].clientX,
+              t[1].clientY - t[0].clientY
+            );
+            initialScale = currentScale;
+          } else if (t.length === 1) {
+            const now = Date.now();
+            if (now - lastTapTime < 300) {
+              e.preventDefault();
+              if (currentScale > 1) {
+                resetTransform();
+              } else {
+                currentScale = 2;
+                translateX = 0;
+                translateY = 0;
+                applyTransform();
+                image.setAttribute("data-zoom", "in");
+              }
+              lastTapTime = 0;
+              panStartX = t[0].clientX;
+              panStartY = t[0].clientY;
+              panStartTranslateX = translateX;
+              panStartTranslateY = translateY;
+            } else {
+              lastTapTime = now;
+              if (currentScale > 1) {
+                image.setAttribute("data-zoom", "drag");
+                panStartX = t[0].clientX;
+                panStartY = t[0].clientY;
+                panStartTranslateX = translateX;
+                panStartTranslateY = translateY;
+              }
+            }
+          }
+        },
+        { passive: false }
+      );
+
+      overlay.addEventListener(
+        "touchmove",
+        e => {
+          const t = e.touches;
+          if (t.length === 2) {
+            e.preventDefault();
+            const dist = Math.hypot(
+              t[1].clientX - t[0].clientX,
+              t[1].clientY - t[0].clientY
+            );
+            const oldScale = currentScale;
+            currentScale = Math.min(
+              4,
+              Math.max(1, initialScale * (dist / initialDist))
+            );
+
+            // Zoom to the geometric center of the two fingers
+            const midX = (t[0].clientX + t[1].clientX) / 2;
+            const midY = (t[0].clientY + t[1].clientY) / 2;
+            const ox = overlay.clientWidth / 2;
+            const oy = overlay.clientHeight / 2;
+            translateX =
+              (midX - ox) * (1 / currentScale - 1 / oldScale) + translateX;
+            translateY =
+              (midY - oy) * (1 / currentScale - 1 / oldScale) + translateY;
+            clampTranslate();
+            applyTransform();
+          } else if (t.length === 1) {
+            if (currentScale > 1) {
+              e.preventDefault();
+              image.setAttribute("data-zoom", "drag");
+              translateX =
+                panStartTranslateX + (t[0].clientX - panStartX) / currentScale;
+              translateY =
+                panStartTranslateY + (t[0].clientY - panStartY) / currentScale;
+              clampTranslate();
+              applyTransform();
+            } else {
+              e.preventDefault();
+            }
+          }
+        },
+        { passive: false }
+      );
+
+      overlay.addEventListener("touchend", e => {
+        if (e.touches.length === 0) {
+          if (currentScale > 1) {
+            image.setAttribute("data-zoom", "in");
+          } else {
+            image.removeAttribute("data-zoom");
+          }
+          if (currentScale <= 1.05) resetTransform();
+        }
+      });
+
+      overlay.addEventListener("touchcancel", e => {
+        if (e.touches.length === 0) {
+          if (currentScale > 1) {
+            image.setAttribute("data-zoom", "in");
+          } else {
+            image.removeAttribute("data-zoom");
+          }
+          if (currentScale <= 1.05) resetTransform();
+        }
+      });
+
+      overlay.addEventListener(
+        "wheel",
+        e => {
+          e.preventDefault();
+          const oldScale = currentScale;
+          const delta = -e.deltaY * 0.001;
+          currentScale = Math.min(4, Math.max(1, currentScale * (1 + delta)));
+
+          if (currentScale <= 1.05) {
+            resetTransform();
+          } else {
+            image.setAttribute("data-zoom", "in");
+            // Zoom to cursor: adjust translate so the point under cursor stays fixed
+            const ox = overlay.clientWidth / 2;
+            const oy = overlay.clientHeight / 2;
+            translateX =
+              (e.clientX - ox) * (1 / currentScale - 1 / oldScale) + translateX;
+            translateY =
+              (e.clientY - oy) * (1 / currentScale - 1 / oldScale) + translateY;
+            clampTranslate();
+            applyTransform();
+          }
+        },
+        { passive: false }
+      );
+
+      let isMouseDown = false;
+      let mouseStartX = 0;
+      let mouseStartY = 0;
+
+      overlay.addEventListener("mousedown", e => {
+        if (e.button !== 0 || currentScale <= 1) return;
+        if (e.target.closest("button")) return;
+        isMouseDown = true;
+        mouseStartX = e.clientX;
+        mouseStartY = e.clientY;
+        panStartTranslateX = translateX;
+        panStartTranslateY = translateY;
+        image.setAttribute("data-zoom", "drag");
+        e.preventDefault();
+      });
+
+      function onMouseMove(e) {
+        if (!isMouseDown || !overlay) return;
+        translateX =
+          panStartTranslateX + (e.clientX - mouseStartX) / currentScale;
+        translateY =
+          panStartTranslateY + (e.clientY - mouseStartY) / currentScale;
+        clampTranslate();
+        applyTransform();
+      }
+
+      function onMouseUp() {
+        if (!isMouseDown) return;
+        isMouseDown = false;
+        if (currentScale > 1) {
+          image.setAttribute("data-zoom", "in");
+        } else {
+          image.removeAttribute("data-zoom");
+        }
+      }
+
+      document.addEventListener("mousemove", onMouseMove);
+      document.addEventListener("mouseup", onMouseUp);
+      removeDragListeners = () => {
+        document.removeEventListener("mousemove", onMouseMove);
+        document.removeEventListener("mouseup", onMouseUp);
+      };
+
+      document.body.appendChild(overlay);
+      document.documentElement.style.overflow = "hidden";
+      document.addEventListener("keydown", onKeyDown);
+      window.__closeLightbox = close;
+
+      requestAnimationFrame(() => overlay?.classList.add("opacity-100"));
+      closeButton.focus();
+    }
+
+    function close() {
+      if (!overlay) return;
+      const el = overlay;
+      overlay = null;
+      el.classList.add("pointer-events-none");
+      window.__closeLightbox = null;
+
+      document.removeEventListener("keydown", onKeyDown);
+      removeDragListeners?.();
+      removeDragListeners = null;
+      document.documentElement.style.overflow = "";
+      lastFocused?.focus();
+      lastFocused = null;
+
+      if (prefersReducedMotion()) {
+        el.remove();
+        return;
+      }
+      const remove = () => el.remove();
+      el.addEventListener("transitionend", remove, { once: true });
+      setTimeout(remove, 250); // fallback in case transitionend never fires
+      el.classList.remove("opacity-100");
+    }
+
+    function onKeyDown(e) {
+      if (e.key === "Escape") {
+        close();
+      } else if (e.key === "Tab") {
+        trapFocus(e);
+      }
+    }
+
+    // Keep keyboard focus inside the open dialog.
+    function trapFocus(e) {
+      if (!overlay) return;
+      const focusables = overlay.querySelectorAll(
+        'a[href], button, [tabindex]:not([tabindex="-1"])'
+      );
+      if (focusables.length === 0) return;
+      const first = focusables[0];
+      const last = focusables[focusables.length - 1];
+      if (e.shiftKey && document.activeElement === first) {
+        e.preventDefault();
+        last.focus();
+      } else if (!e.shiftKey && document.activeElement === last) {
+        e.preventDefault();
+        first.focus();
+      }
+    }
+
+    function triggerFromEvent(e) {
+      const image = e.target.closest("img");
+      if (!image || !article.contains(image) || image.closest("a")) return null;
+      return image;
+    }
+
+    function activate(image) {
+      open(image.currentSrc || image.src, image.alt, image);
+    }
+
+    article.addEventListener("click", e => {
+      const image = triggerFromEvent(e);
+      if (!image) return;
+      e.preventDefault();
+      activate(image);
+    });
+
+    article.addEventListener("keydown", e => {
+      if (e.key !== "Enter" && e.key !== " " && e.key !== "Spacebar") return;
+      const image = triggerFromEvent(e);
+      if (!image) return;
+      e.preventDefault();
+      activate(image);
+    });
+  }
+  initLightbox();
+
+  if (!window.__lightboxSwapBound) {
+    window.__lightboxSwapBound = true;
+    document.addEventListener("astro:before-swap", () =>
+      window.__closeLightbox?.()
+    );
+  }
+
+  document.addEventListener("astro:after-swap", () =>
+    window.scrollTo({ left: 0, top: 0, behavior: "instant" })
+  );
+</script>
