@@ -1,0 +1,792 @@
+<!DOCTYPE html><html dir="ltr" lang="zh-CN" class="overflow-y-scroll scroll-smooth"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1"><link rel="icon" type="image/png" href="/images/favicon-32x32-next.png"><link rel="icon" href="/favicon.ico"><link rel="canonical" href="https://www.saromchars.tech/posts/hash-is-not-encryption/"><meta name="generator" content="Astro v7.4.5"><!-- Primary meta --><title>哈希为什么不能当作加密 | Sarom&#39;s Blog</title><meta name="title" content="哈希为什么不能当作加密 | Sarom's Blog"><meta name="description" content="从密码学安全哈希的设计目标出发，厘清摘要、原像阻抗、第二原像阻抗与抗碰撞性，分析单向性为何不能防范字典猜测，说明为什么不能把普通哈希当作加密或直接用于口令存储。"><meta name="author" content="Sarom Chars"><link rel="sitemap" href="/sitemap-index.xml"><!-- Open Graph --><meta property="og:type" content="article"><meta property="og:site_name" content="Sarom's Blog"><meta property="og:title" content="哈希为什么不能当作加密 | Sarom's Blog"><meta property="og:description" content="从密码学安全哈希的设计目标出发，厘清摘要、原像阻抗、第二原像阻抗与抗碰撞性，分析单向性为何不能防范字典猜测，说明为什么不能把普通哈希当作加密或直接用于口令存储。"><meta property="og:url" content="https://www.saromchars.tech/posts/hash-is-not-encryption/"><meta property="og:image" content="https://www.saromchars.tech/og.png"><!-- Twitter / X --><meta property="twitter:card" content="summary_large_image"><meta property="twitter:url" content="https://www.saromchars.tech/posts/hash-is-not-encryption/"><meta property="twitter:title" content="哈希为什么不能当作加密 | Sarom's Blog"><meta property="twitter:description" content="从密码学安全哈希的设计目标出发，厘清摘要、原像阻抗、第二原像阻抗与抗碰撞性，分析单向性为何不能防范字典猜测，说明为什么不能把普通哈希当作加密或直接用于口令存储。"><meta property="twitter:image" content="https://www.saromchars.tech/og.png"><!-- RSS autodiscovery --><link rel="alternate" type="application/rss+xml" title="Sarom's Blog" href="https://www.saromchars.tech/rss.xml"><!-- Filled at runtime by theme.ts to match the current background colour --><meta name="theme-color" content=""><!-- Extra head content injected by child layouts (e.g. JSON-LD, article meta) --><meta property="article:published_time" content="2018-08-27T02:00:00.000Z"><script type="application/ld+json">{"@context":"https://schema.org","@type":"BlogPosting","headline":"哈希为什么不能当作加密","mainEntityOfPage":"https://www.saromchars.tech/posts/hash-is-not-encryption/","datePublished":"2018-08-27T02:00:00.000Z","author":[{"@type":"Person","name":"Sarom Chars","url":"https://github.com/SaromChars"}]}</script><!--
+      Inline FOUC-prevention script: sets data-theme on <html> before
+      the browser paints. Runs synchronously, no defer/async.
+    --><script>
+      (function () {
+        const stored = localStorage.getItem("theme");
+        const prefersDark = window.matchMedia(
+          "(prefers-color-scheme: dark)"
+        ).matches;
+        const theme = stored ?? (prefersDark ? "dark" : "light");
+        const root = document.firstElementChild;
+        root?.setAttribute("data-theme", theme);
+        root?.classList.toggle("dark", theme === "dark");
+        // Expose value so theme.ts can skip re-detection.
+        window.__theme = { value: theme };
+      })();
+    </script><meta name="robots" content="index, follow"><script async src="https://www.googletagmanager.com/gtag/js?id=G-WJJJTJ4FWX"></script><script>(function(){const measurementId = "G-WJJJTJ4FWX";
+
+    window.dataLayer = window.dataLayer || [];
+    function gtag(){ window.dataLayer.push(arguments); }
+    gtag('js', new Date());
+    gtag('config', measurementId);
+  })();</script><style>@keyframes astroFadeInOut{0%{opacity:1}to{opacity:0}}@keyframes astroFadeIn{0%{opacity:0;mix-blend-mode:plus-lighter}to{opacity:1;mix-blend-mode:plus-lighter}}@keyframes astroFadeOut{0%{opacity:1;mix-blend-mode:plus-lighter}to{opacity:0;mix-blend-mode:plus-lighter}}@keyframes astroSlideFromRight{0%{transform:translate(100%)}}@keyframes astroSlideFromLeft{0%{transform:translate(-100%)}}@keyframes astroSlideToRight{to{transform:translate(100%)}}@keyframes astroSlideToLeft{to{transform:translate(-100%)}}@media (prefers-reduced-motion){::view-transition-group(*),::view-transition-old(*),::view-transition-new(*),[data-astro-transition-scope]{animation:none!important}}
+</style><link rel="stylesheet" href="/_astro/Footer.DC6qDsIp.css"><style>[data-astro-transition-scope="astro-bztu2lml-1"] { view-transition-name: \5BC6\7801\5B66; }@layer astro { ::view-transition-old(\5BC6\7801\5B66) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }::view-transition-new(\5BC6\7801\5B66) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }[data-astro-transition=back]::view-transition-old(\5BC6\7801\5B66) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition=back]::view-transition-new(\5BC6\7801\5B66) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; } }[data-astro-transition-fallback="old"] [data-astro-transition-scope="astro-bztu2lml-1"],
+			[data-astro-transition-fallback="old"][data-astro-transition-scope="astro-bztu2lml-1"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition-fallback="new"] [data-astro-transition-scope="astro-bztu2lml-1"],
+			[data-astro-transition-fallback="new"][data-astro-transition-scope="astro-bztu2lml-1"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }[data-astro-transition=back][data-astro-transition-fallback="old"] [data-astro-transition-scope="astro-bztu2lml-1"],
+			[data-astro-transition=back][data-astro-transition-fallback="old"][data-astro-transition-scope="astro-bztu2lml-1"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition=back][data-astro-transition-fallback="new"] [data-astro-transition-scope="astro-bztu2lml-1"],
+			[data-astro-transition=back][data-astro-transition-fallback="new"][data-astro-transition-scope="astro-bztu2lml-1"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }</style><style>[data-astro-transition-scope="astro-bztu2lml-2"] { view-transition-name: \54C8\5E0C\7B97\6CD5; }@layer astro { ::view-transition-old(\54C8\5E0C\7B97\6CD5) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }::view-transition-new(\54C8\5E0C\7B97\6CD5) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }[data-astro-transition=back]::view-transition-old(\54C8\5E0C\7B97\6CD5) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition=back]::view-transition-new(\54C8\5E0C\7B97\6CD5) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; } }[data-astro-transition-fallback="old"] [data-astro-transition-scope="astro-bztu2lml-2"],
+			[data-astro-transition-fallback="old"][data-astro-transition-scope="astro-bztu2lml-2"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition-fallback="new"] [data-astro-transition-scope="astro-bztu2lml-2"],
+			[data-astro-transition-fallback="new"][data-astro-transition-scope="astro-bztu2lml-2"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }[data-astro-transition=back][data-astro-transition-fallback="old"] [data-astro-transition-scope="astro-bztu2lml-2"],
+			[data-astro-transition=back][data-astro-transition-fallback="old"][data-astro-transition-scope="astro-bztu2lml-2"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition=back][data-astro-transition-fallback="new"] [data-astro-transition-scope="astro-bztu2lml-2"],
+			[data-astro-transition=back][data-astro-transition-fallback="new"][data-astro-transition-scope="astro-bztu2lml-2"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }</style><style>[data-astro-transition-scope="astro-bztu2lml-3"] { view-transition-name: \6D88\606F\6458\8981; }@layer astro { ::view-transition-old(\6D88\606F\6458\8981) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }::view-transition-new(\6D88\606F\6458\8981) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }[data-astro-transition=back]::view-transition-old(\6D88\606F\6458\8981) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition=back]::view-transition-new(\6D88\606F\6458\8981) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; } }[data-astro-transition-fallback="old"] [data-astro-transition-scope="astro-bztu2lml-3"],
+			[data-astro-transition-fallback="old"][data-astro-transition-scope="astro-bztu2lml-3"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition-fallback="new"] [data-astro-transition-scope="astro-bztu2lml-3"],
+			[data-astro-transition-fallback="new"][data-astro-transition-scope="astro-bztu2lml-3"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }[data-astro-transition=back][data-astro-transition-fallback="old"] [data-astro-transition-scope="astro-bztu2lml-3"],
+			[data-astro-transition=back][data-astro-transition-fallback="old"][data-astro-transition-scope="astro-bztu2lml-3"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition=back][data-astro-transition-fallback="new"] [data-astro-transition-scope="astro-bztu2lml-3"],
+			[data-astro-transition=back][data-astro-transition-fallback="new"][data-astro-transition-scope="astro-bztu2lml-3"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }</style><style>[data-astro-transition-scope="astro-bztu2lml-4"] { view-transition-name: \4FE1\606F\5B89\5168; }@layer astro { ::view-transition-old(\4FE1\606F\5B89\5168) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }::view-transition-new(\4FE1\606F\5B89\5168) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }[data-astro-transition=back]::view-transition-old(\4FE1\606F\5B89\5168) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition=back]::view-transition-new(\4FE1\606F\5B89\5168) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; } }[data-astro-transition-fallback="old"] [data-astro-transition-scope="astro-bztu2lml-4"],
+			[data-astro-transition-fallback="old"][data-astro-transition-scope="astro-bztu2lml-4"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition-fallback="new"] [data-astro-transition-scope="astro-bztu2lml-4"],
+			[data-astro-transition-fallback="new"][data-astro-transition-scope="astro-bztu2lml-4"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }[data-astro-transition=back][data-astro-transition-fallback="old"] [data-astro-transition-scope="astro-bztu2lml-4"],
+			[data-astro-transition=back][data-astro-transition-fallback="old"][data-astro-transition-scope="astro-bztu2lml-4"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition=back][data-astro-transition-fallback="new"] [data-astro-transition-scope="astro-bztu2lml-4"],
+			[data-astro-transition=back][data-astro-transition-fallback="new"][data-astro-transition-scope="astro-bztu2lml-4"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }</style><style>[data-astro-transition-scope="astro-bztu2lml-5"] { view-transition-name: \5BC6\7801\5B58\50A8; }@layer astro { ::view-transition-old(\5BC6\7801\5B58\50A8) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }::view-transition-new(\5BC6\7801\5B58\50A8) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }[data-astro-transition=back]::view-transition-old(\5BC6\7801\5B58\50A8) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition=back]::view-transition-new(\5BC6\7801\5B58\50A8) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; } }[data-astro-transition-fallback="old"] [data-astro-transition-scope="astro-bztu2lml-5"],
+			[data-astro-transition-fallback="old"][data-astro-transition-scope="astro-bztu2lml-5"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition-fallback="new"] [data-astro-transition-scope="astro-bztu2lml-5"],
+			[data-astro-transition-fallback="new"][data-astro-transition-scope="astro-bztu2lml-5"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }[data-astro-transition=back][data-astro-transition-fallback="old"] [data-astro-transition-scope="astro-bztu2lml-5"],
+			[data-astro-transition=back][data-astro-transition-fallback="old"][data-astro-transition-scope="astro-bztu2lml-5"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition=back][data-astro-transition-fallback="new"] [data-astro-transition-scope="astro-bztu2lml-5"],
+			[data-astro-transition=back][data-astro-transition-fallback="new"][data-astro-transition-scope="astro-bztu2lml-5"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }</style></head><body class="bg-background font-app text-foreground selection:bg-accent/75 selection:text-accent-foreground flex min-h-svh flex-col"><a id="skip-to-content" href="#main-content" class="bg-background text-accent absolute inset-s-16 -top-full z-50 px-3 py-2 backdrop-blur-lg transition-all focus:top-4">跳到正文</a><header class="app-layout flex flex-col items-center justify-between sm:flex-row"><div class="border-border bg-background relative flex w-full items-baseline justify-between border-b py-4 sm:items-center sm:py-6"><a href="/" class="absolute py-1 text-xl leading-8 font-semibold whitespace-nowrap sm:static sm:my-auto sm:text-2xl sm:leading-none">Sarom&#39;s Blog</a><nav id="nav-menu" class="flex w-full flex-col items-center sm:ms-2 sm:flex-row sm:justify-end sm:space-x-4 sm:py-0"><button id="menu-btn" class="focus-outline self-end p-2 sm:hidden" aria-label="展开菜单" aria-expanded="false" aria-controls="menu-items" data-label-open="展开菜单" data-label-close="收起菜单"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="hidden" viewBox="0 0 24 24" id="close-icon"><path stroke="none" d="M0 0h24v24H0z" /><path d="M18 6 6 18M6 6l12 12" /></svg><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="icon icon-tabler icons-tabler-outline icon-tabler-menu-deep" viewBox="0 0 24 24" id="menu-icon"><path stroke="none" d="M0 0h24v24H0z" /><path d="M4 6h16M7 12h13M10 18h10" /></svg></button><ul id="menu-items" class="[&amp;&gt;li&gt;a]:hover:text-accent mt-4 hidden w-44 grid-cols-2 place-content-center gap-2 sm:mt-0 sm:flex sm:w-auto sm:gap-x-5 sm:gap-y-0 sm:[&amp;&gt;li]:h-8 [&amp;&gt;li&gt;a]:block [&amp;&gt;li&gt;a]:px-4 [&amp;&gt;li&gt;a]:py-3 [&amp;&gt;li&gt;a]:text-center [&amp;&gt;li&gt;a]:font-medium sm:[&amp;&gt;li&gt;a]:px-2 sm:[&amp;&gt;li&gt;a]:py-1"><li class="col-span-2"><a href="/posts/" class="active-nav">文章</a></li><li class="col-span-2"><a href="/tags/">标签</a></li><li class="col-span-2"><a href="/about/">关于</a></li><li class="col-span-2"><a href="/archives/" title="归档" aria-label="归档" class="group inline-flex items-center gap-1 hover:text-accent focus-outline flex size-full justify-center p-3 sm:relative sm:size-8 sm:p-0"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="hidden sm:absolute sm:top-1/2 sm:left-1/2 sm:block sm:size-6 sm:-translate-x-1/2 sm:-translate-y-1/2" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M3 6a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2 2 2 0 0 1-2 2H5a2 2 0 0 1-2-2M5 8v10a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8M10 12h4" /></svg><span class="sm:sr-only">归档</span></a></li><li class="col-span-1 flex items-center justify-center"><a href="/search/" title="搜索" aria-label="搜索" class="group inline-flex items-center gap-1 hover:text-accent focus-outline relative size-8"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="absolute top-1/2 left-1/2 size-6 -translate-x-1/2 -translate-y-1/2" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M3 10a7 7 0 1 0 14 0 7 7 0 1 0-14 0M21 21l-6-6" /></svg><span class="sr-only">搜索</span></a></li><li class="col-span-1 flex items-center justify-center"><button id="theme-btn" class="focus-outline hover:[&amp;&gt;svg]:stroke-accent relative size-12 p-4 sm:size-8" title="切换主题" aria-label="auto" aria-live="polite"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="absolute top-[50%] left-[50%] translate-[-50%] scale-100 rotate-0 transition-all dark:scale-0 dark:-rotate-90" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M12 3h.393a7.5 7.5 0 0 0 7.92 12.446A9 9 0 1 1 12 2.992z" /></svg><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="absolute top-[50%] left-[50%] translate-[-50%] scale-0 rotate-90 transition-all dark:scale-100 dark:rotate-0" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M14.828 14.828a4 4 0 1 0-5.656-5.656 4 4 0 0 0 5.656 5.656M6.343 17.657l-1.414 1.414M6.343 6.343 4.929 4.929M17.657 6.343l1.414-1.414M17.657 17.657l1.414 1.414M4 12H2M12 4V2M20 12h2M12 20v2" /></svg></button></li></ul></nav></div></header><script type="module">function e(){let e=document.querySelector(`#menu-btn`),t=document.querySelector(`#menu-items`),n=document.querySelector(`#menu-icon`),r=document.querySelector(`#close-icon`);if(!e||!t||!n||!r)return;let i=e.dataset.labelOpen??`Open menu`,a=e.dataset.labelClose??`Close menu`;e.addEventListener(`click`,()=>{let o=e.getAttribute(`aria-expanded`)===`true`;e.setAttribute(`aria-expanded`,o?`false`:`true`),e.setAttribute(`aria-label`,o?i:a),t.classList.toggle(`hidden`),t.classList.toggle(`grid`),n.classList.toggle(`hidden`),r.classList.toggle(`hidden`)})}function t(){let e=document.getElementById(`skip-to-content`);e&&e.addEventListener(`click`,e=>{if(e.defaultPrevented||e.metaKey||e.ctrlKey||e.shiftKey||e.button!==0)return;e.preventDefault();let t=document.getElementById(`main-content`);t&&(t.setAttribute(`tabindex`,`-1`),t.addEventListener(`blur`,()=>t.removeAttribute(`tabindex`),{once:!0}),t.focus(),t.scrollIntoView({behavior:`smooth`}))})}e(),document.addEventListener(`astro:after-swap`,e),t(),document.addEventListener(`astro:after-swap`,t);</script><div class="app-layout flex items-center justify-start"><a id="back-button" href="/" class="group inline-flex items-center gap-1 hover:text-accent focus-outline hover:text-foreground/75 -ms-2 mt-8 mb-2"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="inline-block size-6 rtl:rotate-180" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="m15 6-6 6 6 6" /></svg><span>返回</span></a></div><script type="module">function e(){let e=document.querySelector(`#back-button`),t=sessionStorage.getItem(`backUrl`);t&&e&&(e.href=t)}document.addEventListener(`astro:page-load`,e),e();</script><main id="main-content" class="app-layout" data-pagefind-body><h1 style="view-transition-name:hash-is-not-encryption" class="text-accent inline-block text-2xl font-bold sm:text-3xl">哈希为什么不能当作加密</h1><div class="my-2 flex items-center gap-2"><div class="text-muted-foreground flex items-center gap-x-2"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="inline-block size-6 min-w-5.5" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M4 7a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2zM16 3v4M8 3v4M4 11h16M7 14h.013M10.01 14h.005M13.01 14h.005M16.015 14h.005M13.015 17h.005M7.01 17h.005M10.01 17h.005" /></svg><time class="text-sm sm:text-base" datetime="2018-08-27T02:00:00.000Z">2018年8月27日</time></div><span aria-hidden="true" class="text-muted-foreground max-sm:hidden hidden">|</span></div><article id="article" class="mt-8 w-full app-prose max-w-app prose-pre:bg-(--shiki-light-bg) dark:prose-pre:bg-(--shiki-dark-bg)"><p>在探讨密码学工具时，“加密”和“哈希”常常被混为一谈。有人会说“用 MD5 或 SHA-256 把密码加密一下存入数据库”，也有人觉得“既然哈希算出来之后无法逆向解出原文，那它肯定比能解密的算法更安全”。这些说法混淆了保密传输与单向映射的根本职责。</p>
+<p>哈希（Hash，或散列、消息摘要）并不是加密算法。加密的设计目标是在拥有密钥的前提下，可逆地恢复被保护的明文；而安全哈希函数的设计初衷是把任意长度的数据压缩成固定长度的指纹，并提供严苛的单向性与抗碰撞能力。</p>
+<p><em>这是一篇按历史视角整理的技术笔记，知识截止日期为 2018 年 8 月 27 日。</em></p>
+<h2 id="消息摘要与安全哈希的三大性质">消息摘要与安全哈希的三大性质</h2>
+<p>加密体系围绕保密性展开：发送方用密钥加密明文生成密文，加密需要让持有正确密钥及所需参数的一方恢复明文。</p>
+<p>哈希函数（Cryptographic Hash Function）则完全不同。以 RFC 6234 规范的 SHA 系列（如 SHA-256、SHA-512）为例，哈希函数接收任意长度（例如小于 2<sup>64</sup> 或 2<sup>128</sup> 比特）的输入消息，经过填充、分块与迭代压缩，输出固定长度的散列值（通常称为消息摘要，Message Digest）。这一过程天然丢失了长度信息和冗余信息，从数学映射上看是多对一的不可逆压缩。<a href="#ref-rfc6234-s1">[RFC 6234 §1]</a></p>
+<p>密码学上合格的安全哈希函数，并不只是“把字符串弄乱”，而是必须满足以下三项核心安全性质：</p>
+<ol>
+<li><strong>抗原像性（Pre-image Resistance / 单向性）：</strong> 给定一个摘要值 <code>h</code>，在计算上无法找到任何输入消息 <code>m</code>，使得 <code>Hash(m) = h</code>。在理想 <code>n</code> 位哈希、目标不受较小候选集限制时，通用穷举搜索的计算复杂度数量级约为 <code>2<sup>n</sup></code>。</li>
+<li><strong>抗第二原像性（Second Pre-image Resistance / 弱抗碰撞性）：</strong> 给定一个特定的输入消息 <code>m<sub>1</sub></code>，在计算上无法找到另一个不同的输入消息 <code>m<sub>2</sub></code>（<code>m<sub>1</sub> ≠ m<sub>2</sub></code>），使得 <code>Hash(m<sub>1</sub>) = Hash(m<sub>2</sub>)</code>。</li>
+<li><strong>抗碰撞性（Collision Resistance / 强抗碰撞性）：</strong> 在计算上无法找到任意两个不同的消息 <code>m<sub>1</sub></code> 和 <code>m<sub>2</sub></code>（<code>m<sub>1</sub> ≠ m<sub>2</sub></code>），使得它们产生相同的摘要值 <code>Hash(m<sub>1</sub>) = Hash(m<sub>2</sub>)</code>。受生日悖论影响，理想情况下寻找碰撞的复杂度为 <code>2<sup>n/2</sup></code>。<a href="#ref-rfc6151-s2">[RFC 6151 §2]</a></li>
+</ol>
+<p>任何在传输过程中对原始消息的微小篡改，都会以极高概率导致输出完全不同的摘要，从而让完整性校验或数字签名发现异常。<a href="#ref-rfc6234-s1">[RFC 6234 §1]</a></p>
+<h2 id="碰撞与原像md5-为什么不能用于签名却仍有人讨论校验">碰撞与原像：MD5 为什么不能用于签名，却仍有人讨论校验</h2>
+<p>理解这三项性质的区别，有助于看清密码学标准的演进边界。</p>
+<p>在 2011 年发布的 RFC 6151 中，针对 MD5 的安全性评估给出了明确界定：</p>
+<ul>
+<li><strong>抗碰撞性彻底瓦解：</strong> 针对 MD5 的碰撞攻击已经可以在普通个人电脑上数秒至一分钟内完成，攻击者甚至构造出了具有相同 MD5 摘要的伪造 X.509 证书。因此，凡是依赖抗碰撞性的场景（最典型的就是数字签名），必须坚决淘汰 MD5。<a href="#ref-rfc6151-s2.1">[RFC 6151 §2.1]</a></li>
+<li><strong>抗原像性依然维持极高代价：</strong> 尽管学术界对 MD5 提出了快于暴力穷举的原像攻击，但其复杂度依然高达约 <code>2<sup>123.4</sup></code>。这类一般原像攻击的代价依然很高，不能据此推出弱口令难以猜中。<a href="#ref-rfc6151-s2.2">[RFC 6151 §2.2]</a></li>
+</ul>
+<p>如果仅仅因为“无法逆向还原”就称一个算法安全，就会掩盖碰撞攻击带来的灾难。在数字签名体系中，攻击者先寻找两个内容不同但摘要相同的合法/恶意文件对，诱导签名者对合法文件签名，再将签名转移到恶意文件上。此时即使单向性完好，抗碰撞性的破裂也直接摧毁了签名的可信度。</p>
+<h2 id="为什么不可逆不等于可以防范密码猜测">为什么不可逆不等于可以防范密码猜测</h2>
+<p>工程中最常见的误区，是将“不可逆”等同于“输入绝对保密”。</p>
+<p>设想用户登录系统时设置了一个密码。如果直接使用 <code>SHA-256(password)</code> 作为存储凭证，看似密码没有明文保存在数据库中，攻击者也无法直接逆向反解出 <code>password</code>。</p>
+<p>但是，不可逆推并不等于不可被暴力猜测验证：</p>
+<ol>
+<li><strong>有限候选空间的顺向验证：</strong> 若候选口令集合较小（例如若候选口令只有一百万个，攻击者可逐个计算摘要并比对；这里的一百万仅为教学机制示意，不是用户口令分布实测），攻击者顺向正向计算一遍即可完成全部比对。</li>
+<li><strong>高效计算特性：</strong> 通用哈希函数（如 MD5、SHA-1、SHA-256）设计用于数据完整性校验与基础摘要，其计算本身是高效的。面对攻击者本地离线穷举，无需任何数学逆向，只需不断正向计算候选口令并比对即可。</li>
+<li><strong>彩虹表与查表反查：</strong> 攻击者无需对算法进行数学解密，只需预先计算常见候选词汇的哈希值建立映射字典（或彩虹表），或者直接离线穷举候选词典。一旦数据库泄漏，攻击者对每个哈希值进行匹配，就能在短时间内还原弱口令。</li>
+</ol>
+<p>抗原像性讨论的是在相应攻击模型下寻找原像的计算难度，不承诺低熵输入保密。当输入空间局限在有限的常用候选集时，顺向枚举验证使得不可逆性形同虚设。</p>
+<p>因此，<strong>直接使用通用哈希存储密码，无法抵御离线字典攻击</strong>。</p>
+<h2 id="适用边界与后续机制演进">适用边界与后续机制演进</h2>
+<p>总结而言：</p>
+<ul>
+<li><strong>加密（Encryption）：</strong> 依靠密钥保护机密性，必须是可逆的。没有密钥不能读，持有正确密钥及参数可以解密。</li>
+<li><strong>消息摘要（Hash）：</strong> 依靠数学压缩和单向性提供确定性指纹，用于完整性校验和数字签名，不可逆。</li>
+<li><strong>普通哈希不能解决的场景：</strong>
+<ul>
+<li><strong>防篡改不等于防伪造：</strong> 普通哈希不包含密钥。如果攻击者篡改了消息的同时重新计算了哈希，接收方无法察觉消息来源是否合法。解决这一问题需要引入带密钥的消息认证码（HMAC），下一篇将深入剖析。</li>
+<li><strong>密码防盗：</strong> 口令存储需要的是刻意增加计算成本、消耗计算内存、并为每个用户增加独立随机扰动的算法（如加盐与慢哈希/KDF），后续文章将详细探讨口令哈希与密钥派生的设计。</li>
+</ul>
+</li>
+</ul>
+<hr>
+<h2 id="参考资料与固定版本来源">参考资料与固定版本来源</h2>
+<ul>
+  <li>
+    <a id="ref-rfc6234-s1" href="https://www.rfc-editor.org/rfc/rfc6234.txt" target="_blank" rel="noopener noreferrer">RFC 6234 §1: Overview of Contents</a>
+    <br>D. Eastlake 3rd, T. Hansen. <em>US Secure Hash Algorithms (SHA and SHA-based HMAC and HKDF)</em>, May 2011. 说明了安全哈希函数的定义、输出长度与抗原像/抗碰撞特性。
+  </li>
+  <li>
+    <a id="ref-rfc6151-s2" href="https://www.rfc-editor.org/rfc/rfc6151.txt" target="_blank" rel="noopener noreferrer">RFC 6151 §2: Security Considerations</a>
+    <br>S. Turner, L. Chen. <em>Updated Security Considerations for the MD5 Message-Digest and the HMAC-MD5 Algorithms</em>, March 2011. 阐明了消息摘要函数的抗碰撞、抗原像与第二原像属性。
+  </li>
+  <li>
+    <a id="ref-rfc6151-s2.1" href="https://www.rfc-editor.org/rfc/rfc6151.txt" target="_blank" rel="noopener noreferrer">RFC 6151 §2.1: Collision Resistance</a>
+    <br>详细说明了 MD5 碰撞攻击的实际进展及其在数字签名和 X.509 证书领域的危害。
+  </li>
+  <li>
+    <a id="ref-rfc6151-s2.2" href="https://www.rfc-editor.org/rfc/rfc6151.txt" target="_blank" rel="noopener noreferrer">RFC 6151 §2.2: Pre-Image and Second Pre-Image Resistance</a>
+    <br>记录了截至 2011 年 MD5 抗原像攻击的理论复杂度（约 2<sup>123.4</sup>），说明了单向性与抗碰撞性的独立性。
+  </li>
+</ul></article><hr class="my-8 border-dashed"><div id="btt-btn-container" class="fixed inset-e-4 bottom-8 z-50 md:sticky md:inset-e-auto md:float-end md:me-1 translate-y-14 opacity-0 transition duration-500"><button data-button="back-to-top" class="group bg-background relative px-2 py-1 size-14 rounded-full shadow-xl md:h-8 md:w-fit md:rounded-md md:shadow-none md:focus-visible:rounded-none md:bg-background/35 md:bg-clip-padding md:backdrop-blur-lg"><span id="progress-indicator" class="absolute inset-0 -z-10 block size-14 scale-110 rounded-full bg-transparent md:hidden md:h-8 md:rounded-md"></span><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="inline-block rotate-90 md:hidden" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M5 12h14M5 12l6 6M5 12l6-6" /></svg><span class="group-hover:text-accent sr-only text-sm md:not-sr-only"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="inline-block size-4" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M12 5v14M16 9l-4-4M8 9l4-4" /></svg> 回到顶部</span></button></div><script data-astro-rerun>
+  function backToTop() {
+    const rootElement = document.documentElement;
+    const btnContainer = document.querySelector("#btt-btn-container");
+    const backToTopBtn = document.querySelector("[data-button='back-to-top']");
+    const progressIndicator = document.querySelector("#progress-indicator");
+
+    if (!rootElement || !btnContainer || !backToTopBtn || !progressIndicator)
+      return;
+
+    backToTopBtn.addEventListener("click", () => {
+      document.body.scrollTop = 0;
+      document.documentElement.scrollTop = 0;
+    });
+
+    let lastVisible = null;
+    function handleScroll() {
+      const scrollTotal = rootElement.scrollHeight - rootElement.clientHeight;
+      const scrollTop = rootElement.scrollTop;
+      const scrollPercent = Math.floor((scrollTop / scrollTotal) * 100);
+
+      progressIndicator.style.setProperty(
+        "background-image",
+        `conic-gradient(var(--accent), var(--accent) ${scrollPercent}%, transparent ${scrollPercent}%)`
+      );
+
+      const isVisible = scrollTop / scrollTotal > 0.3;
+
+      if (isVisible !== lastVisible) {
+        btnContainer.classList.toggle("opacity-100", isVisible);
+        btnContainer.classList.toggle("translate-y-0", isVisible);
+        btnContainer.classList.toggle("opacity-0", !isVisible);
+        btnContainer.classList.toggle("translate-y-14", !isVisible);
+        lastVisible = isVisible;
+      }
+    }
+
+    let ticking = false;
+    document.addEventListener("scroll", () => {
+      if (!ticking) {
+        window.requestAnimationFrame(() => {
+          handleScroll();
+          ticking = false;
+        });
+        ticking = true;
+      }
+    });
+  }
+  backToTop();
+</script><ul class="mt-4 mb-8 flex flex-wrap gap-4 sm:my-8"><li><a data-astro-transition-scope="astro-bztu2lml-1" href="/tags/密码学/" class="flex items-center gap-0.5 border-foreground border-b-2 border-dashed hover:border-accent hover:text-accent hover:-mt-0.5 focus-visible:text-accent focus-visible:border-none text-sm"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="opacity-80 size-4" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M5 9h14M5 15h14M11 4 7 20M17 4l-4 16" /></svg>密码学</a></li><li><a data-astro-transition-scope="astro-bztu2lml-2" href="/tags/哈希算法/" class="flex items-center gap-0.5 border-foreground border-b-2 border-dashed hover:border-accent hover:text-accent hover:-mt-0.5 focus-visible:text-accent focus-visible:border-none text-sm"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="opacity-80 size-4" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M5 9h14M5 15h14M11 4 7 20M17 4l-4 16" /></svg>哈希算法</a></li><li><a data-astro-transition-scope="astro-bztu2lml-3" href="/tags/消息摘要/" class="flex items-center gap-0.5 border-foreground border-b-2 border-dashed hover:border-accent hover:text-accent hover:-mt-0.5 focus-visible:text-accent focus-visible:border-none text-sm"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="opacity-80 size-4" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M5 9h14M5 15h14M11 4 7 20M17 4l-4 16" /></svg>消息摘要</a></li><li><a data-astro-transition-scope="astro-bztu2lml-4" href="/tags/信息安全/" class="flex items-center gap-0.5 border-foreground border-b-2 border-dashed hover:border-accent hover:text-accent hover:-mt-0.5 focus-visible:text-accent focus-visible:border-none text-sm"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="opacity-80 size-4" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M5 9h14M5 15h14M11 4 7 20M17 4l-4 16" /></svg>信息安全</a></li><li><a data-astro-transition-scope="astro-bztu2lml-5" href="/tags/密码存储/" class="flex items-center gap-0.5 border-foreground border-b-2 border-dashed hover:border-accent hover:text-accent hover:-mt-0.5 focus-visible:text-accent focus-visible:border-none text-sm"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="opacity-80 size-4" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M5 9h14M5 15h14M11 4 7 20M17 4l-4 16" /></svg>密码存储</a></li></ul><hr class="my-8 border-dashed"><div data-pagefind-ignore class="my-8 grid grid-cols-1 gap-6 sm:grid-cols-2"><a href="/posts/symmetric-encryption-modes/" class="flex w-full gap-1 hover:opacity-75"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="inline-block flex-none rtl:rotate-180" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M5 12h14M5 12l6 6M5 12l6-6" /></svg><div><span>上一篇</span><div class="text-accent/85 text-sm">AES 为什么还需要工作模式？——从 CBC、CTR 到 GCM</div></div></a><a href="/posts/hmac-message-authentication/" class="flex w-full justify-end gap-1 text-end hover:opacity-75 sm:col-start-2"><div><span>下一篇</span><div class="text-accent/85 text-sm">HMAC 如何验证消息</div></div><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="inline-block flex-none rtl:rotate-180" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M5 12h14M13 18l6-6M13 6l6 6" /></svg></a></div></main><footer class="app-layout mt-auto"><div class="border-border flex flex-col items-center justify-between border-t py-6 sm:flex-row-reverse sm:py-4"><div class="flex flex-wrap items-center gap-1"><a href="https://github.com/SaromChars" title="Sarom Chars 的 GitHub" class="group inline-flex items-center gap-1 hover:text-accent p-2 hover:rotate-6 sm:p-1"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="inline-block size-6 scale-125 fill-transparent stroke-current stroke-2 opacity-90 group-hover:fill-transparent sm:scale-110" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M9 19c-4.3 1.4-4.3-2.5-6-3m12 5v-3.5c0-1 .1-1.4-.5-2 2.8-.3 5.5-1.4 5.5-6a4.6 4.6 0 0 0-1.3-3.2 4.2 4.2 0 0 0-.1-3.2s-1.1-.3-3.5 1.3a12.3 12.3 0 0 0-6.2 0C6.5 2.8 5.4 3.1 5.4 3.1a4.2 4.2 0 0 0-.1 3.2A4.6 4.6 0 0 0 4 9.5c0 4.6 2.7 5.7 5.5 6-.6.6-.6 1.2-.5 2V21" /></svg><span class="sr-only">Sarom Chars 的 GitHub</span></a></div><div class="my-2 flex flex-col items-center whitespace-nowrap sm:flex-row"><span>版权 &#169; 2026</span><span class="hidden sm:inline">&nbsp;|&nbsp;</span><span>保留所有权利。</span></div></div></footer><script type="module">var e=`theme`,t=`light`,n=`dark`;function r(){return localStorage.getItem(e)||(window.matchMedia(`(prefers-color-scheme: dark)`).matches?n:t)}var i=window.__theme?.value??r();function a(){localStorage.setItem(e,i),o()}function o(){let e=document.firstElementChild;e?.setAttribute(`data-theme`,i),e?.classList.toggle(`dark`,i===n),document.querySelector(`#theme-btn`)?.setAttribute(`aria-label`,i);let t=window.getComputedStyle(document.body).backgroundColor;document.querySelector(`meta[name='theme-color']`)?.setAttribute(`content`,t)}function s(){o(),document.querySelector(`#theme-btn`)?.addEventListener(`click`,()=>{i=i===t?n:t,a()})}s(),document.addEventListener(`astro:after-swap`,s),document.addEventListener(`astro:before-swap`,e=>{let t=document.querySelector(`meta[name='theme-color']`)?.getAttribute(`content`);t&&e.newDocument.querySelector(`meta[name='theme-color']`)?.setAttribute(`content`,t)}),window.matchMedia(`(prefers-color-scheme: dark)`).addEventListener(`change`,({matches:e})=>{i=e?n:t,a()});</script></body></html><script type="module">var e=document.querySelector(`#article`);if(e?.querySelector(`a[href^="#ref-"]`)){let t=null,n=!1,r=document.createElement(`button`);r.type=`button`,r.className=`citation-return`,r.textContent=`返回阅读位置`,r.setAttribute(`data-pagefind-ignore`,``),e.addEventListener(`click`,n=>{if(n.button!==0||n.metaKey||n.ctrlKey||n.shiftKey||n.altKey)return;let i=n.target instanceof Element?n.target.closest(`a[href^="#ref-"]`):null;if(!i||!e.contains(i))return;let a=i.hash,o=document.getElementById(decodeURIComponent(a.slice(1)));o&&e.contains(o)&&(t={source:i,url:window.location.href,top:window.scrollY,left:window.scrollX,targetHash:a},o.insertAdjacentElement(`afterend`,r))}),r.addEventListener(`click`,()=>{if(!t||n)return;let e=t,i=i=>{r.remove(),window.requestAnimationFrame(()=>{window.requestAnimationFrame(()=>{e.source.focus({preventScroll:!0}),window.scrollTo({top:e.top,left:e.left,behavior:`instant`}),t=null,n=!1,i?.()})})};window.location.href===e.url?i():(n=!0,window.addEventListener(`popstate`,()=>{let e=window.history.scrollRestoration;window.history.scrollRestoration=`manual`,window.setTimeout(()=>{i(()=>{window.history.scrollRestoration=e})},0)},{once:!0}),window.history.back())}),window.addEventListener(`hashchange`,()=>{!n&&t&&window.location.hash!==t.targetHash&&(r.remove(),t=null)})}</script><script data-astro-rerun>
+  function createProgressBar() {
+    const progressContainer = document.createElement("div");
+    progressContainer.className =
+      "progress-container fixed top-0 z-10 h-1 w-full bg-background";
+
+    const progressBar = document.createElement("div");
+    progressBar.className = "progress-bar h-1 w-0 bg-accent";
+    progressBar.id = "myBar";
+
+    progressContainer.appendChild(progressBar);
+    document.body.appendChild(progressContainer);
+  }
+  createProgressBar();
+
+  function updateScrollProgress() {
+    document.addEventListener("scroll", () => {
+      const winScroll =
+        document.body.scrollTop || document.documentElement.scrollTop;
+      const height =
+        document.documentElement.scrollHeight -
+        document.documentElement.clientHeight;
+      const scrolled = (winScroll / height) * 100;
+      if (document) {
+        const myBar = document.getElementById("myBar");
+        if (myBar) {
+          myBar.style.width = scrolled + "%";
+        }
+      }
+    });
+  }
+  updateScrollProgress();
+
+  function addHeadingLinks() {
+    const headings = Array.from(
+      document.querySelectorAll("h2, h3, h4, h5, h6")
+    );
+    for (const heading of headings) {
+      heading.classList.add("group");
+      const link = document.createElement("a");
+      link.className =
+        "heading-link ms-2 no-underline opacity-75 md:opacity-0 md:group-hover:opacity-100 md:focus:opacity-100";
+      link.href = "#" + heading.id;
+
+      const span = document.createElement("span");
+      span.ariaHidden = "true";
+      span.innerText = "#";
+      link.appendChild(span);
+      heading.appendChild(link);
+    }
+  }
+  addHeadingLinks();
+
+  function attachCopyButtons() {
+    const copyButtonLabel = "Copy";
+    const codeBlocks = Array.from(document.querySelectorAll("pre"));
+
+    for (const codeBlock of codeBlocks) {
+      const wrapper = document.createElement("div");
+      wrapper.style.position = "relative";
+
+      const computedStyle = getComputedStyle(codeBlock);
+      const hasFileNameOffset =
+        computedStyle.getPropertyValue("--file-name-offset").trim() !== "";
+
+      const topClass = hasFileNameOffset
+        ? "top-(--file-name-offset)"
+        : "-top-3";
+
+      const copyButton = document.createElement("button");
+      copyButton.className = `copy-code absolute end-3 ${topClass} rounded bg-muted border border-muted px-2 py-1 text-xs leading-4 text-foreground font-medium`;
+      copyButton.innerHTML = copyButtonLabel;
+      codeBlock.setAttribute("tabindex", "0");
+      codeBlock.appendChild(copyButton);
+
+      codeBlock?.parentNode?.insertBefore(wrapper, codeBlock);
+      wrapper.appendChild(codeBlock);
+
+      copyButton.addEventListener("click", async () => {
+        await copyCode(codeBlock, copyButton);
+      });
+    }
+
+    async function copyCode(block, button) {
+      const code = block.querySelector("code");
+      const text = code?.innerText;
+
+      await navigator.clipboard.writeText(text ?? "");
+
+      button.innerText = "Copied";
+
+      setTimeout(() => {
+        button.innerText = copyButtonLabel;
+      }, 700);
+    }
+  }
+  attachCopyButtons();
+
+  /** Accessible image lightbox for article images. */
+  function initLightbox() {
+    const article = document.getElementById("article");
+    if (!article) return;
+
+    const prefersReducedMotion = () =>
+      window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+    let overlay = null;
+    let lastFocused = null;
+    let removeDragListeners = null;
+
+    // Defer attribute mutations so they don't push the LCP timestamp.
+    // Event listeners below use delegation and don't need the attributes to exist yet.
+    requestAnimationFrame(() => {
+      const images = Array.from(article.querySelectorAll("img"));
+      for (const image of images) {
+        if (image.closest("a")) continue;
+        image.setAttribute("role", "button");
+        image.setAttribute("tabindex", "0");
+        image.setAttribute("aria-haspopup", "dialog");
+        image.setAttribute(
+          "aria-label",
+          image.alt ? `Zoom image: ${image.alt}` : "Zoom image"
+        );
+      }
+    });
+
+    function open(src, alt, trigger) {
+      if (overlay) return;
+      lastFocused = trigger ?? document.activeElement;
+
+      overlay = document.createElement("div");
+      overlay.setAttribute("role", "dialog");
+      overlay.setAttribute("aria-modal", "true");
+      overlay.setAttribute(
+        "aria-label",
+        alt ? `Image preview: ${alt}` : "Image preview"
+      );
+      overlay.className =
+        "fixed inset-0 z-50 flex cursor-zoom-out items-center justify-center bg-black/70 backdrop-blur-sm opacity-0 transition-opacity duration-200 motion-reduce:transition-none";
+
+      const closeButton = document.createElement("button");
+      closeButton.type = "button";
+      closeButton.setAttribute("aria-label", "Close image preview");
+      closeButton.className =
+        "absolute end-4 top-4 z-1 flex size-11 items-center justify-center rounded bg-black/50 text-3xl leading-none text-white";
+      closeButton.innerHTML = "&#10005;";
+      closeButton.addEventListener("click", close);
+
+      const image = document.createElement("img");
+      image.src = src;
+      image.alt = "";
+      image.className =
+        "max-h-[90dvh] max-w-[90dvw] cursor-default object-contain transition-transform duration-100 ease-out motion-reduce:transition-none data-[zoom=drag]:cursor-grabbing data-[zoom=drag]:transition-none data-[zoom=in]:cursor-grab";
+
+      overlay.append(closeButton, image);
+      overlay.addEventListener("click", e => {
+        if (e.target === overlay && currentScale <= 1) close();
+      });
+
+      let currentScale = 1;
+      let translateX = 0;
+      let translateY = 0;
+      let initialDist = 0;
+      let initialScale = 1;
+      let panStartX = 0;
+      let panStartY = 0;
+      let panStartTranslateX = 0;
+      let panStartTranslateY = 0;
+      let lastTapTime = 0;
+
+      function applyTransform() {
+        image.style.transform = `scale(${currentScale}) translate(${translateX}px, ${translateY}px)`;
+        // A backdrop click only closes at fit size, so drop the zoom-out cursor while zoomed.
+        overlay?.classList.toggle("cursor-zoom-out", currentScale <= 1);
+      }
+
+      function resetTransform() {
+        currentScale = 1;
+        translateX = 0;
+        translateY = 0;
+        image.style.transform = "";
+        image.removeAttribute("data-zoom");
+        overlay?.classList.add("cursor-zoom-out");
+      }
+
+      // Keep the zoomed image from being panned past its edges.
+      function clampTranslate() {
+        if (!overlay) return;
+        const maxX = Math.max(
+          0,
+          (image.clientWidth - overlay.clientWidth / currentScale) / 2
+        );
+        const maxY = Math.max(
+          0,
+          (image.clientHeight - overlay.clientHeight / currentScale) / 2
+        );
+        translateX = Math.min(maxX, Math.max(-maxX, translateX));
+        translateY = Math.min(maxY, Math.max(-maxY, translateY));
+      }
+
+      overlay.addEventListener(
+        "touchstart",
+        e => {
+          const t = e.touches;
+          if (t.length === 2) {
+            image.setAttribute("data-zoom", "drag");
+            initialDist = Math.hypot(
+              t[1].clientX - t[0].clientX,
+              t[1].clientY - t[0].clientY
+            );
+            initialScale = currentScale;
+          } else if (t.length === 1) {
+            const now = Date.now();
+            if (now - lastTapTime < 300) {
+              e.preventDefault();
+              if (currentScale > 1) {
+                resetTransform();
+              } else {
+                currentScale = 2;
+                translateX = 0;
+                translateY = 0;
+                applyTransform();
+                image.setAttribute("data-zoom", "in");
+              }
+              lastTapTime = 0;
+              panStartX = t[0].clientX;
+              panStartY = t[0].clientY;
+              panStartTranslateX = translateX;
+              panStartTranslateY = translateY;
+            } else {
+              lastTapTime = now;
+              if (currentScale > 1) {
+                image.setAttribute("data-zoom", "drag");
+                panStartX = t[0].clientX;
+                panStartY = t[0].clientY;
+                panStartTranslateX = translateX;
+                panStartTranslateY = translateY;
+              }
+            }
+          }
+        },
+        { passive: false }
+      );
+
+      overlay.addEventListener(
+        "touchmove",
+        e => {
+          const t = e.touches;
+          if (t.length === 2) {
+            e.preventDefault();
+            const dist = Math.hypot(
+              t[1].clientX - t[0].clientX,
+              t[1].clientY - t[0].clientY
+            );
+            const oldScale = currentScale;
+            currentScale = Math.min(
+              4,
+              Math.max(1, initialScale * (dist / initialDist))
+            );
+
+            // Zoom to the geometric center of the two fingers
+            const midX = (t[0].clientX + t[1].clientX) / 2;
+            const midY = (t[0].clientY + t[1].clientY) / 2;
+            const ox = overlay.clientWidth / 2;
+            const oy = overlay.clientHeight / 2;
+            translateX =
+              (midX - ox) * (1 / currentScale - 1 / oldScale) + translateX;
+            translateY =
+              (midY - oy) * (1 / currentScale - 1 / oldScale) + translateY;
+            clampTranslate();
+            applyTransform();
+          } else if (t.length === 1) {
+            if (currentScale > 1) {
+              e.preventDefault();
+              image.setAttribute("data-zoom", "drag");
+              translateX =
+                panStartTranslateX + (t[0].clientX - panStartX) / currentScale;
+              translateY =
+                panStartTranslateY + (t[0].clientY - panStartY) / currentScale;
+              clampTranslate();
+              applyTransform();
+            } else {
+              e.preventDefault();
+            }
+          }
+        },
+        { passive: false }
+      );
+
+      overlay.addEventListener("touchend", e => {
+        if (e.touches.length === 0) {
+          if (currentScale > 1) {
+            image.setAttribute("data-zoom", "in");
+          } else {
+            image.removeAttribute("data-zoom");
+          }
+          if (currentScale <= 1.05) resetTransform();
+        }
+      });
+
+      overlay.addEventListener("touchcancel", e => {
+        if (e.touches.length === 0) {
+          if (currentScale > 1) {
+            image.setAttribute("data-zoom", "in");
+          } else {
+            image.removeAttribute("data-zoom");
+          }
+          if (currentScale <= 1.05) resetTransform();
+        }
+      });
+
+      overlay.addEventListener(
+        "wheel",
+        e => {
+          e.preventDefault();
+          const oldScale = currentScale;
+          const delta = -e.deltaY * 0.001;
+          currentScale = Math.min(4, Math.max(1, currentScale * (1 + delta)));
+
+          if (currentScale <= 1.05) {
+            resetTransform();
+          } else {
+            image.setAttribute("data-zoom", "in");
+            // Zoom to cursor: adjust translate so the point under cursor stays fixed
+            const ox = overlay.clientWidth / 2;
+            const oy = overlay.clientHeight / 2;
+            translateX =
+              (e.clientX - ox) * (1 / currentScale - 1 / oldScale) + translateX;
+            translateY =
+              (e.clientY - oy) * (1 / currentScale - 1 / oldScale) + translateY;
+            clampTranslate();
+            applyTransform();
+          }
+        },
+        { passive: false }
+      );
+
+      let isMouseDown = false;
+      let mouseStartX = 0;
+      let mouseStartY = 0;
+
+      overlay.addEventListener("mousedown", e => {
+        if (e.button !== 0 || currentScale <= 1) return;
+        if (e.target.closest("button")) return;
+        isMouseDown = true;
+        mouseStartX = e.clientX;
+        mouseStartY = e.clientY;
+        panStartTranslateX = translateX;
+        panStartTranslateY = translateY;
+        image.setAttribute("data-zoom", "drag");
+        e.preventDefault();
+      });
+
+      function onMouseMove(e) {
+        if (!isMouseDown || !overlay) return;
+        translateX =
+          panStartTranslateX + (e.clientX - mouseStartX) / currentScale;
+        translateY =
+          panStartTranslateY + (e.clientY - mouseStartY) / currentScale;
+        clampTranslate();
+        applyTransform();
+      }
+
+      function onMouseUp() {
+        if (!isMouseDown) return;
+        isMouseDown = false;
+        if (currentScale > 1) {
+          image.setAttribute("data-zoom", "in");
+        } else {
+          image.removeAttribute("data-zoom");
+        }
+      }
+
+      document.addEventListener("mousemove", onMouseMove);
+      document.addEventListener("mouseup", onMouseUp);
+      removeDragListeners = () => {
+        document.removeEventListener("mousemove", onMouseMove);
+        document.removeEventListener("mouseup", onMouseUp);
+      };
+
+      document.body.appendChild(overlay);
+      document.documentElement.style.overflow = "hidden";
+      document.addEventListener("keydown", onKeyDown);
+      window.__closeLightbox = close;
+
+      requestAnimationFrame(() => overlay?.classList.add("opacity-100"));
+      closeButton.focus();
+    }
+
+    function close() {
+      if (!overlay) return;
+      const el = overlay;
+      overlay = null;
+      el.classList.add("pointer-events-none");
+      window.__closeLightbox = null;
+
+      document.removeEventListener("keydown", onKeyDown);
+      removeDragListeners?.();
+      removeDragListeners = null;
+      document.documentElement.style.overflow = "";
+      lastFocused?.focus();
+      lastFocused = null;
+
+      if (prefersReducedMotion()) {
+        el.remove();
+        return;
+      }
+      const remove = () => el.remove();
+      el.addEventListener("transitionend", remove, { once: true });
+      setTimeout(remove, 250); // fallback in case transitionend never fires
+      el.classList.remove("opacity-100");
+    }
+
+    function onKeyDown(e) {
+      if (e.key === "Escape") {
+        close();
+      } else if (e.key === "Tab") {
+        trapFocus(e);
+      }
+    }
+
+    // Keep keyboard focus inside the open dialog.
+    function trapFocus(e) {
+      if (!overlay) return;
+      const focusables = overlay.querySelectorAll(
+        'a[href], button, [tabindex]:not([tabindex="-1"])'
+      );
+      if (focusables.length === 0) return;
+      const first = focusables[0];
+      const last = focusables[focusables.length - 1];
+      if (e.shiftKey && document.activeElement === first) {
+        e.preventDefault();
+        last.focus();
+      } else if (!e.shiftKey && document.activeElement === last) {
+        e.preventDefault();
+        first.focus();
+      }
+    }
+
+    function triggerFromEvent(e) {
+      const image = e.target.closest("img");
+      if (!image || !article.contains(image) || image.closest("a")) return null;
+      return image;
+    }
+
+    function activate(image) {
+      open(image.currentSrc || image.src, image.alt, image);
+    }
+
+    article.addEventListener("click", e => {
+      const image = triggerFromEvent(e);
+      if (!image) return;
+      e.preventDefault();
+      activate(image);
+    });
+
+    article.addEventListener("keydown", e => {
+      if (e.key !== "Enter" && e.key !== " " && e.key !== "Spacebar") return;
+      const image = triggerFromEvent(e);
+      if (!image) return;
+      e.preventDefault();
+      activate(image);
+    });
+  }
+  initLightbox();
+
+  if (!window.__lightboxSwapBound) {
+    window.__lightboxSwapBound = true;
+    document.addEventListener("astro:before-swap", () =>
+      window.__closeLightbox?.()
+    );
+  }
+
+  document.addEventListener("astro:after-swap", () =>
+    window.scrollTo({ left: 0, top: 0, behavior: "instant" })
+  );
+</script>

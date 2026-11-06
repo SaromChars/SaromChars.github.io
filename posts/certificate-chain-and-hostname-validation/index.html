@@ -1,0 +1,941 @@
+<!DOCTYPE html><html dir="ltr" lang="zh-CN" class="overflow-y-scroll scroll-smooth"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1"><link rel="icon" type="image/png" href="/images/favicon-32x32-next.png"><link rel="icon" href="/favicon.ico"><link rel="canonical" href="https://www.saromchars.tech/posts/certificate-chain-and-hostname-validation/"><meta name="generator" content="Astro v7.4.5"><!-- Primary meta --><title>证书链与主机名校验怎样决定信任 | Sarom&#39;s Blog</title><meta name="title" content="证书链与主机名校验怎样决定信任 | Sarom's Blog"><meta name="description" content="从客户端视角拆解 PKIX 证书路径构建与验证算法，明确信任锚（Trust Anchor）源自本地受信任库而非远端报文，对比 SAN 扩展与传统 CN 的主机名匹配规则，并系统剖析有效期限、基本约束、EKU 与吊销状态构成的多维校验边界。"><meta name="author" content="Sarom Chars"><link rel="sitemap" href="/sitemap-index.xml"><!-- Open Graph --><meta property="og:type" content="article"><meta property="og:site_name" content="Sarom's Blog"><meta property="og:title" content="证书链与主机名校验怎样决定信任 | Sarom's Blog"><meta property="og:description" content="从客户端视角拆解 PKIX 证书路径构建与验证算法，明确信任锚（Trust Anchor）源自本地受信任库而非远端报文，对比 SAN 扩展与传统 CN 的主机名匹配规则，并系统剖析有效期限、基本约束、EKU 与吊销状态构成的多维校验边界。"><meta property="og:url" content="https://www.saromchars.tech/posts/certificate-chain-and-hostname-validation/"><meta property="og:image" content="https://www.saromchars.tech/og.png"><!-- Twitter / X --><meta property="twitter:card" content="summary_large_image"><meta property="twitter:url" content="https://www.saromchars.tech/posts/certificate-chain-and-hostname-validation/"><meta property="twitter:title" content="证书链与主机名校验怎样决定信任 | Sarom's Blog"><meta property="twitter:description" content="从客户端视角拆解 PKIX 证书路径构建与验证算法，明确信任锚（Trust Anchor）源自本地受信任库而非远端报文，对比 SAN 扩展与传统 CN 的主机名匹配规则，并系统剖析有效期限、基本约束、EKU 与吊销状态构成的多维校验边界。"><meta property="twitter:image" content="https://www.saromchars.tech/og.png"><!-- RSS autodiscovery --><link rel="alternate" type="application/rss+xml" title="Sarom's Blog" href="https://www.saromchars.tech/rss.xml"><!-- Filled at runtime by theme.ts to match the current background colour --><meta name="theme-color" content=""><!-- Extra head content injected by child layouts (e.g. JSON-LD, article meta) --><meta property="article:published_time" content="2018-09-20T02:00:00.000Z"><script type="application/ld+json">{"@context":"https://schema.org","@type":"BlogPosting","headline":"证书链与主机名校验怎样决定信任","mainEntityOfPage":"https://www.saromchars.tech/posts/certificate-chain-and-hostname-validation/","datePublished":"2018-09-20T02:00:00.000Z","author":[{"@type":"Person","name":"Sarom Chars","url":"https://github.com/SaromChars"}]}</script><!--
+      Inline FOUC-prevention script: sets data-theme on <html> before
+      the browser paints. Runs synchronously, no defer/async.
+    --><script>
+      (function () {
+        const stored = localStorage.getItem("theme");
+        const prefersDark = window.matchMedia(
+          "(prefers-color-scheme: dark)"
+        ).matches;
+        const theme = stored ?? (prefersDark ? "dark" : "light");
+        const root = document.firstElementChild;
+        root?.setAttribute("data-theme", theme);
+        root?.classList.toggle("dark", theme === "dark");
+        // Expose value so theme.ts can skip re-detection.
+        window.__theme = { value: theme };
+      })();
+    </script><meta name="robots" content="index, follow"><script async src="https://www.googletagmanager.com/gtag/js?id=G-WJJJTJ4FWX"></script><script>(function(){const measurementId = "G-WJJJTJ4FWX";
+
+    window.dataLayer = window.dataLayer || [];
+    function gtag(){ window.dataLayer.push(arguments); }
+    gtag('js', new Date());
+    gtag('config', measurementId);
+  })();</script><style>@keyframes astroFadeInOut{0%{opacity:1}to{opacity:0}}@keyframes astroFadeIn{0%{opacity:0;mix-blend-mode:plus-lighter}to{opacity:1;mix-blend-mode:plus-lighter}}@keyframes astroFadeOut{0%{opacity:1;mix-blend-mode:plus-lighter}to{opacity:0;mix-blend-mode:plus-lighter}}@keyframes astroSlideFromRight{0%{transform:translate(100%)}}@keyframes astroSlideFromLeft{0%{transform:translate(-100%)}}@keyframes astroSlideToRight{to{transform:translate(100%)}}@keyframes astroSlideToLeft{to{transform:translate(-100%)}}@media (prefers-reduced-motion){::view-transition-group(*),::view-transition-old(*),::view-transition-new(*),[data-astro-transition-scope]{animation:none!important}}
+</style><link rel="stylesheet" href="/_astro/Footer.DC6qDsIp.css"><style>[data-astro-transition-scope="astro-bztu2lml-1"] { view-transition-name: \5BC6\7801\5B66; }@layer astro { ::view-transition-old(\5BC6\7801\5B66) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }::view-transition-new(\5BC6\7801\5B66) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }[data-astro-transition=back]::view-transition-old(\5BC6\7801\5B66) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition=back]::view-transition-new(\5BC6\7801\5B66) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; } }[data-astro-transition-fallback="old"] [data-astro-transition-scope="astro-bztu2lml-1"],
+			[data-astro-transition-fallback="old"][data-astro-transition-scope="astro-bztu2lml-1"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition-fallback="new"] [data-astro-transition-scope="astro-bztu2lml-1"],
+			[data-astro-transition-fallback="new"][data-astro-transition-scope="astro-bztu2lml-1"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }[data-astro-transition=back][data-astro-transition-fallback="old"] [data-astro-transition-scope="astro-bztu2lml-1"],
+			[data-astro-transition=back][data-astro-transition-fallback="old"][data-astro-transition-scope="astro-bztu2lml-1"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition=back][data-astro-transition-fallback="new"] [data-astro-transition-scope="astro-bztu2lml-1"],
+			[data-astro-transition=back][data-astro-transition-fallback="new"][data-astro-transition-scope="astro-bztu2lml-1"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }</style><style>[data-astro-transition-scope="astro-bztu2lml-2"] { view-transition-name: x_2e509; }@layer astro { ::view-transition-old(x_2e509) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }::view-transition-new(x_2e509) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }[data-astro-transition=back]::view-transition-old(x_2e509) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition=back]::view-transition-new(x_2e509) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; } }[data-astro-transition-fallback="old"] [data-astro-transition-scope="astro-bztu2lml-2"],
+			[data-astro-transition-fallback="old"][data-astro-transition-scope="astro-bztu2lml-2"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition-fallback="new"] [data-astro-transition-scope="astro-bztu2lml-2"],
+			[data-astro-transition-fallback="new"][data-astro-transition-scope="astro-bztu2lml-2"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }[data-astro-transition=back][data-astro-transition-fallback="old"] [data-astro-transition-scope="astro-bztu2lml-2"],
+			[data-astro-transition=back][data-astro-transition-fallback="old"][data-astro-transition-scope="astro-bztu2lml-2"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition=back][data-astro-transition-fallback="new"] [data-astro-transition-scope="astro-bztu2lml-2"],
+			[data-astro-transition=back][data-astro-transition-fallback="new"][data-astro-transition-scope="astro-bztu2lml-2"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }</style><style>[data-astro-transition-scope="astro-bztu2lml-3"] { view-transition-name: \8BC1\4E66\94FE; }@layer astro { ::view-transition-old(\8BC1\4E66\94FE) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }::view-transition-new(\8BC1\4E66\94FE) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }[data-astro-transition=back]::view-transition-old(\8BC1\4E66\94FE) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition=back]::view-transition-new(\8BC1\4E66\94FE) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; } }[data-astro-transition-fallback="old"] [data-astro-transition-scope="astro-bztu2lml-3"],
+			[data-astro-transition-fallback="old"][data-astro-transition-scope="astro-bztu2lml-3"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition-fallback="new"] [data-astro-transition-scope="astro-bztu2lml-3"],
+			[data-astro-transition-fallback="new"][data-astro-transition-scope="astro-bztu2lml-3"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }[data-astro-transition=back][data-astro-transition-fallback="old"] [data-astro-transition-scope="astro-bztu2lml-3"],
+			[data-astro-transition=back][data-astro-transition-fallback="old"][data-astro-transition-scope="astro-bztu2lml-3"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition=back][data-astro-transition-fallback="new"] [data-astro-transition-scope="astro-bztu2lml-3"],
+			[data-astro-transition=back][data-astro-transition-fallback="new"][data-astro-transition-scope="astro-bztu2lml-3"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }</style><style>[data-astro-transition-scope="astro-bztu2lml-4"] { view-transition-name: \4E3B\673A\540D\6821\9A8C; }@layer astro { ::view-transition-old(\4E3B\673A\540D\6821\9A8C) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }::view-transition-new(\4E3B\673A\540D\6821\9A8C) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }[data-astro-transition=back]::view-transition-old(\4E3B\673A\540D\6821\9A8C) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition=back]::view-transition-new(\4E3B\673A\540D\6821\9A8C) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; } }[data-astro-transition-fallback="old"] [data-astro-transition-scope="astro-bztu2lml-4"],
+			[data-astro-transition-fallback="old"][data-astro-transition-scope="astro-bztu2lml-4"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition-fallback="new"] [data-astro-transition-scope="astro-bztu2lml-4"],
+			[data-astro-transition-fallback="new"][data-astro-transition-scope="astro-bztu2lml-4"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }[data-astro-transition=back][data-astro-transition-fallback="old"] [data-astro-transition-scope="astro-bztu2lml-4"],
+			[data-astro-transition=back][data-astro-transition-fallback="old"][data-astro-transition-scope="astro-bztu2lml-4"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition=back][data-astro-transition-fallback="new"] [data-astro-transition-scope="astro-bztu2lml-4"],
+			[data-astro-transition=back][data-astro-transition-fallback="new"][data-astro-transition-scope="astro-bztu2lml-4"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }</style><style>[data-astro-transition-scope="astro-bztu2lml-5"] { view-transition-name: pkix; }@layer astro { ::view-transition-old(pkix) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }::view-transition-new(pkix) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }[data-astro-transition=back]::view-transition-old(pkix) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition=back]::view-transition-new(pkix) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; } }[data-astro-transition-fallback="old"] [data-astro-transition-scope="astro-bztu2lml-5"],
+			[data-astro-transition-fallback="old"][data-astro-transition-scope="astro-bztu2lml-5"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition-fallback="new"] [data-astro-transition-scope="astro-bztu2lml-5"],
+			[data-astro-transition-fallback="new"][data-astro-transition-scope="astro-bztu2lml-5"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }[data-astro-transition=back][data-astro-transition-fallback="old"] [data-astro-transition-scope="astro-bztu2lml-5"],
+			[data-astro-transition=back][data-astro-transition-fallback="old"][data-astro-transition-scope="astro-bztu2lml-5"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition=back][data-astro-transition-fallback="new"] [data-astro-transition-scope="astro-bztu2lml-5"],
+			[data-astro-transition=back][data-astro-transition-fallback="new"][data-astro-transition-scope="astro-bztu2lml-5"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }</style><style>[data-astro-transition-scope="astro-bztu2lml-6"] { view-transition-name: rfc-5280; }@layer astro { ::view-transition-old(rfc-5280) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }::view-transition-new(rfc-5280) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }[data-astro-transition=back]::view-transition-old(rfc-5280) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition=back]::view-transition-new(rfc-5280) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; } }[data-astro-transition-fallback="old"] [data-astro-transition-scope="astro-bztu2lml-6"],
+			[data-astro-transition-fallback="old"][data-astro-transition-scope="astro-bztu2lml-6"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition-fallback="new"] [data-astro-transition-scope="astro-bztu2lml-6"],
+			[data-astro-transition-fallback="new"][data-astro-transition-scope="astro-bztu2lml-6"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }[data-astro-transition=back][data-astro-transition-fallback="old"] [data-astro-transition-scope="astro-bztu2lml-6"],
+			[data-astro-transition=back][data-astro-transition-fallback="old"][data-astro-transition-scope="astro-bztu2lml-6"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition=back][data-astro-transition-fallback="new"] [data-astro-transition-scope="astro-bztu2lml-6"],
+			[data-astro-transition=back][data-astro-transition-fallback="new"][data-astro-transition-scope="astro-bztu2lml-6"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }</style><style>[data-astro-transition-scope="astro-bztu2lml-7"] { view-transition-name: rfc-6125; }@layer astro { ::view-transition-old(rfc-6125) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }::view-transition-new(rfc-6125) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }[data-astro-transition=back]::view-transition-old(rfc-6125) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition=back]::view-transition-new(rfc-6125) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; } }[data-astro-transition-fallback="old"] [data-astro-transition-scope="astro-bztu2lml-7"],
+			[data-astro-transition-fallback="old"][data-astro-transition-scope="astro-bztu2lml-7"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition-fallback="new"] [data-astro-transition-scope="astro-bztu2lml-7"],
+			[data-astro-transition-fallback="new"][data-astro-transition-scope="astro-bztu2lml-7"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }[data-astro-transition=back][data-astro-transition-fallback="old"] [data-astro-transition-scope="astro-bztu2lml-7"],
+			[data-astro-transition=back][data-astro-transition-fallback="old"][data-astro-transition-scope="astro-bztu2lml-7"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition=back][data-astro-transition-fallback="new"] [data-astro-transition-scope="astro-bztu2lml-7"],
+			[data-astro-transition=back][data-astro-transition-fallback="new"][data-astro-transition-scope="astro-bztu2lml-7"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }</style></head><body class="bg-background font-app text-foreground selection:bg-accent/75 selection:text-accent-foreground flex min-h-svh flex-col"><a id="skip-to-content" href="#main-content" class="bg-background text-accent absolute inset-s-16 -top-full z-50 px-3 py-2 backdrop-blur-lg transition-all focus:top-4">跳到正文</a><header class="app-layout flex flex-col items-center justify-between sm:flex-row"><div class="border-border bg-background relative flex w-full items-baseline justify-between border-b py-4 sm:items-center sm:py-6"><a href="/" class="absolute py-1 text-xl leading-8 font-semibold whitespace-nowrap sm:static sm:my-auto sm:text-2xl sm:leading-none">Sarom&#39;s Blog</a><nav id="nav-menu" class="flex w-full flex-col items-center sm:ms-2 sm:flex-row sm:justify-end sm:space-x-4 sm:py-0"><button id="menu-btn" class="focus-outline self-end p-2 sm:hidden" aria-label="展开菜单" aria-expanded="false" aria-controls="menu-items" data-label-open="展开菜单" data-label-close="收起菜单"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="hidden" viewBox="0 0 24 24" id="close-icon"><path stroke="none" d="M0 0h24v24H0z" /><path d="M18 6 6 18M6 6l12 12" /></svg><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="icon icon-tabler icons-tabler-outline icon-tabler-menu-deep" viewBox="0 0 24 24" id="menu-icon"><path stroke="none" d="M0 0h24v24H0z" /><path d="M4 6h16M7 12h13M10 18h10" /></svg></button><ul id="menu-items" class="[&amp;&gt;li&gt;a]:hover:text-accent mt-4 hidden w-44 grid-cols-2 place-content-center gap-2 sm:mt-0 sm:flex sm:w-auto sm:gap-x-5 sm:gap-y-0 sm:[&amp;&gt;li]:h-8 [&amp;&gt;li&gt;a]:block [&amp;&gt;li&gt;a]:px-4 [&amp;&gt;li&gt;a]:py-3 [&amp;&gt;li&gt;a]:text-center [&amp;&gt;li&gt;a]:font-medium sm:[&amp;&gt;li&gt;a]:px-2 sm:[&amp;&gt;li&gt;a]:py-1"><li class="col-span-2"><a href="/posts/" class="active-nav">文章</a></li><li class="col-span-2"><a href="/tags/">标签</a></li><li class="col-span-2"><a href="/about/">关于</a></li><li class="col-span-2"><a href="/archives/" title="归档" aria-label="归档" class="group inline-flex items-center gap-1 hover:text-accent focus-outline flex size-full justify-center p-3 sm:relative sm:size-8 sm:p-0"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="hidden sm:absolute sm:top-1/2 sm:left-1/2 sm:block sm:size-6 sm:-translate-x-1/2 sm:-translate-y-1/2" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M3 6a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2 2 2 0 0 1-2 2H5a2 2 0 0 1-2-2M5 8v10a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8M10 12h4" /></svg><span class="sm:sr-only">归档</span></a></li><li class="col-span-1 flex items-center justify-center"><a href="/search/" title="搜索" aria-label="搜索" class="group inline-flex items-center gap-1 hover:text-accent focus-outline relative size-8"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="absolute top-1/2 left-1/2 size-6 -translate-x-1/2 -translate-y-1/2" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M3 10a7 7 0 1 0 14 0 7 7 0 1 0-14 0M21 21l-6-6" /></svg><span class="sr-only">搜索</span></a></li><li class="col-span-1 flex items-center justify-center"><button id="theme-btn" class="focus-outline hover:[&amp;&gt;svg]:stroke-accent relative size-12 p-4 sm:size-8" title="切换主题" aria-label="auto" aria-live="polite"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="absolute top-[50%] left-[50%] translate-[-50%] scale-100 rotate-0 transition-all dark:scale-0 dark:-rotate-90" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M12 3h.393a7.5 7.5 0 0 0 7.92 12.446A9 9 0 1 1 12 2.992z" /></svg><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="absolute top-[50%] left-[50%] translate-[-50%] scale-0 rotate-90 transition-all dark:scale-100 dark:rotate-0" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M14.828 14.828a4 4 0 1 0-5.656-5.656 4 4 0 0 0 5.656 5.656M6.343 17.657l-1.414 1.414M6.343 6.343 4.929 4.929M17.657 6.343l1.414-1.414M17.657 17.657l1.414 1.414M4 12H2M12 4V2M20 12h2M12 20v2" /></svg></button></li></ul></nav></div></header><script type="module">function e(){let e=document.querySelector(`#menu-btn`),t=document.querySelector(`#menu-items`),n=document.querySelector(`#menu-icon`),r=document.querySelector(`#close-icon`);if(!e||!t||!n||!r)return;let i=e.dataset.labelOpen??`Open menu`,a=e.dataset.labelClose??`Close menu`;e.addEventListener(`click`,()=>{let o=e.getAttribute(`aria-expanded`)===`true`;e.setAttribute(`aria-expanded`,o?`false`:`true`),e.setAttribute(`aria-label`,o?i:a),t.classList.toggle(`hidden`),t.classList.toggle(`grid`),n.classList.toggle(`hidden`),r.classList.toggle(`hidden`)})}function t(){let e=document.getElementById(`skip-to-content`);e&&e.addEventListener(`click`,e=>{if(e.defaultPrevented||e.metaKey||e.ctrlKey||e.shiftKey||e.button!==0)return;e.preventDefault();let t=document.getElementById(`main-content`);t&&(t.setAttribute(`tabindex`,`-1`),t.addEventListener(`blur`,()=>t.removeAttribute(`tabindex`),{once:!0}),t.focus(),t.scrollIntoView({behavior:`smooth`}))})}e(),document.addEventListener(`astro:after-swap`,e),t(),document.addEventListener(`astro:after-swap`,t);</script><div class="app-layout flex items-center justify-start"><a id="back-button" href="/" class="group inline-flex items-center gap-1 hover:text-accent focus-outline hover:text-foreground/75 -ms-2 mt-8 mb-2"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="inline-block size-6 rtl:rotate-180" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="m15 6-6 6 6 6" /></svg><span>返回</span></a></div><script type="module">function e(){let e=document.querySelector(`#back-button`),t=sessionStorage.getItem(`backUrl`);t&&e&&(e.href=t)}document.addEventListener(`astro:page-load`,e),e();</script><main id="main-content" class="app-layout" data-pagefind-body><h1 style="view-transition-name:certificate-chain-and-hostname-validation" class="text-accent inline-block text-2xl font-bold sm:text-3xl">证书链与主机名校验怎样决定信任</h1><div class="my-2 flex items-center gap-2"><div class="text-muted-foreground flex items-center gap-x-2"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="inline-block size-6 min-w-5.5" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M4 7a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2zM16 3v4M8 3v4M4 11h16M7 14h.013M10.01 14h.005M13.01 14h.005M16.015 14h.005M13.015 17h.005M7.01 17h.005M10.01 17h.005" /></svg><time class="text-sm sm:text-base" datetime="2018-09-20T02:00:00.000Z">2018年9月20日</time></div><span aria-hidden="true" class="text-muted-foreground max-sm:hidden hidden">|</span></div><article id="article" class="mt-8 w-full app-prose max-w-app prose-pre:bg-(--shiki-light-bg) dark:prose-pre:bg-(--shiki-dark-bg)"><p>在<a href="/posts/tls-handshake-cryptographic-components/">上一篇关于 TLS 握手组件的复盘</a>中，我们看到服务端在握手期间向客户端出示了一张 X.509 数字证书。客户端通过验证这张证书，确认了服务端的公钥。</p>
+<p>然而在工程实践中，常常有人认为“只要证书被受信任的机构签了名，连接就安全了”；或者误以为“证书路径验证通过了，服务端就一定是合法站点”。这是对公钥基础设施（PKIX）信任机制的巨大简化。</p>
+<p>在一次真实的 TLS 连接建立中，信任是由两个既独立又交织的核心环节共同决定的：</p>
+<ol>
+<li><strong>证书链路径验证（Path Validation）：</strong> 证明这张证书在密码学与策略层面上是否有效、是否源自受信任的颁发机构。</li>
+<li><strong>主机名服务身份校验（Service Identity Verification）：</strong> 证明当前连接的目标域名（例如 <code>example.com</code>）是否真正被授权绑定在这张证书上。<a href="#ref-rfc5280-s6.1">[RFC 5280 §6.1]</a> · <a href="#ref-rfc6125-s1.4">[RFC 6125 §1.4]</a></li>
+</ol>
+<p><em>这是一篇按历史视角整理的技术笔记，知识截止日期为 2018 年 9 月 20 日。</em></p>
+<h2 id="信任锚信任从来不来自远端报文">信任锚：信任从来不来自远端报文</h2>
+<p>一个最常见的误解是：服务端发来了一整套证书（从叶子证书、中间 CA 到根 CA），客户端只要校验这一串证书“上级签了下级”就能建立信任。</p>
+<p><strong>这是极其危险的逻辑。</strong> 如果客户端无条件信任服务端发来的根证书，那么任何攻击者都可以自己生成一套自签名根证书并向你签发假证书。</p>
+<p>RFC 5280 和 RFC 6818 明确指出：证书路径验证的起点是<strong>信任锚（Trust Anchor）</strong>。<a href="#ref-rfc5280-s3.2">[RFC 5280 §3.2]</a> · <a href="#ref-rfc6818-s1">[RFC 6818 §1]</a></p>
+<ul>
+<li>信任锚是由客户端通过<strong>受信任的带外配置（Out-of-band Configuration）</strong>接受的信任信息（包括受信任名称、公钥及相关参数）。在常见操作系统、浏览器或独立应用程序中，它们通常保存在受保护的本地信任库（Trust Store）中。<a href="#ref-rfc5280-s6.1.1">[RFC 5280 §6.1.1]</a></li>
+<li>服务端在 TLS 握手中发送的，通常是<strong>叶子证书（End-Entity Certificate）</strong> 以及若干张<strong>中间证书（Intermediate CA Certificates）</strong>。</li>
+<li>服务端不需要在握手报文中发送自签名的根证书，作为信任锚的自签名证书本身不属于待验证的目标路径，客户端必须在自己受信任的本地配置中对接信任信息。我们在早期的<a href="/posts/trust-store-configuration/">《信任库配置》</a>中探讨的正是这一本地边界。</li>
+</ul>
+<h2 id="证书路径的构建与验证rfc-5280-核心算法">证书路径的构建与验证：RFC 5280 核心算法</h2>
+<p>拿到服务端出示的证书序列后，客户端根据 RFC 5280 §6.1 执行路径验证状态机：<a href="#ref-rfc5280-s6.1">[RFC 5280 §6.1]</a></p>
+<ol>
+<li><strong>候选路径构建（Path Building）：</strong>
+客户端在本地缓存、信任锚库以及服务端提供的中间证书中搜寻匹配证书，组合形成一条从待验证叶子证书到某个信任锚的候选链路：<code>Root Anchor → Intermediate CA → Leaf Cert</code>。RFC 4158 指出，实际构建算法可以采用自顶向下、自底向上等多种图搜索策略。<a href="#ref-rfc4158-s1">[RFC 4158 §1]</a></li>
+<li><strong>签名链数学检验：</strong>
+沿着待验证链路中的每一个节点，逐级使用颁发者公钥验证签名。</li>
+<li><strong>多维策略与约束检查：</strong>
+链路中的每个待验证证书节点，还必须经受一系列标准扩展属性与策略规则的严格审问：
+<ul>
+<li><strong>时间有效性（Validity Period）：</strong> 当前时间必须落在 <code>notBefore</code> 与 <code>notAfter</code> 所构成的闭区间内（两端均包含，Inclusive）。<a href="#ref-rfc5280-s4.1.2.5">[RFC 5280 §4.1.2.5]</a></li>
+<li><strong>基本约束（Basic Constraints）：</strong> 链路中签发下级的 CA 证书必须具备 <code>cA: TRUE</code>；且其 <code>pathLenConstraint</code>（不计叶子证书，计算非自颁发的中间 CA）必须满足最大深度限制。<a href="#ref-rfc5280-s4.2.1.9">[RFC 5280 §4.2.1.9]</a></li>
+<li><strong>用途限制（Key Usage &#x26; EKU）：</strong> 若存在 <code>Key Usage</code>，CA 证书必须允许 <code>keyCertSign</code>；若存在 <code>Extended Key Usage</code>（EKU），其声明的用途必须允许当前 TLS 目标服务（例如仅带有 <code>id-kp-emailProtection</code> 邮件保护的证书不能充当服务端证书）；若两者同时存在，必须同时满足各自约束。<a href="#ref-rfc5280-s4.2.1.12">[RFC 5280 §4.2.1.12]</a></li>
+<li><strong>名称约束与关键扩展：</strong> 必须遵守上级 CA 施加的名称约束（Name Constraints）；遇到标记为关键（Critical）的未知扩展时必须拒绝该证书。<a href="#ref-rfc5280-s4.2.1.10">[RFC 5280 §4.2.1.10]</a></li>
+<li><strong>吊销状态检查（Revocation Status）：</strong> 检查证书是否已被 CA 撤销。若状态已证实为 <code>revoked</code>，连接必须拒绝；若因网络波动或服务不可用而无法获取证明，该状态属于未确定，是否继续取决于客户端配置的软失败（Soft-Fail）或硬失败（Hard-Fail）安全策略（详见早期的<a href="/posts/certificate-revocation-policy/">《证书吊销策略》</a>）。</li>
+</ul>
+</li>
+</ol>
+<h2 id="主机名校验服务身份匹配与-san">主机名校验：服务身份匹配与 SAN</h2>
+<p>即使上述全部路径验证 100% 完美通过，也<strong>不能证明当前通信是安全的</strong>！</p>
+<p>设想这样一个场景：攻击者合法申请了一张属于他自己域名 <code>evil.com</code> 的正规证书。当你在浏览器中访问 <code>bank.com</code> 时，攻击者劫持了 DNS 并把流量导向他的服务器，并向你出示那张合法的 <code>evil.com</code> 证书。</p>
+<ul>
+<li>此时整条证书链都是真实的，根 CA 是受信任的，签名无误，时间有效，没有吊销。</li>
+<li>如果系统只做证书链验证，就会误以为连接完全可信！</li>
+</ul>
+<p>这就是为什么<strong>主机名服务身份校验具有一票否决权</strong>。<a href="#ref-rfc6125-s1.4">[RFC 6125 §1.4]</a></p>
+<p>RFC 6125 为基于 PKIX 证书验证 TLS 服务身份提供了通用指导（具体应用仍遵循自身上层协议规定）：<a href="#ref-rfc6125-s1.4">[RFC 6125 §1.4]</a> · <a href="#ref-rfc6125-s6">[RFC 6125 §6]</a></p>
+<ol>
+<li><strong>使用者备用名称中的标识类型优先准则：</strong>
+<ul>
+<li>在 HTTPS 场景中，客户端必须优先检查证书 <code>subjectAltName</code> 扩展中与应用匹配的参考标识符（主要是 <code>dNSName</code>，即 DNS-ID）。<a href="#ref-rfc5280-s4.2.1.6">[RFC 5280 §4.2.1.6]</a> · <a href="#ref-rfc6125-s6.4">[RFC 6125 §6.4]</a></li>
+<li>RFC 6125 §6.4.4 规定：如果证书出示的标识中包含了客户端支持的应用标识符类型（如 DNS-ID），客户端<strong>不应再回退检查 Common Name（CN）</strong>。</li>
+</ul>
+</li>
+<li><strong>通用名称（CN）的历史回退限制：</strong>
+<ul>
+<li>只有在出示的标识符中<strong>完全不包含客户端所支持的应用标识类型</strong>时，作为向后兼容历史实现的过渡手段，规范才允许在受限条件下检查 <code>Subject</code> 字段中的 <code>CN</code>。<a href="#ref-rfc6125-s6.4">[RFC 6125 §6.4]</a></li>
+<li>依赖 CN 验证主机名是历史遗留做法，现代规范普遍建议迁移淘汰对 CN 的匹配。</li>
+</ul>
+</li>
+<li><strong>通配符（Wildcard）的匹配建议：</strong>
+<ul>
+<li>本文以完整最左标签的通配符作为保守匹配示例：<code><em>.example.com</em></code><em> 可匹配 <code>foo.example.com</code>，不跨级匹配 <code>sub.foo.example.com</code>；RFC 6125 §6.4.3 也允许客户端支持左标签内的部分通配（例如 <code>baz</code></em><code>.example.net</code>），具体应用协议与客户端实现规则可更为严格。<a href="#ref-rfc6125-s6.4">[RFC 6125 §6.4]</a></li>
+</ul>
+</li>
+</ol>
+<h2 id="总结决定信任的双重防线">总结：决定信任的双重防线</h2>
+<p>在完整的 TLS 客户端实现中，信任判定需要双层防线共同闭环：</p>
+<pre><code>[接收服务器出示证书序列]
+       |
+       v
+[步骤一：PKIX 证书链验证 (RFC 5280)]
+  + 本地信任锚（Trust Anchor）带外对接
+  + 待验证路径节点逐级验签
+  + notBefore / notAfter 闭区间时间校验
+  + cA 标志、pathLenConstraint 约束
+  + 若有 EKU 须允许 TLS 目标用途；处理关键扩展
+  + 吊销状态核验（根据已证实吊销阻断；未确定按既定策略决策）
+       |  (验证不合规 -> 中止连接)
+       v
+[步骤二：服务身份匹配 (RFC 6125)]
+  + 提取期望连接的完全限定域名 (FQDN)
+  + 匹配 subjectAltName 中的 dNSName (DNS-ID)
+  + (若无受支持标识类型，按历史规则受限回退 CN)
+       |  (主机名不匹配 -> 中止连接)
+       v
+[信任达成：确认对端公钥合法有效且属于目标主机]</code></pre>
+<p>只有当密码学证书链验证与目标服务主机名身份双重校验全部通过，客户端才能安全地建立信任关系。</p>
+<hr>
+<h2 id="参考资料与固定版本来源">参考资料与固定版本来源</h2>
+<ul>
+  <li>
+    <a id="ref-rfc5280-s3.2" href="https://www.rfc-editor.org/rfc/rfc5280.txt" target="_blank" rel="noopener noreferrer">RFC 5280 §3.2: Certification Paths and Trust</a>
+    <br>D. Cooper, S. Santesson, S. Farrell, et al. <em>Internet X.509 Public Key Infrastructure Certificate and Certificate Revocation List (CRL) Profile</em>, May 2008. 阐明了证书路径与信任模型，明确信任锚在验证中的决定性起点地位。
+  </li>
+  <li>
+    <a id="ref-rfc5280-s4.1.2.5" href="https://www.rfc-editor.org/rfc/rfc5280.txt" target="_blank" rel="noopener noreferrer">RFC 5280 §4.1.2.5: Validity</a>
+    <br>定义了证书有效期的判定规则，明确时间区间包含 notBefore 与 notAfter 两端。
+  </li>
+  <li>
+    <a id="ref-rfc5280-s4.2.1.6" href="https://www.rfc-editor.org/rfc/rfc5280.txt" target="_blank" rel="noopener noreferrer">RFC 5280 §4.2.1.6: Subject Alternative Name</a>
+    <br>定义了使用者备用名称（SAN）扩展及其承载 dNSName 等标识符的规范格式。
+  </li>
+  <li>
+    <a id="ref-rfc5280-s4.2.1.9" href="https://www.rfc-editor.org/rfc/rfc5280.txt" target="_blank" rel="noopener noreferrer">RFC 5280 §4.2.1.9: Basic Constraints</a>
+    <br>阐明了 cA 标志与 pathLenConstraint（不计叶子证书）在防止非 CA 证书越权签发中间链时的约束机制。
+  </li>
+  <li>
+    <a id="ref-rfc5280-s4.2.1.10" href="https://www.rfc-editor.org/rfc/rfc5280.txt" target="_blank" rel="noopener noreferrer">RFC 5280 §4.2.1.10: Name Constraints</a>
+    <br>规定了上级 CA 施加的名称约束与处理关键扩展的要求。
+  </li>
+  <li>
+    <a id="ref-rfc5280-s4.2.1.12" href="https://www.rfc-editor.org/rfc/rfc5280.txt" target="_blank" rel="noopener noreferrer">RFC 5280 §4.2.1.12: Extended Key Usage</a>
+    <br>规定了证书用途扩展若存在时的限制机制，明确 KU 与 EKU 须同时满足。
+  </li>
+  <li>
+    <a id="ref-rfc5280-s6.1" href="https://www.rfc-editor.org/rfc/rfc5280.txt" target="_blank" rel="noopener noreferrer">RFC 5280 §6.1: Basic Path Validation</a>
+    <br>详细给出了 X.509 证书路径验证的形式化算法与递归校验状态机。
+  </li>
+  <li>
+    <a id="ref-rfc5280-s6.1.1" href="https://www.rfc-editor.org/rfc/rfc5280.txt" target="_blank" rel="noopener noreferrer">RFC 5280 §6.1.1: Inputs</a>
+    <br>规定了路径验证的初始输入，包括候选路径与带外提供的信任锚信息。
+  </li>
+  <li>
+    <a id="ref-rfc6125-s1.4" href="https://www.rfc-editor.org/rfc/rfc6125.txt" target="_blank" rel="noopener noreferrer">RFC 6125 §1.4: Applicability</a>
+    <br>P. Saint-Andre, J. Hodges. <em>Representation and Verification of Domain-Based Application Service Identity within PKIX</em>, March 2011. 界定了服务身份校验为通用指导、不取代既有特定应用协议规则的适用边界。
+  </li>
+  <li>
+    <a id="ref-rfc6125-s6" href="https://www.rfc-editor.org/rfc/rfc6125.txt" target="_blank" rel="noopener noreferrer">RFC 6125 §6: Verification of Identity</a>
+    <br>规定了服务身份比对的通用原则。
+  </li>
+  <li>
+    <a id="ref-rfc6125-s6.4" href="https://www.rfc-editor.org/rfc/rfc6125.txt" target="_blank" rel="noopener noreferrer">RFC 6125 §6.4: Matching the Certification Path to the Service Identity</a>
+    <br>详细规定了参考标识符与出示标识符的匹配规则（§6.4.3 通配符建议、§6.4.4 受支持标识类型存在时不应回退 CN 的规范要求）。
+  </li>
+  <li>
+    <a id="ref-rfc4158-s1" href="https://www.rfc-editor.org/rfc/rfc4158.txt" target="_blank" rel="noopener noreferrer">RFC 4158 §1: Introduction</a>
+    <br>M. Cooper, Y. Dzambasow, P. Hesse, et al. <em>Certification Path Building</em>, September 2005. 说明了复杂 PKI 拓扑下的证书路径搜寻与多种候选构建机制。
+  </li>
+  <li>
+    <a id="ref-rfc6818-s1" href="https://www.rfc-editor.org/rfc/rfc6818.txt" target="_blank" rel="noopener noreferrer">RFC 6818 §1: Introduction</a>
+    <br>P. Yee. <em>Updates to RFC 5280</em>, January 2013. 更新了自签名根证书与信任锚处理的规范要求。
+  </li>
+</ul></article><hr class="my-8 border-dashed"><div id="btt-btn-container" class="fixed inset-e-4 bottom-8 z-50 md:sticky md:inset-e-auto md:float-end md:me-1 translate-y-14 opacity-0 transition duration-500"><button data-button="back-to-top" class="group bg-background relative px-2 py-1 size-14 rounded-full shadow-xl md:h-8 md:w-fit md:rounded-md md:shadow-none md:focus-visible:rounded-none md:bg-background/35 md:bg-clip-padding md:backdrop-blur-lg"><span id="progress-indicator" class="absolute inset-0 -z-10 block size-14 scale-110 rounded-full bg-transparent md:hidden md:h-8 md:rounded-md"></span><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="inline-block rotate-90 md:hidden" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M5 12h14M5 12l6 6M5 12l6-6" /></svg><span class="group-hover:text-accent sr-only text-sm md:not-sr-only"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="inline-block size-4" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M12 5v14M16 9l-4-4M8 9l4-4" /></svg> 回到顶部</span></button></div><script data-astro-rerun>
+  function backToTop() {
+    const rootElement = document.documentElement;
+    const btnContainer = document.querySelector("#btt-btn-container");
+    const backToTopBtn = document.querySelector("[data-button='back-to-top']");
+    const progressIndicator = document.querySelector("#progress-indicator");
+
+    if (!rootElement || !btnContainer || !backToTopBtn || !progressIndicator)
+      return;
+
+    backToTopBtn.addEventListener("click", () => {
+      document.body.scrollTop = 0;
+      document.documentElement.scrollTop = 0;
+    });
+
+    let lastVisible = null;
+    function handleScroll() {
+      const scrollTotal = rootElement.scrollHeight - rootElement.clientHeight;
+      const scrollTop = rootElement.scrollTop;
+      const scrollPercent = Math.floor((scrollTop / scrollTotal) * 100);
+
+      progressIndicator.style.setProperty(
+        "background-image",
+        `conic-gradient(var(--accent), var(--accent) ${scrollPercent}%, transparent ${scrollPercent}%)`
+      );
+
+      const isVisible = scrollTop / scrollTotal > 0.3;
+
+      if (isVisible !== lastVisible) {
+        btnContainer.classList.toggle("opacity-100", isVisible);
+        btnContainer.classList.toggle("translate-y-0", isVisible);
+        btnContainer.classList.toggle("opacity-0", !isVisible);
+        btnContainer.classList.toggle("translate-y-14", !isVisible);
+        lastVisible = isVisible;
+      }
+    }
+
+    let ticking = false;
+    document.addEventListener("scroll", () => {
+      if (!ticking) {
+        window.requestAnimationFrame(() => {
+          handleScroll();
+          ticking = false;
+        });
+        ticking = true;
+      }
+    });
+  }
+  backToTop();
+</script><ul class="mt-4 mb-8 flex flex-wrap gap-4 sm:my-8"><li><a data-astro-transition-scope="astro-bztu2lml-1" href="/tags/密码学/" class="flex items-center gap-0.5 border-foreground border-b-2 border-dashed hover:border-accent hover:text-accent hover:-mt-0.5 focus-visible:text-accent focus-visible:border-none text-sm"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="opacity-80 size-4" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M5 9h14M5 15h14M11 4 7 20M17 4l-4 16" /></svg>密码学</a></li><li><a data-astro-transition-scope="astro-bztu2lml-2" href="/tags/x.509/" class="flex items-center gap-0.5 border-foreground border-b-2 border-dashed hover:border-accent hover:text-accent hover:-mt-0.5 focus-visible:text-accent focus-visible:border-none text-sm"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="opacity-80 size-4" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M5 9h14M5 15h14M11 4 7 20M17 4l-4 16" /></svg>X.509</a></li><li><a data-astro-transition-scope="astro-bztu2lml-3" href="/tags/证书链/" class="flex items-center gap-0.5 border-foreground border-b-2 border-dashed hover:border-accent hover:text-accent hover:-mt-0.5 focus-visible:text-accent focus-visible:border-none text-sm"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="opacity-80 size-4" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M5 9h14M5 15h14M11 4 7 20M17 4l-4 16" /></svg>证书链</a></li><li><a data-astro-transition-scope="astro-bztu2lml-4" href="/tags/主机名校验/" class="flex items-center gap-0.5 border-foreground border-b-2 border-dashed hover:border-accent hover:text-accent hover:-mt-0.5 focus-visible:text-accent focus-visible:border-none text-sm"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="opacity-80 size-4" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M5 9h14M5 15h14M11 4 7 20M17 4l-4 16" /></svg>主机名校验</a></li><li><a data-astro-transition-scope="astro-bztu2lml-5" href="/tags/pkix/" class="flex items-center gap-0.5 border-foreground border-b-2 border-dashed hover:border-accent hover:text-accent hover:-mt-0.5 focus-visible:text-accent focus-visible:border-none text-sm"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="opacity-80 size-4" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M5 9h14M5 15h14M11 4 7 20M17 4l-4 16" /></svg>PKIX</a></li><li><a data-astro-transition-scope="astro-bztu2lml-6" href="/tags/rfc-5280/" class="flex items-center gap-0.5 border-foreground border-b-2 border-dashed hover:border-accent hover:text-accent hover:-mt-0.5 focus-visible:text-accent focus-visible:border-none text-sm"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="opacity-80 size-4" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M5 9h14M5 15h14M11 4 7 20M17 4l-4 16" /></svg>RFC 5280</a></li><li><a data-astro-transition-scope="astro-bztu2lml-7" href="/tags/rfc-6125/" class="flex items-center gap-0.5 border-foreground border-b-2 border-dashed hover:border-accent hover:text-accent hover:-mt-0.5 focus-visible:text-accent focus-visible:border-none text-sm"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="opacity-80 size-4" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M5 9h14M5 15h14M11 4 7 20M17 4l-4 16" /></svg>RFC 6125</a></li></ul><hr class="my-8 border-dashed"><div data-pagefind-ignore class="my-8 grid grid-cols-1 gap-6 sm:grid-cols-2"><a href="/posts/tls-handshake-cryptographic-components/" class="flex w-full gap-1 hover:opacity-75"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="inline-block flex-none rtl:rotate-180" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M5 12h14M5 12l6 6M5 12l6-6" /></svg><div><span>上一篇</span><div class="text-accent/85 text-sm">一次 TLS 握手怎样组合证书、签名、协商与记录加密</div></div></a><a href="/posts/cryptographic-key-lifecycle/" class="flex w-full justify-end gap-1 text-end hover:opacity-75 sm:col-start-2"><div><span>下一篇</span><div class="text-accent/85 text-sm">密钥怎样生成、保存、轮换与失效</div></div><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="inline-block flex-none rtl:rotate-180" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M5 12h14M13 18l6-6M13 6l6 6" /></svg></a></div></main><footer class="app-layout mt-auto"><div class="border-border flex flex-col items-center justify-between border-t py-6 sm:flex-row-reverse sm:py-4"><div class="flex flex-wrap items-center gap-1"><a href="https://github.com/SaromChars" title="Sarom Chars 的 GitHub" class="group inline-flex items-center gap-1 hover:text-accent p-2 hover:rotate-6 sm:p-1"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="inline-block size-6 scale-125 fill-transparent stroke-current stroke-2 opacity-90 group-hover:fill-transparent sm:scale-110" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M9 19c-4.3 1.4-4.3-2.5-6-3m12 5v-3.5c0-1 .1-1.4-.5-2 2.8-.3 5.5-1.4 5.5-6a4.6 4.6 0 0 0-1.3-3.2 4.2 4.2 0 0 0-.1-3.2s-1.1-.3-3.5 1.3a12.3 12.3 0 0 0-6.2 0C6.5 2.8 5.4 3.1 5.4 3.1a4.2 4.2 0 0 0-.1 3.2A4.6 4.6 0 0 0 4 9.5c0 4.6 2.7 5.7 5.5 6-.6.6-.6 1.2-.5 2V21" /></svg><span class="sr-only">Sarom Chars 的 GitHub</span></a></div><div class="my-2 flex flex-col items-center whitespace-nowrap sm:flex-row"><span>版权 &#169; 2026</span><span class="hidden sm:inline">&nbsp;|&nbsp;</span><span>保留所有权利。</span></div></div></footer><script type="module">var e=`theme`,t=`light`,n=`dark`;function r(){return localStorage.getItem(e)||(window.matchMedia(`(prefers-color-scheme: dark)`).matches?n:t)}var i=window.__theme?.value??r();function a(){localStorage.setItem(e,i),o()}function o(){let e=document.firstElementChild;e?.setAttribute(`data-theme`,i),e?.classList.toggle(`dark`,i===n),document.querySelector(`#theme-btn`)?.setAttribute(`aria-label`,i);let t=window.getComputedStyle(document.body).backgroundColor;document.querySelector(`meta[name='theme-color']`)?.setAttribute(`content`,t)}function s(){o(),document.querySelector(`#theme-btn`)?.addEventListener(`click`,()=>{i=i===t?n:t,a()})}s(),document.addEventListener(`astro:after-swap`,s),document.addEventListener(`astro:before-swap`,e=>{let t=document.querySelector(`meta[name='theme-color']`)?.getAttribute(`content`);t&&e.newDocument.querySelector(`meta[name='theme-color']`)?.setAttribute(`content`,t)}),window.matchMedia(`(prefers-color-scheme: dark)`).addEventListener(`change`,({matches:e})=>{i=e?n:t,a()});</script></body></html><script type="module">var e=document.querySelector(`#article`);if(e?.querySelector(`a[href^="#ref-"]`)){let t=null,n=!1,r=document.createElement(`button`);r.type=`button`,r.className=`citation-return`,r.textContent=`返回阅读位置`,r.setAttribute(`data-pagefind-ignore`,``),e.addEventListener(`click`,n=>{if(n.button!==0||n.metaKey||n.ctrlKey||n.shiftKey||n.altKey)return;let i=n.target instanceof Element?n.target.closest(`a[href^="#ref-"]`):null;if(!i||!e.contains(i))return;let a=i.hash,o=document.getElementById(decodeURIComponent(a.slice(1)));o&&e.contains(o)&&(t={source:i,url:window.location.href,top:window.scrollY,left:window.scrollX,targetHash:a},o.insertAdjacentElement(`afterend`,r))}),r.addEventListener(`click`,()=>{if(!t||n)return;let e=t,i=i=>{r.remove(),window.requestAnimationFrame(()=>{window.requestAnimationFrame(()=>{e.source.focus({preventScroll:!0}),window.scrollTo({top:e.top,left:e.left,behavior:`instant`}),t=null,n=!1,i?.()})})};window.location.href===e.url?i():(n=!0,window.addEventListener(`popstate`,()=>{let e=window.history.scrollRestoration;window.history.scrollRestoration=`manual`,window.setTimeout(()=>{i(()=>{window.history.scrollRestoration=e})},0)},{once:!0}),window.history.back())}),window.addEventListener(`hashchange`,()=>{!n&&t&&window.location.hash!==t.targetHash&&(r.remove(),t=null)})}</script><script data-astro-rerun>
+  function createProgressBar() {
+    const progressContainer = document.createElement("div");
+    progressContainer.className =
+      "progress-container fixed top-0 z-10 h-1 w-full bg-background";
+
+    const progressBar = document.createElement("div");
+    progressBar.className = "progress-bar h-1 w-0 bg-accent";
+    progressBar.id = "myBar";
+
+    progressContainer.appendChild(progressBar);
+    document.body.appendChild(progressContainer);
+  }
+  createProgressBar();
+
+  function updateScrollProgress() {
+    document.addEventListener("scroll", () => {
+      const winScroll =
+        document.body.scrollTop || document.documentElement.scrollTop;
+      const height =
+        document.documentElement.scrollHeight -
+        document.documentElement.clientHeight;
+      const scrolled = (winScroll / height) * 100;
+      if (document) {
+        const myBar = document.getElementById("myBar");
+        if (myBar) {
+          myBar.style.width = scrolled + "%";
+        }
+      }
+    });
+  }
+  updateScrollProgress();
+
+  function addHeadingLinks() {
+    const headings = Array.from(
+      document.querySelectorAll("h2, h3, h4, h5, h6")
+    );
+    for (const heading of headings) {
+      heading.classList.add("group");
+      const link = document.createElement("a");
+      link.className =
+        "heading-link ms-2 no-underline opacity-75 md:opacity-0 md:group-hover:opacity-100 md:focus:opacity-100";
+      link.href = "#" + heading.id;
+
+      const span = document.createElement("span");
+      span.ariaHidden = "true";
+      span.innerText = "#";
+      link.appendChild(span);
+      heading.appendChild(link);
+    }
+  }
+  addHeadingLinks();
+
+  function attachCopyButtons() {
+    const copyButtonLabel = "Copy";
+    const codeBlocks = Array.from(document.querySelectorAll("pre"));
+
+    for (const codeBlock of codeBlocks) {
+      const wrapper = document.createElement("div");
+      wrapper.style.position = "relative";
+
+      const computedStyle = getComputedStyle(codeBlock);
+      const hasFileNameOffset =
+        computedStyle.getPropertyValue("--file-name-offset").trim() !== "";
+
+      const topClass = hasFileNameOffset
+        ? "top-(--file-name-offset)"
+        : "-top-3";
+
+      const copyButton = document.createElement("button");
+      copyButton.className = `copy-code absolute end-3 ${topClass} rounded bg-muted border border-muted px-2 py-1 text-xs leading-4 text-foreground font-medium`;
+      copyButton.innerHTML = copyButtonLabel;
+      codeBlock.setAttribute("tabindex", "0");
+      codeBlock.appendChild(copyButton);
+
+      codeBlock?.parentNode?.insertBefore(wrapper, codeBlock);
+      wrapper.appendChild(codeBlock);
+
+      copyButton.addEventListener("click", async () => {
+        await copyCode(codeBlock, copyButton);
+      });
+    }
+
+    async function copyCode(block, button) {
+      const code = block.querySelector("code");
+      const text = code?.innerText;
+
+      await navigator.clipboard.writeText(text ?? "");
+
+      button.innerText = "Copied";
+
+      setTimeout(() => {
+        button.innerText = copyButtonLabel;
+      }, 700);
+    }
+  }
+  attachCopyButtons();
+
+  /** Accessible image lightbox for article images. */
+  function initLightbox() {
+    const article = document.getElementById("article");
+    if (!article) return;
+
+    const prefersReducedMotion = () =>
+      window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+    let overlay = null;
+    let lastFocused = null;
+    let removeDragListeners = null;
+
+    // Defer attribute mutations so they don't push the LCP timestamp.
+    // Event listeners below use delegation and don't need the attributes to exist yet.
+    requestAnimationFrame(() => {
+      const images = Array.from(article.querySelectorAll("img"));
+      for (const image of images) {
+        if (image.closest("a")) continue;
+        image.setAttribute("role", "button");
+        image.setAttribute("tabindex", "0");
+        image.setAttribute("aria-haspopup", "dialog");
+        image.setAttribute(
+          "aria-label",
+          image.alt ? `Zoom image: ${image.alt}` : "Zoom image"
+        );
+      }
+    });
+
+    function open(src, alt, trigger) {
+      if (overlay) return;
+      lastFocused = trigger ?? document.activeElement;
+
+      overlay = document.createElement("div");
+      overlay.setAttribute("role", "dialog");
+      overlay.setAttribute("aria-modal", "true");
+      overlay.setAttribute(
+        "aria-label",
+        alt ? `Image preview: ${alt}` : "Image preview"
+      );
+      overlay.className =
+        "fixed inset-0 z-50 flex cursor-zoom-out items-center justify-center bg-black/70 backdrop-blur-sm opacity-0 transition-opacity duration-200 motion-reduce:transition-none";
+
+      const closeButton = document.createElement("button");
+      closeButton.type = "button";
+      closeButton.setAttribute("aria-label", "Close image preview");
+      closeButton.className =
+        "absolute end-4 top-4 z-1 flex size-11 items-center justify-center rounded bg-black/50 text-3xl leading-none text-white";
+      closeButton.innerHTML = "&#10005;";
+      closeButton.addEventListener("click", close);
+
+      const image = document.createElement("img");
+      image.src = src;
+      image.alt = "";
+      image.className =
+        "max-h-[90dvh] max-w-[90dvw] cursor-default object-contain transition-transform duration-100 ease-out motion-reduce:transition-none data-[zoom=drag]:cursor-grabbing data-[zoom=drag]:transition-none data-[zoom=in]:cursor-grab";
+
+      overlay.append(closeButton, image);
+      overlay.addEventListener("click", e => {
+        if (e.target === overlay && currentScale <= 1) close();
+      });
+
+      let currentScale = 1;
+      let translateX = 0;
+      let translateY = 0;
+      let initialDist = 0;
+      let initialScale = 1;
+      let panStartX = 0;
+      let panStartY = 0;
+      let panStartTranslateX = 0;
+      let panStartTranslateY = 0;
+      let lastTapTime = 0;
+
+      function applyTransform() {
+        image.style.transform = `scale(${currentScale}) translate(${translateX}px, ${translateY}px)`;
+        // A backdrop click only closes at fit size, so drop the zoom-out cursor while zoomed.
+        overlay?.classList.toggle("cursor-zoom-out", currentScale <= 1);
+      }
+
+      function resetTransform() {
+        currentScale = 1;
+        translateX = 0;
+        translateY = 0;
+        image.style.transform = "";
+        image.removeAttribute("data-zoom");
+        overlay?.classList.add("cursor-zoom-out");
+      }
+
+      // Keep the zoomed image from being panned past its edges.
+      function clampTranslate() {
+        if (!overlay) return;
+        const maxX = Math.max(
+          0,
+          (image.clientWidth - overlay.clientWidth / currentScale) / 2
+        );
+        const maxY = Math.max(
+          0,
+          (image.clientHeight - overlay.clientHeight / currentScale) / 2
+        );
+        translateX = Math.min(maxX, Math.max(-maxX, translateX));
+        translateY = Math.min(maxY, Math.max(-maxY, translateY));
+      }
+
+      overlay.addEventListener(
+        "touchstart",
+        e => {
+          const t = e.touches;
+          if (t.length === 2) {
+            image.setAttribute("data-zoom", "drag");
+            initialDist = Math.hypot(
+              t[1].clientX - t[0].clientX,
+              t[1].clientY - t[0].clientY
+            );
+            initialScale = currentScale;
+          } else if (t.length === 1) {
+            const now = Date.now();
+            if (now - lastTapTime < 300) {
+              e.preventDefault();
+              if (currentScale > 1) {
+                resetTransform();
+              } else {
+                currentScale = 2;
+                translateX = 0;
+                translateY = 0;
+                applyTransform();
+                image.setAttribute("data-zoom", "in");
+              }
+              lastTapTime = 0;
+              panStartX = t[0].clientX;
+              panStartY = t[0].clientY;
+              panStartTranslateX = translateX;
+              panStartTranslateY = translateY;
+            } else {
+              lastTapTime = now;
+              if (currentScale > 1) {
+                image.setAttribute("data-zoom", "drag");
+                panStartX = t[0].clientX;
+                panStartY = t[0].clientY;
+                panStartTranslateX = translateX;
+                panStartTranslateY = translateY;
+              }
+            }
+          }
+        },
+        { passive: false }
+      );
+
+      overlay.addEventListener(
+        "touchmove",
+        e => {
+          const t = e.touches;
+          if (t.length === 2) {
+            e.preventDefault();
+            const dist = Math.hypot(
+              t[1].clientX - t[0].clientX,
+              t[1].clientY - t[0].clientY
+            );
+            const oldScale = currentScale;
+            currentScale = Math.min(
+              4,
+              Math.max(1, initialScale * (dist / initialDist))
+            );
+
+            // Zoom to the geometric center of the two fingers
+            const midX = (t[0].clientX + t[1].clientX) / 2;
+            const midY = (t[0].clientY + t[1].clientY) / 2;
+            const ox = overlay.clientWidth / 2;
+            const oy = overlay.clientHeight / 2;
+            translateX =
+              (midX - ox) * (1 / currentScale - 1 / oldScale) + translateX;
+            translateY =
+              (midY - oy) * (1 / currentScale - 1 / oldScale) + translateY;
+            clampTranslate();
+            applyTransform();
+          } else if (t.length === 1) {
+            if (currentScale > 1) {
+              e.preventDefault();
+              image.setAttribute("data-zoom", "drag");
+              translateX =
+                panStartTranslateX + (t[0].clientX - panStartX) / currentScale;
+              translateY =
+                panStartTranslateY + (t[0].clientY - panStartY) / currentScale;
+              clampTranslate();
+              applyTransform();
+            } else {
+              e.preventDefault();
+            }
+          }
+        },
+        { passive: false }
+      );
+
+      overlay.addEventListener("touchend", e => {
+        if (e.touches.length === 0) {
+          if (currentScale > 1) {
+            image.setAttribute("data-zoom", "in");
+          } else {
+            image.removeAttribute("data-zoom");
+          }
+          if (currentScale <= 1.05) resetTransform();
+        }
+      });
+
+      overlay.addEventListener("touchcancel", e => {
+        if (e.touches.length === 0) {
+          if (currentScale > 1) {
+            image.setAttribute("data-zoom", "in");
+          } else {
+            image.removeAttribute("data-zoom");
+          }
+          if (currentScale <= 1.05) resetTransform();
+        }
+      });
+
+      overlay.addEventListener(
+        "wheel",
+        e => {
+          e.preventDefault();
+          const oldScale = currentScale;
+          const delta = -e.deltaY * 0.001;
+          currentScale = Math.min(4, Math.max(1, currentScale * (1 + delta)));
+
+          if (currentScale <= 1.05) {
+            resetTransform();
+          } else {
+            image.setAttribute("data-zoom", "in");
+            // Zoom to cursor: adjust translate so the point under cursor stays fixed
+            const ox = overlay.clientWidth / 2;
+            const oy = overlay.clientHeight / 2;
+            translateX =
+              (e.clientX - ox) * (1 / currentScale - 1 / oldScale) + translateX;
+            translateY =
+              (e.clientY - oy) * (1 / currentScale - 1 / oldScale) + translateY;
+            clampTranslate();
+            applyTransform();
+          }
+        },
+        { passive: false }
+      );
+
+      let isMouseDown = false;
+      let mouseStartX = 0;
+      let mouseStartY = 0;
+
+      overlay.addEventListener("mousedown", e => {
+        if (e.button !== 0 || currentScale <= 1) return;
+        if (e.target.closest("button")) return;
+        isMouseDown = true;
+        mouseStartX = e.clientX;
+        mouseStartY = e.clientY;
+        panStartTranslateX = translateX;
+        panStartTranslateY = translateY;
+        image.setAttribute("data-zoom", "drag");
+        e.preventDefault();
+      });
+
+      function onMouseMove(e) {
+        if (!isMouseDown || !overlay) return;
+        translateX =
+          panStartTranslateX + (e.clientX - mouseStartX) / currentScale;
+        translateY =
+          panStartTranslateY + (e.clientY - mouseStartY) / currentScale;
+        clampTranslate();
+        applyTransform();
+      }
+
+      function onMouseUp() {
+        if (!isMouseDown) return;
+        isMouseDown = false;
+        if (currentScale > 1) {
+          image.setAttribute("data-zoom", "in");
+        } else {
+          image.removeAttribute("data-zoom");
+        }
+      }
+
+      document.addEventListener("mousemove", onMouseMove);
+      document.addEventListener("mouseup", onMouseUp);
+      removeDragListeners = () => {
+        document.removeEventListener("mousemove", onMouseMove);
+        document.removeEventListener("mouseup", onMouseUp);
+      };
+
+      document.body.appendChild(overlay);
+      document.documentElement.style.overflow = "hidden";
+      document.addEventListener("keydown", onKeyDown);
+      window.__closeLightbox = close;
+
+      requestAnimationFrame(() => overlay?.classList.add("opacity-100"));
+      closeButton.focus();
+    }
+
+    function close() {
+      if (!overlay) return;
+      const el = overlay;
+      overlay = null;
+      el.classList.add("pointer-events-none");
+      window.__closeLightbox = null;
+
+      document.removeEventListener("keydown", onKeyDown);
+      removeDragListeners?.();
+      removeDragListeners = null;
+      document.documentElement.style.overflow = "";
+      lastFocused?.focus();
+      lastFocused = null;
+
+      if (prefersReducedMotion()) {
+        el.remove();
+        return;
+      }
+      const remove = () => el.remove();
+      el.addEventListener("transitionend", remove, { once: true });
+      setTimeout(remove, 250); // fallback in case transitionend never fires
+      el.classList.remove("opacity-100");
+    }
+
+    function onKeyDown(e) {
+      if (e.key === "Escape") {
+        close();
+      } else if (e.key === "Tab") {
+        trapFocus(e);
+      }
+    }
+
+    // Keep keyboard focus inside the open dialog.
+    function trapFocus(e) {
+      if (!overlay) return;
+      const focusables = overlay.querySelectorAll(
+        'a[href], button, [tabindex]:not([tabindex="-1"])'
+      );
+      if (focusables.length === 0) return;
+      const first = focusables[0];
+      const last = focusables[focusables.length - 1];
+      if (e.shiftKey && document.activeElement === first) {
+        e.preventDefault();
+        last.focus();
+      } else if (!e.shiftKey && document.activeElement === last) {
+        e.preventDefault();
+        first.focus();
+      }
+    }
+
+    function triggerFromEvent(e) {
+      const image = e.target.closest("img");
+      if (!image || !article.contains(image) || image.closest("a")) return null;
+      return image;
+    }
+
+    function activate(image) {
+      open(image.currentSrc || image.src, image.alt, image);
+    }
+
+    article.addEventListener("click", e => {
+      const image = triggerFromEvent(e);
+      if (!image) return;
+      e.preventDefault();
+      activate(image);
+    });
+
+    article.addEventListener("keydown", e => {
+      if (e.key !== "Enter" && e.key !== " " && e.key !== "Spacebar") return;
+      const image = triggerFromEvent(e);
+      if (!image) return;
+      e.preventDefault();
+      activate(image);
+    });
+  }
+  initLightbox();
+
+  if (!window.__lightboxSwapBound) {
+    window.__lightboxSwapBound = true;
+    document.addEventListener("astro:before-swap", () =>
+      window.__closeLightbox?.()
+    );
+  }
+
+  document.addEventListener("astro:after-swap", () =>
+    window.scrollTo({ left: 0, top: 0, behavior: "instant" })
+  );
+</script>
