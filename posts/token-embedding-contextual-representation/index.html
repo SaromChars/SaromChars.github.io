@@ -1,0 +1,900 @@
+<!DOCTYPE html><html dir="ltr" lang="zh-CN" class="overflow-y-scroll scroll-smooth"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1"><link rel="icon" type="image/png" href="/images/favicon-32x32-next.png"><link rel="icon" href="/favicon.ico"><link rel="canonical" href="https://www.saromchars.tech/posts/token-embedding-contextual-representation/"><meta name="generator" content="Astro v7.4.5"><!-- Primary meta --><title>文本怎样变成 Token 和向量？分词、嵌入与上下文表示 | Sarom&#39;s Blog</title><meta name="title" content="文本怎样变成 Token 和向量？分词、嵌入与上下文表示 | Sarom's Blog"><meta name="description" content="梳理从原始文本到 Transformer 输入的处理链：分词器与 BPE 子词切分、词表离散 ID、嵌入矩阵查表、位置信息注入，以及自注意力层如何生成随语境变化的上下文表示。"><meta name="author" content="Sarom Chars"><link rel="sitemap" href="/sitemap-index.xml"><!-- Open Graph --><meta property="og:type" content="article"><meta property="og:site_name" content="Sarom's Blog"><meta property="og:title" content="文本怎样变成 Token 和向量？分词、嵌入与上下文表示 | Sarom's Blog"><meta property="og:description" content="梳理从原始文本到 Transformer 输入的处理链：分词器与 BPE 子词切分、词表离散 ID、嵌入矩阵查表、位置信息注入，以及自注意力层如何生成随语境变化的上下文表示。"><meta property="og:url" content="https://www.saromchars.tech/posts/token-embedding-contextual-representation/"><meta property="og:image" content="https://www.saromchars.tech/og.png"><!-- Twitter / X --><meta property="twitter:card" content="summary_large_image"><meta property="twitter:url" content="https://www.saromchars.tech/posts/token-embedding-contextual-representation/"><meta property="twitter:title" content="文本怎样变成 Token 和向量？分词、嵌入与上下文表示 | Sarom's Blog"><meta property="twitter:description" content="梳理从原始文本到 Transformer 输入的处理链：分词器与 BPE 子词切分、词表离散 ID、嵌入矩阵查表、位置信息注入，以及自注意力层如何生成随语境变化的上下文表示。"><meta property="twitter:image" content="https://www.saromchars.tech/og.png"><!-- RSS autodiscovery --><link rel="alternate" type="application/rss+xml" title="Sarom's Blog" href="https://www.saromchars.tech/rss.xml"><!-- Filled at runtime by theme.ts to match the current background colour --><meta name="theme-color" content=""><!-- Extra head content injected by child layouts (e.g. JSON-LD, article meta) --><meta property="article:published_time" content="2022-03-07T02:00:00.000Z"><script type="application/ld+json">{"@context":"https://schema.org","@type":"BlogPosting","headline":"文本怎样变成 Token 和向量？分词、嵌入与上下文表示","mainEntityOfPage":"https://www.saromchars.tech/posts/token-embedding-contextual-representation/","datePublished":"2022-03-07T02:00:00.000Z","author":[{"@type":"Person","name":"Sarom Chars","url":"https://github.com/SaromChars"}]}</script><!--
+      Inline FOUC-prevention script: sets data-theme on <html> before
+      the browser paints. Runs synchronously, no defer/async.
+    --><script>
+      (function () {
+        const stored = localStorage.getItem("theme");
+        const prefersDark = window.matchMedia(
+          "(prefers-color-scheme: dark)"
+        ).matches;
+        const theme = stored ?? (prefersDark ? "dark" : "light");
+        const root = document.firstElementChild;
+        root?.setAttribute("data-theme", theme);
+        root?.classList.toggle("dark", theme === "dark");
+        // Expose value so theme.ts can skip re-detection.
+        window.__theme = { value: theme };
+      })();
+    </script><meta name="robots" content="index, follow"><script async src="https://www.googletagmanager.com/gtag/js?id=G-WJJJTJ4FWX"></script><script>(function(){const measurementId = "G-WJJJTJ4FWX";
+
+    window.dataLayer = window.dataLayer || [];
+    function gtag(){ window.dataLayer.push(arguments); }
+    gtag('js', new Date());
+    gtag('config', measurementId);
+  })();</script><style>@keyframes astroFadeInOut{0%{opacity:1}to{opacity:0}}@keyframes astroFadeIn{0%{opacity:0;mix-blend-mode:plus-lighter}to{opacity:1;mix-blend-mode:plus-lighter}}@keyframes astroFadeOut{0%{opacity:1;mix-blend-mode:plus-lighter}to{opacity:0;mix-blend-mode:plus-lighter}}@keyframes astroSlideFromRight{0%{transform:translate(100%)}}@keyframes astroSlideFromLeft{0%{transform:translate(-100%)}}@keyframes astroSlideToRight{to{transform:translate(100%)}}@keyframes astroSlideToLeft{to{transform:translate(-100%)}}@media (prefers-reduced-motion){::view-transition-group(*),::view-transition-old(*),::view-transition-new(*),[data-astro-transition-scope]{animation:none!important}}
+</style><link rel="stylesheet" href="/_astro/Footer.DC6qDsIp.css"><style>[data-astro-transition-scope="astro-bztu2lml-1"] { view-transition-name: ai; }@layer astro { ::view-transition-old(ai) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }::view-transition-new(ai) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }[data-astro-transition=back]::view-transition-old(ai) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition=back]::view-transition-new(ai) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; } }[data-astro-transition-fallback="old"] [data-astro-transition-scope="astro-bztu2lml-1"],
+			[data-astro-transition-fallback="old"][data-astro-transition-scope="astro-bztu2lml-1"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition-fallback="new"] [data-astro-transition-scope="astro-bztu2lml-1"],
+			[data-astro-transition-fallback="new"][data-astro-transition-scope="astro-bztu2lml-1"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }[data-astro-transition=back][data-astro-transition-fallback="old"] [data-astro-transition-scope="astro-bztu2lml-1"],
+			[data-astro-transition=back][data-astro-transition-fallback="old"][data-astro-transition-scope="astro-bztu2lml-1"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition=back][data-astro-transition-fallback="new"] [data-astro-transition-scope="astro-bztu2lml-1"],
+			[data-astro-transition=back][data-astro-transition-fallback="new"][data-astro-transition-scope="astro-bztu2lml-1"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }</style><style>[data-astro-transition-scope="astro-bztu2lml-2"] { view-transition-name: llm; }@layer astro { ::view-transition-old(llm) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }::view-transition-new(llm) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }[data-astro-transition=back]::view-transition-old(llm) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition=back]::view-transition-new(llm) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; } }[data-astro-transition-fallback="old"] [data-astro-transition-scope="astro-bztu2lml-2"],
+			[data-astro-transition-fallback="old"][data-astro-transition-scope="astro-bztu2lml-2"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition-fallback="new"] [data-astro-transition-scope="astro-bztu2lml-2"],
+			[data-astro-transition-fallback="new"][data-astro-transition-scope="astro-bztu2lml-2"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }[data-astro-transition=back][data-astro-transition-fallback="old"] [data-astro-transition-scope="astro-bztu2lml-2"],
+			[data-astro-transition=back][data-astro-transition-fallback="old"][data-astro-transition-scope="astro-bztu2lml-2"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition=back][data-astro-transition-fallback="new"] [data-astro-transition-scope="astro-bztu2lml-2"],
+			[data-astro-transition=back][data-astro-transition-fallback="new"][data-astro-transition-scope="astro-bztu2lml-2"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }</style><style>[data-astro-transition-scope="astro-bztu2lml-3"] { view-transition-name: embedding; }@layer astro { ::view-transition-old(embedding) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }::view-transition-new(embedding) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }[data-astro-transition=back]::view-transition-old(embedding) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition=back]::view-transition-new(embedding) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; } }[data-astro-transition-fallback="old"] [data-astro-transition-scope="astro-bztu2lml-3"],
+			[data-astro-transition-fallback="old"][data-astro-transition-scope="astro-bztu2lml-3"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition-fallback="new"] [data-astro-transition-scope="astro-bztu2lml-3"],
+			[data-astro-transition-fallback="new"][data-astro-transition-scope="astro-bztu2lml-3"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }[data-astro-transition=back][data-astro-transition-fallback="old"] [data-astro-transition-scope="astro-bztu2lml-3"],
+			[data-astro-transition=back][data-astro-transition-fallback="old"][data-astro-transition-scope="astro-bztu2lml-3"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition=back][data-astro-transition-fallback="new"] [data-astro-transition-scope="astro-bztu2lml-3"],
+			[data-astro-transition=back][data-astro-transition-fallback="new"][data-astro-transition-scope="astro-bztu2lml-3"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }</style></head><body class="bg-background font-app text-foreground selection:bg-accent/75 selection:text-accent-foreground flex min-h-svh flex-col"><a id="skip-to-content" href="#main-content" class="bg-background text-accent absolute inset-s-16 -top-full z-50 px-3 py-2 backdrop-blur-lg transition-all focus:top-4">跳到正文</a><header class="app-layout flex flex-col items-center justify-between sm:flex-row"><div class="border-border bg-background relative flex w-full items-baseline justify-between border-b py-4 sm:items-center sm:py-6"><a href="/" class="absolute py-1 text-xl leading-8 font-semibold whitespace-nowrap sm:static sm:my-auto sm:text-2xl sm:leading-none">Sarom&#39;s Blog</a><nav id="nav-menu" class="flex w-full flex-col items-center sm:ms-2 sm:flex-row sm:justify-end sm:space-x-4 sm:py-0"><button id="menu-btn" class="focus-outline self-end p-2 sm:hidden" aria-label="展开菜单" aria-expanded="false" aria-controls="menu-items" data-label-open="展开菜单" data-label-close="收起菜单"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="hidden" viewBox="0 0 24 24" id="close-icon"><path stroke="none" d="M0 0h24v24H0z" /><path d="M18 6 6 18M6 6l12 12" /></svg><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="icon icon-tabler icons-tabler-outline icon-tabler-menu-deep" viewBox="0 0 24 24" id="menu-icon"><path stroke="none" d="M0 0h24v24H0z" /><path d="M4 6h16M7 12h13M10 18h10" /></svg></button><ul id="menu-items" class="[&amp;&gt;li&gt;a]:hover:text-accent mt-4 hidden w-44 grid-cols-2 place-content-center gap-2 sm:mt-0 sm:flex sm:w-auto sm:gap-x-5 sm:gap-y-0 sm:[&amp;&gt;li]:h-8 [&amp;&gt;li&gt;a]:block [&amp;&gt;li&gt;a]:px-4 [&amp;&gt;li&gt;a]:py-3 [&amp;&gt;li&gt;a]:text-center [&amp;&gt;li&gt;a]:font-medium sm:[&amp;&gt;li&gt;a]:px-2 sm:[&amp;&gt;li&gt;a]:py-1"><li class="col-span-2"><a href="/posts/" class="active-nav">文章</a></li><li class="col-span-2"><a href="/tags/">标签</a></li><li class="col-span-2"><a href="/about/">关于</a></li><li class="col-span-2"><a href="/archives/" title="归档" aria-label="归档" class="group inline-flex items-center gap-1 hover:text-accent focus-outline flex size-full justify-center p-3 sm:relative sm:size-8 sm:p-0"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="hidden sm:absolute sm:top-1/2 sm:left-1/2 sm:block sm:size-6 sm:-translate-x-1/2 sm:-translate-y-1/2" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M3 6a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2 2 2 0 0 1-2 2H5a2 2 0 0 1-2-2M5 8v10a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8M10 12h4" /></svg><span class="sm:sr-only">归档</span></a></li><li class="col-span-1 flex items-center justify-center"><a href="/search/" title="搜索" aria-label="搜索" class="group inline-flex items-center gap-1 hover:text-accent focus-outline relative size-8"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="absolute top-1/2 left-1/2 size-6 -translate-x-1/2 -translate-y-1/2" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M3 10a7 7 0 1 0 14 0 7 7 0 1 0-14 0M21 21l-6-6" /></svg><span class="sr-only">搜索</span></a></li><li class="col-span-1 flex items-center justify-center"><button id="theme-btn" class="focus-outline hover:[&amp;&gt;svg]:stroke-accent relative size-12 p-4 sm:size-8" title="切换主题" aria-label="auto" aria-live="polite"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="absolute top-[50%] left-[50%] translate-[-50%] scale-100 rotate-0 transition-all dark:scale-0 dark:-rotate-90" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M12 3h.393a7.5 7.5 0 0 0 7.92 12.446A9 9 0 1 1 12 2.992z" /></svg><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="absolute top-[50%] left-[50%] translate-[-50%] scale-0 rotate-90 transition-all dark:scale-100 dark:rotate-0" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M14.828 14.828a4 4 0 1 0-5.656-5.656 4 4 0 0 0 5.656 5.656M6.343 17.657l-1.414 1.414M6.343 6.343 4.929 4.929M17.657 6.343l1.414-1.414M17.657 17.657l1.414 1.414M4 12H2M12 4V2M20 12h2M12 20v2" /></svg></button></li></ul></nav></div></header><script type="module">function e(){let e=document.querySelector(`#menu-btn`),t=document.querySelector(`#menu-items`),n=document.querySelector(`#menu-icon`),r=document.querySelector(`#close-icon`);if(!e||!t||!n||!r)return;let i=e.dataset.labelOpen??`Open menu`,a=e.dataset.labelClose??`Close menu`;e.addEventListener(`click`,()=>{let o=e.getAttribute(`aria-expanded`)===`true`;e.setAttribute(`aria-expanded`,o?`false`:`true`),e.setAttribute(`aria-label`,o?i:a),t.classList.toggle(`hidden`),t.classList.toggle(`grid`),n.classList.toggle(`hidden`),r.classList.toggle(`hidden`)})}function t(){let e=document.getElementById(`skip-to-content`);e&&e.addEventListener(`click`,e=>{if(e.defaultPrevented||e.metaKey||e.ctrlKey||e.shiftKey||e.button!==0)return;e.preventDefault();let t=document.getElementById(`main-content`);t&&(t.setAttribute(`tabindex`,`-1`),t.addEventListener(`blur`,()=>t.removeAttribute(`tabindex`),{once:!0}),t.focus(),t.scrollIntoView({behavior:`smooth`}))})}e(),document.addEventListener(`astro:after-swap`,e),t(),document.addEventListener(`astro:after-swap`,t);</script><div class="app-layout flex items-center justify-start"><a id="back-button" href="/" class="group inline-flex items-center gap-1 hover:text-accent focus-outline hover:text-foreground/75 -ms-2 mt-8 mb-2"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="inline-block size-6 rtl:rotate-180" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="m15 6-6 6 6 6" /></svg><span>返回</span></a></div><script type="module">function e(){let e=document.querySelector(`#back-button`),t=sessionStorage.getItem(`backUrl`);t&&e&&(e.href=t)}document.addEventListener(`astro:page-load`,e),e();</script><main id="main-content" class="app-layout" data-pagefind-body><h1 style="view-transition-name:token-embedding-contextual-representation" class="text-accent inline-block text-2xl font-bold sm:text-3xl">文本怎样变成 Token 和向量？分词、嵌入与上下文表示</h1><div class="my-2 flex items-center gap-2"><div class="text-muted-foreground flex items-center gap-x-2"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="inline-block size-6 min-w-5.5" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M4 7a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2zM16 3v4M8 3v4M4 11h16M7 14h.013M10.01 14h.005M13.01 14h.005M16.015 14h.005M13.015 17h.005M7.01 17h.005M10.01 17h.005" /></svg><time class="text-sm sm:text-base" datetime="2022-03-07T02:00:00.000Z">2022年3月7日</time></div><span aria-hidden="true" class="text-muted-foreground max-sm:hidden hidden">|</span></div><article id="article" class="mt-8 w-full app-prose max-w-app prose-pre:bg-(--shiki-light-bg) dark:prose-pre:bg-(--shiki-dark-bg)"><p>在上一篇讨论 Transformer 自注意力机制（self-attention）时，我们的推导从一个形状为 n × d_model 的输入表示矩阵 X 开始。自注意力层通过线性投影矩阵将其映射为查询（query，Q）、键（key，K）、值（value，V），再通过点积与加权求和，计算序列内部各位置之间的关联。</p>
+<p>但在实际系统中，计算机与神经网络无法直接读取原始的自然语言字符串。一段像“Attention is all you need”或“今天天气真好”的文本，在进入注意力矩阵乘法之前，必须经过一条完整的转换链路：</p>
+<pre class="astro-code astro-code-themes min-light night-owl" style="--shiki-light:#24292eff;--shiki-dark:#d6deeb;--shiki-light-bg:#ffffff;--shiki-dark-bg:#011627; overflow-x: auto;--file-name-offset: -0.75rem;" tabindex="0" data-language="text"><code><span class="line"><span>原始文本 (String)</span></span>
+<span class="line"><span>   │</span></span>
+<span class="line"><span>   ▼</span></span>
+<span class="line"><span>1. 分词器切分 (Tokenization) ─── 得到离散 token 序列: [token_1, token_2, ..., token_n]</span></span>
+<span class="line"><span>   │</span></span>
+<span class="line"><span>   ▼</span></span>
+<span class="line"><span>2. 词表映射 (Vocabulary Lookup) ── 得到整数索引序列: [id_1, id_2, ..., id_n]</span></span>
+<span class="line"><span>   │</span></span>
+<span class="line"><span>   ▼</span></span>
+<span class="line"><span>3. 嵌入层查表 (Embedding Lookup) ── 查取可学习嵌入矩阵 E 中的行向量: n × d_model</span></span>
+<span class="line"><span>   │</span></span>
+<span class="line"><span>   ▼</span></span>
+<span class="line"><span>4. 注入位置信息 (Positional Encoding / Embedding) ── 叠加序列位置特征</span></span>
+<span class="line"><span>   │</span></span>
+<span class="line"><span>   ▼</span></span>
+<span class="line"><span>5. Transformer 多层计算 ────── 生成随上下文动态演化的隐藏表示 (Contextual Representation)</span></span></code></pre>
+<p>这条链路中的每一步都有明确的数学形式与工程取舍。弄清符号如何变成离散编号、编号如何映射为稠密向量，以及静态向量如何在多层网络中被赋予上下文，是理解后续自回归生成与预训练（pretraining）过程的基础。</p>
+<h2 id="分词与-token文本切分的基本单元">分词与 Token：文本切分的基本单元</h2>
+<p>将连续文本切分成离散符号的过程称为分词，负责这项任务的组件叫做分词器（tokenizer）。被切分出来的离散单元统称为 token（在自然语言处理中常作为模型处理的序列单位，中文文献中有时也称作“词元”）。</p>
+<p>在自然语言处理早期，切分策略往往面临两难选择：</p>
+<ul>
+<li><strong>以完整词为单位（Word-level）</strong>：例如在英文中按空格和标点切分单词。这种方案的缺陷在于词表难以闭合。语言中存在大量的派生词、屈折变化、复合词（如德语中的“Abwasserbehandlungsanlage”，意为污水处理厂）以及专有名词。如果要覆盖所有词汇，词表规模会膨胀到数百万，导致模型参数失控；而如果限制词表大小，未登录词（out-of-vocabulary，OOV）就会被粗暴地替换为统一的未知标记（如 <code>[UNK]</code>），丢失大量有效信息。</li>
+<li><strong>以字符为单位（Character-level）</strong>：例如将文本彻底拆分为单个字母或单字。字符集通常较小（英文只有几十个字符），几乎不存在未登录词问题。但字符本身包含的语义信息过于稀疏，切分后的序列长度会成倍膨胀，这会使具有二次方计算复杂度的自注意力层承受极大的计算与显存压力。</li>
+<li><strong>中文切分的特殊性</strong>：中文书写天然没有空格分隔，既可以按单字切分，也可以按词语切分。若完全按词切分，同样存在词表膨胀与未登录词问题；若完全按字切分，又无法直接体现多字词的紧凑结构。</li>
+</ul>
+<p>为了平衡词表大小与序列长度，现代语言模型普遍采用<strong>子词（Subword）</strong>切分算法。子词的核心思想是：保留常见的高频完整词，而将罕见词拆分为若干更小、更基础的片段（子词）。</p>
+<p>2015 年，Rico Sennrich 等人在论文《Neural Machine Translation of Rare Words with Subword Units》<a href="#ref-sennrich-2016"><span id="citation-1">1</span></a> 中，将数据压缩领域的字节对编码（Byte Pair Encoding，BPE）引入机器翻译的分词任务中。</p>
+<h3 id="bpe-算法的运作机制">BPE 算法的运作机制</h3>
+<p>BPE 是一种基于统计频率的贪心合并算法 <a href="#ref-sennrich-2016"><span id="citation-1-bpe">1 (Sennrich et al., §3.2)</span></a>：</p>
+<ol>
+<li><strong>初始化</strong>：首先提取训练语料中的所有词汇及其词频。将每个词拆分成单个字符构成的序列，并在词尾添加特殊终止标记（例如 <code>&#x3C;/w></code>），以保留词边界信息。此时的基础词表仅由语料中出现的所有独立字符组成。</li>
+<li><strong>统计频次</strong>：遍历当前词表中的所有拆分序列，统计所有相邻符号对（symbol pairs）在全语料中出现的总频次。</li>
+<li><strong>合并最高频对</strong>：找出频次最高的一对相邻符号（假设为 <code>'e'</code> 和 <code>'r'</code>），将其合并为一个新的复合符号 <code>'er'</code>，并将新符号加入词表中。</li>
+<li><strong>迭代重复</strong>：在语料中将所有出现的该符号对替换为合并后的新符号，然后重新统计、选出下一个最高频对进行合并。这个循环持续进行，直到合并操作达到预设的次数，或者词表大小达到目标阈值。</li>
+</ol>
+<p>通过这种方式，出现频率极高的词（如 <code>the</code>、<code>is</code>）在经过多次合并后会成为一个独立的完整 token；而罕见的生僻词（如 <code>unhappiness</code>）由于完整共现频率较低，在中间阶段停止合并，最终被切分为常见的子词组合（如 <code>un</code> + <code>happi</code> + <code>ness</code>）。</p>
+<p>需要明确的是，Sennrich 等人（2016）是在<strong>神经机器翻译（neural machine translation，NMT）</strong>的背景下验证 BPE 的，其目的是解决跨语言翻译中的专有名词、复合词与生僻词处理问题。后续的大语言模型（large language model，LLM）虽然广泛采用了子词切分思想，但在实现上衍生出了不同方案：例如 BERT（Devlin et al., 2018）<a href="#ref-devlin-2018"><span id="citation-3-wp">3</span></a> 采用的是 WordPiece 算法；而在 GPT-3（Brown et al., 2020）<a href="#ref-brown-2020"><span id="citation-4-gpt">4</span></a> 中，分词器直接从字节表示出发运行字节级 BPE，合并后的 token 可以包含多个字节，这同样表明 token 并不等同于单个字节。因此，不能将 2016 年面向机器翻译的 BPE 论文等同于所有大语言模型的唯一实现。</p>
+<p><strong>关键结论</strong>：token 是模型处理序列时的离散符号单元，它既不必然等于一个完整的自然语言词，也不必然等于一个汉字、单个字母或单个字节。一段给定的文本究竟会被切分成怎样的 token 序列，完全取决于所选用的分词器规则及其预先构建的词表。</p>
+<h2 id="离散符号到数值索引词表-id-的含义与边界">离散符号到数值索引：词表 ID 的含义与边界</h2>
+<p>在分词器构建完成后，会固定生成一个词表（Vocabulary，记作 V）。词表本质上是一个双向映射字典，记录了所有受支持的 token 与非负整数索引之间的对应关系：</p>
+<pre class="astro-code astro-code-themes min-light night-owl" style="--shiki-light:#24292eff;--shiki-dark:#d6deeb;--shiki-light-bg:#ffffff;--shiki-dark-bg:#011627; overflow-x: auto;--file-name-offset: -0.75rem;" tabindex="0" data-language="text"><code><span class="line"><span>Token 集合 ──────── 双向映射 ──────── 整数索引 (ID)</span></span>
+<span class="line"><span>"[PAD]"     &#x3C;─────────────────>     0</span></span>
+<span class="line"><span>"[UNK]"     &#x3C;─────────────────>     1</span></span>
+<span class="line"><span>"the"       &#x3C;─────────────────>     2</span></span>
+<span class="line"><span>"river"     &#x3C;─────────────────>     3</span></span>
+<span class="line"><span>...</span></span>
+<span class="line"><span>"apple"     &#x3C;─────────────────>     1024</span></span>
+<span class="line"><span>"orange"    &#x3C;─────────────────>     1025</span></span>
+<span class="line"><span>...</span></span></code></pre>
+<p>词表的大小即为词表包含的 token 总数 |V|，在主流模型中通常在 30,000 到 50,000 左右（部分多语言模型更大）。</p>
+<p>当一段文本被切分为长度为 n 的 token 序列后，分词器会逐一查询词表，将符号序列转换为一个一维整数数组：</p>
+<pre class="astro-code astro-code-themes min-light night-owl" style="--shiki-light:#24292eff;--shiki-dark:#d6deeb;--shiki-light-bg:#ffffff;--shiki-dark-bg:#011627; overflow-x: auto;--file-name-offset: -0.75rem;" tabindex="0" data-language="text"><code><span class="line"><span>输入文本:  ["river", "bank"]</span></span>
+<span class="line"><span>词表 ID:   [3, 852]</span></span></code></pre>
+<p>在这里，必须厘清关于词表 ID 的几条重要边界：</p>
+<ol>
+<li><strong>ID 仅仅是离散的类别索引（categorical index）</strong>：整数数值的大小没有任何几何或代数含义。ID 为 1024 的 token 与 ID 为 1025 的 token，并不比 ID 为 8000 的 token 具有更接近的语义。</li>
+<li><strong>ID 无法直接参与数值计算</strong>：我们不能对 ID 进行加减乘除（例如不能用 ID 1024 加上 1 来推断新概念），也不能把 ID 直接作为特征数值输入给神经网络的线性层。如果将整数标量直接输入线性层，网络会将数值大小当作物理量，赋予 8000 远大于 3 的权重影响，这在数学上完全背离了语言的符号性质。</li>
+</ol>
+<p>为了让神经网络能够处理这些离散符号，我们需要将每个标量 ID 转化为连续高维向量空间中的一个点。</p>
+<h2 id="嵌入矩阵查表可学习的静态词向量">嵌入矩阵查表：可学习的静态词向量</h2>
+<p>将离散的整数 ID 转换为连续稠密向量的组件，就是<strong>嵌入层（embedding layer）</strong>。</p>
+<p>在概念与参数构成上，嵌入层由一个可学习的权重矩阵构成，通常记为 E，其形状为：</p>
+<pre class="astro-code astro-code-themes min-light night-owl" style="--shiki-light:#24292eff;--shiki-dark:#d6deeb;--shiki-light-bg:#ffffff;--shiki-dark-bg:#011627; overflow-x: auto;--file-name-offset: -0.75rem;" tabindex="0" data-language="text"><code><span class="line"><span>E ∈ R^(|V| × d_model)</span></span></code></pre>
+<p>其中 |V| 表示词表的大小，d_model 表示模型的隐藏表征维度（例如在原版 Transformer 中为 512，在 BERT-Base 中为 768）。矩阵中的每一行，都对应词表中特定 ID 所代表的连续向量表示。</p>
+<h3 id="查表操作与-one-hot-的等价性">查表操作与 One-Hot 的等价性</h3>
+<p>当输入序列包含 n 个 token，其对应的整数 ID 序列为 <code>[id_1, id_2, ..., id_n]</code> 时，嵌入层的作用就是按索引提取矩阵 E 中的对应行：</p>
+<pre class="astro-code astro-code-themes min-light night-owl" style="--shiki-light:#24292eff;--shiki-dark:#d6deeb;--shiki-light-bg:#ffffff;--shiki-dark-bg:#011627; overflow-x: auto;--file-name-offset: -0.75rem;" tabindex="0" data-language="text"><code><span class="line"><span>e_1 = E[id_1]</span></span>
+<span class="line"><span>e_2 = E[id_2]</span></span>
+<span class="line"><span>...</span></span>
+<span class="line"><span>e_n = E[id_n]</span></span></code></pre>
+<p>将这 n 个行向量按顺序堆叠，就得到了输入表示矩阵 X_emb ∈ R^(n × d_model)。</p>
+<p>从线性代数的数学形式上，这一行抽取操作与 One-Hot 向量乘法是完全等价的：</p>
+<p>设 p_i 是一个维度为 1 × |V| 的 One-Hot 向量，其中仅在第 id_i 个分量上取值为 1，其余 |V|-1 个分量均为 0。那么：</p>
+<pre class="astro-code astro-code-themes min-light night-owl" style="--shiki-light:#24292eff;--shiki-dark:#d6deeb;--shiki-light-bg:#ffffff;--shiki-dark-bg:#011627; overflow-x: auto;--file-name-offset: -0.75rem;" tabindex="0" data-language="text"><code><span class="line"><span>e_i = p_i * E</span></span></code></pre>
+<p>这个矩阵乘法在数学结果上恰好筛出了 E 的第 id_i 行。</p>
+<p>在实现中，程序通常直接根据整数索引从嵌入矩阵中取出对应行，而无须显式构造 One-Hot 向量。不过需要注意，序列包含 n 个 token 时，输出的是 n 个 d_model 维的向量数据，因此实际涉及 n × d_model 个数值的读取与传输，按索引定位行并不意味着整体读取与构建成本是无视序列长度的绝对常数。</p>
+<h3 id="嵌入矩阵的参数性质">嵌入矩阵的参数性质</h3>
+<p>在 Vaswani 等人（2017）的 Transformer 架构中 <a href="#ref-vaswani-2017"><span id="citation-2-emb">2 (Vaswani et al., §3.4)</span></a>，嵌入层具有以下参数特征：</p>
+<ol>
+<li><strong>可学习参数</strong>：矩阵 E 的所有分量都是模型的权重参数，在训练开始前随机初始化（或加载预训练权重），并在反向传播中随梯度更新不断调整位置。</li>
+<li><strong>权重共享与缩放</strong>：在原版 Transformer 中，输入嵌入层、输出嵌入层以及预测下一个 token 的线性变换矩阵（Pre-softmax linear transformation）共享同一套权重矩阵 E；同时，在嵌入层中将查表所得的权重乘以了缩放因子 sqrt(d_model)，以此让嵌入向量的模长与位置编码的数值尺度相匹配。</li>
+<li><strong>输入端的静态性</strong>：在特定模型权重固定的前提下，无论一个 token 出现在句首、句尾，还是出现在完全无关的话题中，只要它在输入嵌入层查表，取出的行向量 E[id] 就必然是<strong>完全相同、静态固定</strong>的。输入嵌入层本身不具备感知上下文的能力。</li>
+</ol>
+<p>需要说明的是，嵌入向量的具体数值由模型训练优化决定，单个坐标轴并不单独对应孤立概念，静态向量间的空间距离也不自动等价于先验语义（后文将在概念辨析中具体讨论其几何边界）。</p>
+<h2 id="一个简化的数值教学示意">一个简化的数值教学示意</h2>
+<p>为了清晰展示从文本到矩阵的完整过程，以下构造一个手工设计的极简数值例子。</p>
+<blockquote><p><strong>说明</strong>：本节用于展示维度与矩阵流向，分词切分、词表 ID 与行向量数值均为人工构造的教学示意，非真实分词器输出，亦非真实模型训练参数或实测数据；所有数值在本文内部保持自洽。</p></blockquote>
+<p>假设我们定义了一个微型词表，大小 |V| = 6，设定表征维度 d_model = 3：</p>
+<div class="table-wrapper" tabindex="0">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<table><thead><tr><th align="left">词表 ID (Index)</th><th align="left">Token 字符串</th><th align="left">对应的嵌入行向量 (E 中的行)</th></tr></thead><tbody><tr><td align="left">0</td><td align="left"><code>"[PAD]"</code></td><td align="left"><code>[ 0.0,  0.0,  0.0]</code></td></tr><tr><td align="left">1</td><td align="left"><code>"河"</code></td><td align="left"><code>[ 0.2,  0.8, -0.1]</code></td></tr><tr><td align="left">2</td><td align="left"><code>"水"</code></td><td align="left"><code>[ 0.1,  0.9,  0.2]</code></td></tr><tr><td align="left">3</td><td align="left"><code>"浅"</code></td><td align="left"><code>[-0.4,  0.5,  0.7]</code></td></tr><tr><td align="left">4</td><td align="left"><code>"苹果"</code></td><td align="left"><code>[ 0.9, -0.3,  0.4]</code></td></tr><tr><td align="left">5</td><td align="left"><code>"手机"</code></td><td align="left"><code>[ 0.8, -0.5,  0.6]</code></td></tr></tbody></table></div>
+<p>此时嵌入矩阵 E 是一个 6 × 3 的数值矩阵。</p>
+<p>现在输入一段简短文本：<code>"河水浅"</code>。</p>
+<ol>
+<li><strong>分词处理</strong>：分词器将其切分为 3 个 token：<code>["河", "水", "浅"]</code>，序列长度 n = 3。</li>
+<li><strong>ID 映射</strong>：依次查询微型词表，得到离散 ID 序列：<code>[1, 2, 3]</code>。</li>
+<li><strong>嵌入查表</strong>：
+<ul>
+<li>第 1 个 token <code>"河"</code>（ID=1）：提取 E[1]，得到 <code>[ 0.2,  0.8, -0.1]</code></li>
+<li>第 2 个 token <code>"水"</code>（ID=2）：提取 E[2]，得到 <code>[ 0.1,  0.9,  0.2]</code></li>
+<li>第 3 个 token <code>"浅"</code>（ID=3）：提取 E[3]，得到 <code>[-0.4,  0.5,  0.7]</code></li>
+</ul>
+</li>
+<li><strong>输出矩阵</strong>：将这 3 个行向量堆叠，得到形状为 3 × 3 的输入嵌入矩阵 X_emb：</li>
+</ol>
+<pre class="astro-code astro-code-themes min-light night-owl" style="--shiki-light:#24292eff;--shiki-dark:#d6deeb;--shiki-light-bg:#ffffff;--shiki-dark-bg:#011627; overflow-x: auto;--file-name-offset: -0.75rem;" tabindex="0" data-language="text"><code><span class="line"><span>X_emb = [</span></span>
+<span class="line"><span>  [ 0.2,  0.8, -0.1],   # 对应 "河"</span></span>
+<span class="line"><span>  [ 0.1,  0.9,  0.2],   # 对应 "水"</span></span>
+<span class="line"><span>  [-0.4,  0.5,  0.7]    # 对应 "浅"</span></span>
+<span class="line"><span>]</span></span></code></pre>
+<p>如果文本顺序颠倒为 <code>"浅水河"</code>，其离散 ID 为 <code>[3, 2, 1]</code>，查表所得的矩阵行也会相应颠倒。</p>
+<h2 id="注入位置信息位置编码与位置嵌入">注入位置信息：位置编码与位置嵌入</h2>
+<p>在上一篇中我们指出：在未加入位置信息且没有依赖位置的固定掩码（如因果掩码）的前提下，自注意力运算具有<strong>置换等变性（permutation equivariance）</strong>。若直接以未经位置修饰的嵌入矩阵行作为输入，模型在数学上无法辨别 token 在序列中的先后次序。</p>
+<p>为了引入词序线索，原版 Transformer 与 BERT 采取了在网络底层将位置向量与 token 嵌入向量直接相加的方案：</p>
+<pre class="astro-code astro-code-themes min-light night-owl" style="--shiki-light:#24292eff;--shiki-dark:#d6deeb;--shiki-light-bg:#ffffff;--shiki-dark-bg:#011627; overflow-x: auto;--file-name-offset: -0.75rem;" tabindex="0" data-language="text"><code><span class="line"><span>X = X_emb + P</span></span></code></pre>
+<p>其中 P ∈ R^(n × d_model) 是位置表示矩阵。不同模型在位置表示的具体实现上有所不同：</p>
+<ol>
+<li><strong>固定正弦/余弦位置编码（positional encoding）</strong>：
+Vaswani 等人（2017）<a href="#ref-vaswani-2017"><span id="citation-2-pe">2 (Vaswani et al., §3.5)</span></a> 采用固定的正弦与余弦周期函数直接计算各维度数值，无需引入额外的可学习参数。</li>
+<li><strong>可学习位置嵌入（positional embedding）</strong>：
+在 BERT（Devlin et al., 2018）<a href="#ref-devlin-2018"><span id="citation-3-bert">3 (Devlin et al., §3.2)</span></a> 中，模型构造了一个可学习的位置嵌入矩阵，支持最长 512 个 token 的序列，输入序列中第 i 个位置直接查取对应的位置行向量与词向量相加。</li>
+</ol>
+<p>两者的术语存在细微区分：通过固定数学函数直接计算的通常称为<strong>位置编码（positional encoding）</strong>；而作为模型参数随训练更新的通常称为<strong>位置嵌入（positional embedding）</strong>。需要说明的是，底层直接相加是原版 Transformer 与 BERT 的具体设计选择，并不代表所有后续注意力网络都必须采用完全相同的输入前相加结构。</p>
+<h2 id="从静态词向量到上下文表示为什么表示会改变">从静态词向量到上下文表示：为什么表示会改变？</h2>
+<p>很多初学者容易产生一个疑问：既然每个 token 在嵌入层查表得到的向量是静态的，为什么 Transformer 能够处理一词多义？为什么同一个词在不同语境下会有不同的含义表达？</p>
+<p>答案就在于：<strong>输入嵌入向量（input embedding）只是模型的起点，而最终起作用的是经过自注意力与前馈网络多层变换后生成的上下文表示（contextual representation）</strong>。</p>
+<h3 id="自注意力的动态特征混合">自注意力的动态特征混合</h3>
+<p>回顾上一篇讨论过的自注意力计算核心公式 <a href="#ref-vaswani-2017"><span id="citation-2-sa">2 (Vaswani et al., §3.2.1)</span></a>：</p>
+<pre class="astro-code astro-code-themes min-light night-owl" style="--shiki-light:#24292eff;--shiki-dark:#d6deeb;--shiki-light-bg:#ffffff;--shiki-dark-bg:#011627; overflow-x: auto;--file-name-offset: -0.75rem;" tabindex="0" data-language="text"><code><span class="line"><span>Attention(Q, K, V) = softmax( (Q * K^T) / sqrt(d_k) ) * V</span></span></code></pre>
+<p>在多头注意力（multi-head attention）中，每个注意力头在掩码允许的位置范围内计算注意力权重，并对对应位置的 Value 向量进行加权求和，随后将各头的输出拼接并通过线性投影整合。</p>
+<p>随后的前馈网络（feed-forward network，FFN）、残差连接和层归一化在每一层持续复合这种变换。经过多层堆叠之后，顶层输出的隐藏状态向量 h_i 已经发生了显著变化：</p>
+<ul>
+<li><strong>语境融合机制示意</strong>：
+假设词表中包含单个 token <code>"苹果"</code>。在无因果掩码的双向编码器（bidirectional encoder）结构中，注意力机制允许每个位置同时与上下文各位置交互。
+<ul>
+<li>在输入嵌入层查表时，无论语境如何，它取出的静态行向量都是同一行 E[ID_苹果]。</li>
+<li>当输入包含句子 <code>"果农采摘了红富士苹果"</code> 时，在双向自注意力计算中，在某个注意力头中，<code>"苹果"</code> 所在位置可能对同句中的 <code>"果农"</code>、<code>"采摘"</code> 或 <code>"红富士"</code> 等位置分配一定权重，从而在加权求和中汇入这些上下文位置的特征。</li>
+<li>当输入变为句子 <code>"他在发布会购买了苹果笔记本"</code> 时，若处于双向编码器下，<code>"苹果"</code> 同样可能关注到其右侧的 <code>"笔记本"</code> 以及左侧的 <code>"购买"</code> 等词项，进而融合不同的上下文信息。</li>
+<li>但需要特别注意：在带有因果掩码（causal mask）的单向自回归解码器（autoregressive decoder）中，位置 i 只能关注自身及左侧历史 token（位置 ≤ i），无法看到其右侧尚未生成的 token（例如处于 <code>"苹果"</code> 右侧的 <code>"笔记本"</code>）。上述语境差异仅作为双向注意力层信息聚合机制的原理演示，不代表特定模型在训练后必然产生某种预设的注意力权重或固定的语义空间位移。</li>
+</ul>
+</li>
+</ul>
+<h3 id="架构约束对上下文可见性的影响">架构约束对上下文可见性的影响</h3>
+<p>不同模型架构对上下文的捕获方式存在明确的结构差异：</p>
+<ul>
+<li><strong>双向编码器（如 BERT）</strong>：Devlin 等人（2018）<a href="#ref-devlin-2018"><span id="citation-3-bi">3</span></a> 提出的 BERT 是深层双向 Transformer 编码器（bidirectional Transformer encoder）的代表例子。在 BERT 中，没有因果掩码遮挡，任何一个 token 都可以同时关注到它左侧和右侧的全部 token，因此每个位置的输出都是全向上下文融合的结果。</li>
+<li><strong>单向自回归解码器（如 GPT）</strong>：以 GPT-3（Brown et al., 2020）<a href="#ref-brown-2020"><span id="citation-4-dec">4</span></a> 为代表的自回归解码器，通过因果掩码限制了对右侧上下文的可见性，每个位置只能关注到历史 token，其表示由单向历史累积而成。</li>
+</ul>
+<p>BERT 是双向 Transformer 编码器的典型例子，与自回归解码器在上下文可见性及训练目标上存在根本区别，不能将其结构直接套用到纯解码器模型中。</p>
+<h2 id="概念边界辨析">概念边界辨析</h2>
+<p>在日常技术讨论中，一些与“向量”相关的术语容易被模糊混用。在此需要做出严格的区分：</p>
+<h3 id="1-输入嵌入-vs-上下文隐藏状态-vs-句段检索向量">1. 输入嵌入 vs. 上下文隐藏状态 vs. 句段检索向量</h3>
+<ul>
+<li><strong>输入嵌入（Input Token Embedding）</strong>：是模型底层的可学习查表参数，属于 <strong>token 级别的静态映射</strong>。每个 token 的输入向量仅取决于其在词表中的索引，不随语境改变。</li>
+<li><strong>上下文隐藏状态（Contextual Hidden State）</strong>：是文本输入模型后，各 Transformer 隐藏层输出的特征激活值，属于 <strong>token 级别的动态表示</strong>。序列包含多少个 token，对应层就会输出多少个上下文隐藏向量（形状为 n × d_model）。</li>
+<li><strong>句段检索向量（Dense Retrieval Representation）</strong>：是指在稠密检索（dense retrieval）等方法中，用于表示整个句子或文本片段的定长向量表示。这类表示通常需要针对特定的语义相似度或检索任务进行专门的微调或训练。</li>
+</ul>
+<p><strong>常见概念混淆</strong>：
+容易产生的一种误解是，认为直接将一个句子中所有 token 的输入嵌入或最终隐藏状态取平均（mean pooling），就能自然获得高质量的句段检索向量。事实上，输入嵌入、上下文隐藏状态与专门用于句段匹配的向量在设计目标上并不相同；未经针对性任务训练或评估，直接对 token 向量做简单平均并不能保证在下游检索任务中的表征质量。</p>
+<h3 id="2-向量空间的几何距离不等于绝对语义真理">2. 向量空间的几何距离不等于绝对语义真理</h3>
+<p>在连续向量空间中，两点之间的余弦相似度或欧氏距离，反映的是模型在特定训练目标与损失函数优化下形成的参数分布与特征关联。</p>
+<p>余弦相似度较高，仅体现出对应符号或上下文状态在统计分布及网络内部信息处理中呈现出的相近模式；它并不等同于在自然语言中必然具有先验的语义等价关系。我们不能脱离具体的训练任务与模型结构，将几何距离或某个维度的坐标值单独视为客观恒定的“语义真理”。</p>
+<h2 id="总结">总结</h2>
+<p>文本进入语言模型的全过程，是一条严谨的“离散符号结构化，连续向量动态化”的变换链：</p>
+<ol>
+<li><strong>分词阶段</strong>：通过 BPE 或 WordPiece 等子词切分算法，将连续文本切分为词表所收录的离散 token 序列，在词表规模与序列长度之间取得平衡。</li>
+<li><strong>编号阶段</strong>：将每个 token 映射为词表中的整数索引 ID。ID 是纯粹的类别标识，不含连续几何意义。</li>
+<li><strong>查表阶段</strong>：利用整数 ID 从可学习的输入嵌入矩阵中抽取对应的行向量，在底层通过高效的内存索引实现，概念上等价于 One-Hot 乘法。</li>
+<li><strong>位置融合</strong>：通过正弦位置编码或可学习位置嵌入，将位置序列信息叠加到静态词向量中，打破自注意力天然的置换等变性。</li>
+<li><strong>上下文表征</strong>：静态词向量进入 Transformer 多层结构后，自注意力机制根据 Query-Key 匹配权重动态聚合上下文 Value 向量，最终生成能够反映当前语境的丰富隐藏表示。</li>
+</ol>
+<p>弄清了文本如何变为向量以及隐藏表示如何在上下文中演化，接下来便可以进一步探讨：模型如何利用这些隐藏状态预测下一个 token 的概率？自回归文本生成是如何一步步展开的？这将在本系列的下一篇文章中详细讨论。</p>
+<hr>
+<h2 id="参考资料">参考资料</h2>
+<ol>
+  <li>
+    Sennrich, R., Haddow, B., &#x26; Birch, A. (2016). <i>Neural Machine Translation of Rare Words with Subword Units</i>. arXiv:1508.07909v5 [cs.CL].
+    <br>
+    首次提交日期：2015-08-31；本篇依据版本：2016-06-10 (arXiv:1508.07909v5).
+    <br>
+    原文链接：<a id="ref-sennrich-2016" href="https://arxiv.org/abs/1508.07909v5" target="_blank" rel="noopener noreferrer">https://arxiv.org/abs/1508.07909v5</a>
+  </li>
+  <li>
+    Vaswani, A., Shazeer, N., Parmar, N., Uszkoreit, J., Jones, L., Gomez, A. N., Kaiser, Ł., &#x26; Polosukhin, I. (2017). <i>Attention Is All You Need</i>. arXiv:1706.03762v5 [cs.CL].
+    <br>
+    首次提交日期：2017-06-12；本篇依据版本：2017-12-06 (arXiv:1706.03762v5).
+    <br>
+    原文链接：<a id="ref-vaswani-2017" href="https://arxiv.org/abs/1706.03762v5" target="_blank" rel="noopener noreferrer">https://arxiv.org/abs/1706.03762v5</a>
+  </li>
+  <li>
+    Devlin, J., Chang, M.-W., Lee, K., &#x26; Toutanova, K. (2018). <i>BERT: Pre-training of Deep Bidirectional Transformers for Language Understanding</i>. arXiv:1810.04805v1 [cs.CL].
+    <br>
+    首次提交日期：2018-10-11；本篇依据版本：2018-10-11 (arXiv:1810.04805v1).
+    <br>
+    原文链接：<a id="ref-devlin-2018" href="https://arxiv.org/abs/1810.04805v1" target="_blank" rel="noopener noreferrer">https://arxiv.org/abs/1810.04805v1</a>
+  </li>
+  <li>
+    Brown, T. B., Mann, B., Ryder, N., Subbiah, M., Kaplan, J., Dhariwal, P., Neelakantan, A., Shyam, P., Sastry, G., Askell, A., Agarwal, S., Herbert-Voss, A., Krueger, G., Henighan, T., Child, R., Ramesh, A., Ziegler, D. M., Wu, J., Winter, C., Hesse, C., Chen, M., Sigler, E., Litwin, M., Gray, S., Chess, B., Clark, J., Berner, C., McCandlish, S., Radford, A., Sutskever, I., &#x26; Amodei, D. (2020). <i>Language Models are Few-Shot Learners</i>. arXiv:2005.14165v4 [cs.CL].
+    <br>
+    首次提交日期：2020-05-28；本篇依据版本：2020-07-22 (arXiv:2005.14165v4).
+    <br>
+    原文链接：<a id="ref-brown-2020" href="https://arxiv.org/abs/2005.14165v4" target="_blank" rel="noopener noreferrer">https://arxiv.org/abs/2005.14165v4</a>
+  </li>
+</ol></article><hr class="my-8 border-dashed"><div id="btt-btn-container" class="fixed inset-e-4 bottom-8 z-50 md:sticky md:inset-e-auto md:float-end md:me-1 translate-y-14 opacity-0 transition duration-500"><button data-button="back-to-top" class="group bg-background relative px-2 py-1 size-14 rounded-full shadow-xl md:h-8 md:w-fit md:rounded-md md:shadow-none md:focus-visible:rounded-none md:bg-background/35 md:bg-clip-padding md:backdrop-blur-lg"><span id="progress-indicator" class="absolute inset-0 -z-10 block size-14 scale-110 rounded-full bg-transparent md:hidden md:h-8 md:rounded-md"></span><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="inline-block rotate-90 md:hidden" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M5 12h14M5 12l6 6M5 12l6-6" /></svg><span class="group-hover:text-accent sr-only text-sm md:not-sr-only"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="inline-block size-4" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M12 5v14M16 9l-4-4M8 9l4-4" /></svg> 回到顶部</span></button></div><script data-astro-rerun>
+  function backToTop() {
+    const rootElement = document.documentElement;
+    const btnContainer = document.querySelector("#btt-btn-container");
+    const backToTopBtn = document.querySelector("[data-button='back-to-top']");
+    const progressIndicator = document.querySelector("#progress-indicator");
+
+    if (!rootElement || !btnContainer || !backToTopBtn || !progressIndicator)
+      return;
+
+    backToTopBtn.addEventListener("click", () => {
+      document.body.scrollTop = 0;
+      document.documentElement.scrollTop = 0;
+    });
+
+    let lastVisible = null;
+    function handleScroll() {
+      const scrollTotal = rootElement.scrollHeight - rootElement.clientHeight;
+      const scrollTop = rootElement.scrollTop;
+      const scrollPercent = Math.floor((scrollTop / scrollTotal) * 100);
+
+      progressIndicator.style.setProperty(
+        "background-image",
+        `conic-gradient(var(--accent), var(--accent) ${scrollPercent}%, transparent ${scrollPercent}%)`
+      );
+
+      const isVisible = scrollTop / scrollTotal > 0.3;
+
+      if (isVisible !== lastVisible) {
+        btnContainer.classList.toggle("opacity-100", isVisible);
+        btnContainer.classList.toggle("translate-y-0", isVisible);
+        btnContainer.classList.toggle("opacity-0", !isVisible);
+        btnContainer.classList.toggle("translate-y-14", !isVisible);
+        lastVisible = isVisible;
+      }
+    }
+
+    let ticking = false;
+    document.addEventListener("scroll", () => {
+      if (!ticking) {
+        window.requestAnimationFrame(() => {
+          handleScroll();
+          ticking = false;
+        });
+        ticking = true;
+      }
+    });
+  }
+  backToTop();
+</script><ul class="mt-4 mb-8 flex flex-wrap gap-4 sm:my-8"><li><a data-astro-transition-scope="astro-bztu2lml-1" href="/tags/ai/" class="flex items-center gap-0.5 border-foreground border-b-2 border-dashed hover:border-accent hover:text-accent hover:-mt-0.5 focus-visible:text-accent focus-visible:border-none text-sm"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="opacity-80 size-4" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M5 9h14M5 15h14M11 4 7 20M17 4l-4 16" /></svg>AI</a></li><li><a data-astro-transition-scope="astro-bztu2lml-2" href="/tags/llm/" class="flex items-center gap-0.5 border-foreground border-b-2 border-dashed hover:border-accent hover:text-accent hover:-mt-0.5 focus-visible:text-accent focus-visible:border-none text-sm"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="opacity-80 size-4" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M5 9h14M5 15h14M11 4 7 20M17 4l-4 16" /></svg>LLM</a></li><li><a data-astro-transition-scope="astro-bztu2lml-3" href="/tags/embedding/" class="flex items-center gap-0.5 border-foreground border-b-2 border-dashed hover:border-accent hover:text-accent hover:-mt-0.5 focus-visible:text-accent focus-visible:border-none text-sm"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="opacity-80 size-4" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M5 9h14M5 15h14M11 4 7 20M17 4l-4 16" /></svg>Embedding</a></li></ul><hr class="my-8 border-dashed"><div data-pagefind-ignore class="my-8 grid grid-cols-1 gap-6 sm:grid-cols-2"><a href="/posts/transformer-attention-is-all-you-need/" class="flex w-full gap-1 hover:opacity-75"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="inline-block flex-none rtl:rotate-180" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M5 12h14M5 12l6 6M5 12l6-6" /></svg><div><span>上一篇</span><div class="text-accent/85 text-sm">Transformer为什么需要Attention？从《Attention Is All You Need》读起</div></div></a></div></main><footer class="app-layout mt-auto"><div class="border-border flex flex-col items-center justify-between border-t py-6 sm:flex-row-reverse sm:py-4"><div class="flex flex-wrap items-center gap-1"><a href="https://github.com/SaromChars" title="Sarom Chars 的 GitHub" class="group inline-flex items-center gap-1 hover:text-accent p-2 hover:rotate-6 sm:p-1"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="inline-block size-6 scale-125 fill-transparent stroke-current stroke-2 opacity-90 group-hover:fill-transparent sm:scale-110" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M9 19c-4.3 1.4-4.3-2.5-6-3m12 5v-3.5c0-1 .1-1.4-.5-2 2.8-.3 5.5-1.4 5.5-6a4.6 4.6 0 0 0-1.3-3.2 4.2 4.2 0 0 0-.1-3.2s-1.1-.3-3.5 1.3a12.3 12.3 0 0 0-6.2 0C6.5 2.8 5.4 3.1 5.4 3.1a4.2 4.2 0 0 0-.1 3.2A4.6 4.6 0 0 0 4 9.5c0 4.6 2.7 5.7 5.5 6-.6.6-.6 1.2-.5 2V21" /></svg><span class="sr-only">Sarom Chars 的 GitHub</span></a></div><div class="my-2 flex flex-col items-center whitespace-nowrap sm:flex-row"><span>版权 &#169; 2026</span><span class="hidden sm:inline">&nbsp;|&nbsp;</span><span>保留所有权利。</span></div></div></footer><script type="module">var e=`theme`,t=`light`,n=`dark`;function r(){return localStorage.getItem(e)||(window.matchMedia(`(prefers-color-scheme: dark)`).matches?n:t)}var i=window.__theme?.value??r();function a(){localStorage.setItem(e,i),o()}function o(){let e=document.firstElementChild;e?.setAttribute(`data-theme`,i),e?.classList.toggle(`dark`,i===n),document.querySelector(`#theme-btn`)?.setAttribute(`aria-label`,i);let t=window.getComputedStyle(document.body).backgroundColor;document.querySelector(`meta[name='theme-color']`)?.setAttribute(`content`,t)}function s(){o(),document.querySelector(`#theme-btn`)?.addEventListener(`click`,()=>{i=i===t?n:t,a()})}s(),document.addEventListener(`astro:after-swap`,s),document.addEventListener(`astro:before-swap`,e=>{let t=document.querySelector(`meta[name='theme-color']`)?.getAttribute(`content`);t&&e.newDocument.querySelector(`meta[name='theme-color']`)?.setAttribute(`content`,t)}),window.matchMedia(`(prefers-color-scheme: dark)`).addEventListener(`change`,({matches:e})=>{i=e?n:t,a()});</script></body></html><script type="module">var e=document.querySelector(`#article`);if(e?.querySelector(`a[href^="#ref-"]`)){let t=null,n=!1,r=document.createElement(`button`);r.type=`button`,r.className=`citation-return`,r.textContent=`返回阅读位置`,r.setAttribute(`data-pagefind-ignore`,``),e.addEventListener(`click`,n=>{if(n.button!==0||n.metaKey||n.ctrlKey||n.shiftKey||n.altKey)return;let i=n.target instanceof Element?n.target.closest(`a[href^="#ref-"]`):null;if(!i||!e.contains(i))return;let a=i.hash,o=document.getElementById(decodeURIComponent(a.slice(1)));o&&e.contains(o)&&(t={source:i,url:window.location.href,top:window.scrollY,left:window.scrollX,targetHash:a},o.insertAdjacentElement(`afterend`,r))}),r.addEventListener(`click`,()=>{if(!t||n)return;let e=t,i=i=>{r.remove(),window.requestAnimationFrame(()=>{window.requestAnimationFrame(()=>{e.source.focus({preventScroll:!0}),window.scrollTo({top:e.top,left:e.left,behavior:`instant`}),t=null,n=!1,i?.()})})};window.location.href===e.url?i():(n=!0,window.addEventListener(`popstate`,()=>{let e=window.history.scrollRestoration;window.history.scrollRestoration=`manual`,window.setTimeout(()=>{i(()=>{window.history.scrollRestoration=e})},0)},{once:!0}),window.history.back())}),window.addEventListener(`hashchange`,()=>{!n&&t&&window.location.hash!==t.targetHash&&(r.remove(),t=null)})}</script><script data-astro-rerun>
+  function createProgressBar() {
+    const progressContainer = document.createElement("div");
+    progressContainer.className =
+      "progress-container fixed top-0 z-10 h-1 w-full bg-background";
+
+    const progressBar = document.createElement("div");
+    progressBar.className = "progress-bar h-1 w-0 bg-accent";
+    progressBar.id = "myBar";
+
+    progressContainer.appendChild(progressBar);
+    document.body.appendChild(progressContainer);
+  }
+  createProgressBar();
+
+  function updateScrollProgress() {
+    document.addEventListener("scroll", () => {
+      const winScroll =
+        document.body.scrollTop || document.documentElement.scrollTop;
+      const height =
+        document.documentElement.scrollHeight -
+        document.documentElement.clientHeight;
+      const scrolled = (winScroll / height) * 100;
+      if (document) {
+        const myBar = document.getElementById("myBar");
+        if (myBar) {
+          myBar.style.width = scrolled + "%";
+        }
+      }
+    });
+  }
+  updateScrollProgress();
+
+  function addHeadingLinks() {
+    const headings = Array.from(
+      document.querySelectorAll("h2, h3, h4, h5, h6")
+    );
+    for (const heading of headings) {
+      heading.classList.add("group");
+      const link = document.createElement("a");
+      link.className =
+        "heading-link ms-2 no-underline opacity-75 md:opacity-0 md:group-hover:opacity-100 md:focus:opacity-100";
+      link.href = "#" + heading.id;
+
+      const span = document.createElement("span");
+      span.ariaHidden = "true";
+      span.innerText = "#";
+      link.appendChild(span);
+      heading.appendChild(link);
+    }
+  }
+  addHeadingLinks();
+
+  function attachCopyButtons() {
+    const copyButtonLabel = "Copy";
+    const codeBlocks = Array.from(document.querySelectorAll("pre"));
+
+    for (const codeBlock of codeBlocks) {
+      const wrapper = document.createElement("div");
+      wrapper.style.position = "relative";
+
+      const computedStyle = getComputedStyle(codeBlock);
+      const hasFileNameOffset =
+        computedStyle.getPropertyValue("--file-name-offset").trim() !== "";
+
+      const topClass = hasFileNameOffset
+        ? "top-(--file-name-offset)"
+        : "-top-3";
+
+      const copyButton = document.createElement("button");
+      copyButton.className = `copy-code absolute end-3 ${topClass} rounded bg-muted border border-muted px-2 py-1 text-xs leading-4 text-foreground font-medium`;
+      copyButton.innerHTML = copyButtonLabel;
+      codeBlock.setAttribute("tabindex", "0");
+      codeBlock.appendChild(copyButton);
+
+      codeBlock?.parentNode?.insertBefore(wrapper, codeBlock);
+      wrapper.appendChild(codeBlock);
+
+      copyButton.addEventListener("click", async () => {
+        await copyCode(codeBlock, copyButton);
+      });
+    }
+
+    async function copyCode(block, button) {
+      const code = block.querySelector("code");
+      const text = code?.innerText;
+
+      await navigator.clipboard.writeText(text ?? "");
+
+      button.innerText = "Copied";
+
+      setTimeout(() => {
+        button.innerText = copyButtonLabel;
+      }, 700);
+    }
+  }
+  attachCopyButtons();
+
+  /** Accessible image lightbox for article images. */
+  function initLightbox() {
+    const article = document.getElementById("article");
+    if (!article) return;
+
+    const prefersReducedMotion = () =>
+      window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+    let overlay = null;
+    let lastFocused = null;
+    let removeDragListeners = null;
+
+    // Defer attribute mutations so they don't push the LCP timestamp.
+    // Event listeners below use delegation and don't need the attributes to exist yet.
+    requestAnimationFrame(() => {
+      const images = Array.from(article.querySelectorAll("img"));
+      for (const image of images) {
+        if (image.closest("a")) continue;
+        image.setAttribute("role", "button");
+        image.setAttribute("tabindex", "0");
+        image.setAttribute("aria-haspopup", "dialog");
+        image.setAttribute(
+          "aria-label",
+          image.alt ? `Zoom image: ${image.alt}` : "Zoom image"
+        );
+      }
+    });
+
+    function open(src, alt, trigger) {
+      if (overlay) return;
+      lastFocused = trigger ?? document.activeElement;
+
+      overlay = document.createElement("div");
+      overlay.setAttribute("role", "dialog");
+      overlay.setAttribute("aria-modal", "true");
+      overlay.setAttribute(
+        "aria-label",
+        alt ? `Image preview: ${alt}` : "Image preview"
+      );
+      overlay.className =
+        "fixed inset-0 z-50 flex cursor-zoom-out items-center justify-center bg-black/70 backdrop-blur-sm opacity-0 transition-opacity duration-200 motion-reduce:transition-none";
+
+      const closeButton = document.createElement("button");
+      closeButton.type = "button";
+      closeButton.setAttribute("aria-label", "Close image preview");
+      closeButton.className =
+        "absolute end-4 top-4 z-1 flex size-11 items-center justify-center rounded bg-black/50 text-3xl leading-none text-white";
+      closeButton.innerHTML = "&#10005;";
+      closeButton.addEventListener("click", close);
+
+      const image = document.createElement("img");
+      image.src = src;
+      image.alt = "";
+      image.className =
+        "max-h-[90dvh] max-w-[90dvw] cursor-default object-contain transition-transform duration-100 ease-out motion-reduce:transition-none data-[zoom=drag]:cursor-grabbing data-[zoom=drag]:transition-none data-[zoom=in]:cursor-grab";
+
+      overlay.append(closeButton, image);
+      overlay.addEventListener("click", e => {
+        if (e.target === overlay && currentScale <= 1) close();
+      });
+
+      let currentScale = 1;
+      let translateX = 0;
+      let translateY = 0;
+      let initialDist = 0;
+      let initialScale = 1;
+      let panStartX = 0;
+      let panStartY = 0;
+      let panStartTranslateX = 0;
+      let panStartTranslateY = 0;
+      let lastTapTime = 0;
+
+      function applyTransform() {
+        image.style.transform = `scale(${currentScale}) translate(${translateX}px, ${translateY}px)`;
+        // A backdrop click only closes at fit size, so drop the zoom-out cursor while zoomed.
+        overlay?.classList.toggle("cursor-zoom-out", currentScale <= 1);
+      }
+
+      function resetTransform() {
+        currentScale = 1;
+        translateX = 0;
+        translateY = 0;
+        image.style.transform = "";
+        image.removeAttribute("data-zoom");
+        overlay?.classList.add("cursor-zoom-out");
+      }
+
+      // Keep the zoomed image from being panned past its edges.
+      function clampTranslate() {
+        if (!overlay) return;
+        const maxX = Math.max(
+          0,
+          (image.clientWidth - overlay.clientWidth / currentScale) / 2
+        );
+        const maxY = Math.max(
+          0,
+          (image.clientHeight - overlay.clientHeight / currentScale) / 2
+        );
+        translateX = Math.min(maxX, Math.max(-maxX, translateX));
+        translateY = Math.min(maxY, Math.max(-maxY, translateY));
+      }
+
+      overlay.addEventListener(
+        "touchstart",
+        e => {
+          const t = e.touches;
+          if (t.length === 2) {
+            image.setAttribute("data-zoom", "drag");
+            initialDist = Math.hypot(
+              t[1].clientX - t[0].clientX,
+              t[1].clientY - t[0].clientY
+            );
+            initialScale = currentScale;
+          } else if (t.length === 1) {
+            const now = Date.now();
+            if (now - lastTapTime < 300) {
+              e.preventDefault();
+              if (currentScale > 1) {
+                resetTransform();
+              } else {
+                currentScale = 2;
+                translateX = 0;
+                translateY = 0;
+                applyTransform();
+                image.setAttribute("data-zoom", "in");
+              }
+              lastTapTime = 0;
+              panStartX = t[0].clientX;
+              panStartY = t[0].clientY;
+              panStartTranslateX = translateX;
+              panStartTranslateY = translateY;
+            } else {
+              lastTapTime = now;
+              if (currentScale > 1) {
+                image.setAttribute("data-zoom", "drag");
+                panStartX = t[0].clientX;
+                panStartY = t[0].clientY;
+                panStartTranslateX = translateX;
+                panStartTranslateY = translateY;
+              }
+            }
+          }
+        },
+        { passive: false }
+      );
+
+      overlay.addEventListener(
+        "touchmove",
+        e => {
+          const t = e.touches;
+          if (t.length === 2) {
+            e.preventDefault();
+            const dist = Math.hypot(
+              t[1].clientX - t[0].clientX,
+              t[1].clientY - t[0].clientY
+            );
+            const oldScale = currentScale;
+            currentScale = Math.min(
+              4,
+              Math.max(1, initialScale * (dist / initialDist))
+            );
+
+            // Zoom to the geometric center of the two fingers
+            const midX = (t[0].clientX + t[1].clientX) / 2;
+            const midY = (t[0].clientY + t[1].clientY) / 2;
+            const ox = overlay.clientWidth / 2;
+            const oy = overlay.clientHeight / 2;
+            translateX =
+              (midX - ox) * (1 / currentScale - 1 / oldScale) + translateX;
+            translateY =
+              (midY - oy) * (1 / currentScale - 1 / oldScale) + translateY;
+            clampTranslate();
+            applyTransform();
+          } else if (t.length === 1) {
+            if (currentScale > 1) {
+              e.preventDefault();
+              image.setAttribute("data-zoom", "drag");
+              translateX =
+                panStartTranslateX + (t[0].clientX - panStartX) / currentScale;
+              translateY =
+                panStartTranslateY + (t[0].clientY - panStartY) / currentScale;
+              clampTranslate();
+              applyTransform();
+            } else {
+              e.preventDefault();
+            }
+          }
+        },
+        { passive: false }
+      );
+
+      overlay.addEventListener("touchend", e => {
+        if (e.touches.length === 0) {
+          if (currentScale > 1) {
+            image.setAttribute("data-zoom", "in");
+          } else {
+            image.removeAttribute("data-zoom");
+          }
+          if (currentScale <= 1.05) resetTransform();
+        }
+      });
+
+      overlay.addEventListener("touchcancel", e => {
+        if (e.touches.length === 0) {
+          if (currentScale > 1) {
+            image.setAttribute("data-zoom", "in");
+          } else {
+            image.removeAttribute("data-zoom");
+          }
+          if (currentScale <= 1.05) resetTransform();
+        }
+      });
+
+      overlay.addEventListener(
+        "wheel",
+        e => {
+          e.preventDefault();
+          const oldScale = currentScale;
+          const delta = -e.deltaY * 0.001;
+          currentScale = Math.min(4, Math.max(1, currentScale * (1 + delta)));
+
+          if (currentScale <= 1.05) {
+            resetTransform();
+          } else {
+            image.setAttribute("data-zoom", "in");
+            // Zoom to cursor: adjust translate so the point under cursor stays fixed
+            const ox = overlay.clientWidth / 2;
+            const oy = overlay.clientHeight / 2;
+            translateX =
+              (e.clientX - ox) * (1 / currentScale - 1 / oldScale) + translateX;
+            translateY =
+              (e.clientY - oy) * (1 / currentScale - 1 / oldScale) + translateY;
+            clampTranslate();
+            applyTransform();
+          }
+        },
+        { passive: false }
+      );
+
+      let isMouseDown = false;
+      let mouseStartX = 0;
+      let mouseStartY = 0;
+
+      overlay.addEventListener("mousedown", e => {
+        if (e.button !== 0 || currentScale <= 1) return;
+        if (e.target.closest("button")) return;
+        isMouseDown = true;
+        mouseStartX = e.clientX;
+        mouseStartY = e.clientY;
+        panStartTranslateX = translateX;
+        panStartTranslateY = translateY;
+        image.setAttribute("data-zoom", "drag");
+        e.preventDefault();
+      });
+
+      function onMouseMove(e) {
+        if (!isMouseDown || !overlay) return;
+        translateX =
+          panStartTranslateX + (e.clientX - mouseStartX) / currentScale;
+        translateY =
+          panStartTranslateY + (e.clientY - mouseStartY) / currentScale;
+        clampTranslate();
+        applyTransform();
+      }
+
+      function onMouseUp() {
+        if (!isMouseDown) return;
+        isMouseDown = false;
+        if (currentScale > 1) {
+          image.setAttribute("data-zoom", "in");
+        } else {
+          image.removeAttribute("data-zoom");
+        }
+      }
+
+      document.addEventListener("mousemove", onMouseMove);
+      document.addEventListener("mouseup", onMouseUp);
+      removeDragListeners = () => {
+        document.removeEventListener("mousemove", onMouseMove);
+        document.removeEventListener("mouseup", onMouseUp);
+      };
+
+      document.body.appendChild(overlay);
+      document.documentElement.style.overflow = "hidden";
+      document.addEventListener("keydown", onKeyDown);
+      window.__closeLightbox = close;
+
+      requestAnimationFrame(() => overlay?.classList.add("opacity-100"));
+      closeButton.focus();
+    }
+
+    function close() {
+      if (!overlay) return;
+      const el = overlay;
+      overlay = null;
+      el.classList.add("pointer-events-none");
+      window.__closeLightbox = null;
+
+      document.removeEventListener("keydown", onKeyDown);
+      removeDragListeners?.();
+      removeDragListeners = null;
+      document.documentElement.style.overflow = "";
+      lastFocused?.focus();
+      lastFocused = null;
+
+      if (prefersReducedMotion()) {
+        el.remove();
+        return;
+      }
+      const remove = () => el.remove();
+      el.addEventListener("transitionend", remove, { once: true });
+      setTimeout(remove, 250); // fallback in case transitionend never fires
+      el.classList.remove("opacity-100");
+    }
+
+    function onKeyDown(e) {
+      if (e.key === "Escape") {
+        close();
+      } else if (e.key === "Tab") {
+        trapFocus(e);
+      }
+    }
+
+    // Keep keyboard focus inside the open dialog.
+    function trapFocus(e) {
+      if (!overlay) return;
+      const focusables = overlay.querySelectorAll(
+        'a[href], button, [tabindex]:not([tabindex="-1"])'
+      );
+      if (focusables.length === 0) return;
+      const first = focusables[0];
+      const last = focusables[focusables.length - 1];
+      if (e.shiftKey && document.activeElement === first) {
+        e.preventDefault();
+        last.focus();
+      } else if (!e.shiftKey && document.activeElement === last) {
+        e.preventDefault();
+        first.focus();
+      }
+    }
+
+    function triggerFromEvent(e) {
+      const image = e.target.closest("img");
+      if (!image || !article.contains(image) || image.closest("a")) return null;
+      return image;
+    }
+
+    function activate(image) {
+      open(image.currentSrc || image.src, image.alt, image);
+    }
+
+    article.addEventListener("click", e => {
+      const image = triggerFromEvent(e);
+      if (!image) return;
+      e.preventDefault();
+      activate(image);
+    });
+
+    article.addEventListener("keydown", e => {
+      if (e.key !== "Enter" && e.key !== " " && e.key !== "Spacebar") return;
+      const image = triggerFromEvent(e);
+      if (!image) return;
+      e.preventDefault();
+      activate(image);
+    });
+  }
+  initLightbox();
+
+  if (!window.__lightboxSwapBound) {
+    window.__lightboxSwapBound = true;
+    document.addEventListener("astro:before-swap", () =>
+      window.__closeLightbox?.()
+    );
+  }
+
+  document.addEventListener("astro:after-swap", () =>
+    window.scrollTo({ left: 0, top: 0, behavior: "instant" })
+  );
+</script>
