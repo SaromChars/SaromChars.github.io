@@ -1,0 +1,971 @@
+<!DOCTYPE html><html dir="ltr" lang="zh-CN" class="overflow-y-scroll scroll-smooth"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1"><link rel="icon" type="image/png" href="/images/favicon-32x32-next.png"><link rel="icon" href="/favicon.ico"><link rel="canonical" href="https://www.saromchars.tech/posts/mail-dkim-signatures/"><meta name="generator" content="Astro v7.4.5"><!-- Primary meta --><title>DKIM 的邮件签名与验证 | Sarom&#39;s Blog</title><meta name="title" content="DKIM 的邮件签名与验证 | Sarom's Blog"><meta name="description" content="阐述 DKIM 如何通过 DNS 发布公钥，利用规范化算法与双哈希机制对邮件头及正文实施数字签名与验证，并分析其信任边界。"><meta name="author" content="Sarom Chars"><link rel="sitemap" href="/sitemap-index.xml"><!-- Open Graph --><meta property="og:type" content="article"><meta property="og:site_name" content="Sarom's Blog"><meta property="og:title" content="DKIM 的邮件签名与验证 | Sarom's Blog"><meta property="og:description" content="阐述 DKIM 如何通过 DNS 发布公钥，利用规范化算法与双哈希机制对邮件头及正文实施数字签名与验证，并分析其信任边界。"><meta property="og:url" content="https://www.saromchars.tech/posts/mail-dkim-signatures/"><meta property="og:image" content="https://www.saromchars.tech/og.png"><!-- Twitter / X --><meta property="twitter:card" content="summary_large_image"><meta property="twitter:url" content="https://www.saromchars.tech/posts/mail-dkim-signatures/"><meta property="twitter:title" content="DKIM 的邮件签名与验证 | Sarom's Blog"><meta property="twitter:description" content="阐述 DKIM 如何通过 DNS 发布公钥，利用规范化算法与双哈希机制对邮件头及正文实施数字签名与验证，并分析其信任边界。"><meta property="twitter:image" content="https://www.saromchars.tech/og.png"><!-- RSS autodiscovery --><link rel="alternate" type="application/rss+xml" title="Sarom's Blog" href="https://www.saromchars.tech/rss.xml"><!-- Filled at runtime by theme.ts to match the current background colour --><meta name="theme-color" content=""><!-- Extra head content injected by child layouts (e.g. JSON-LD, article meta) --><meta property="article:published_time" content="2021-09-12T02:00:00.000Z"><script type="application/ld+json">{"@context":"https://schema.org","@type":"BlogPosting","headline":"DKIM 的邮件签名与验证","mainEntityOfPage":"https://www.saromchars.tech/posts/mail-dkim-signatures/","datePublished":"2021-09-12T02:00:00.000Z","author":[{"@type":"Person","name":"Sarom Chars","url":"https://github.com/SaromChars"}]}</script><!--
+      Inline FOUC-prevention script: sets data-theme on <html> before
+      the browser paints. Runs synchronously, no defer/async.
+    --><script>
+      (function () {
+        const stored = localStorage.getItem("theme");
+        const prefersDark = window.matchMedia(
+          "(prefers-color-scheme: dark)"
+        ).matches;
+        const theme = stored ?? (prefersDark ? "dark" : "light");
+        const root = document.firstElementChild;
+        root?.setAttribute("data-theme", theme);
+        root?.classList.toggle("dark", theme === "dark");
+        // Expose value so theme.ts can skip re-detection.
+        window.__theme = { value: theme };
+      })();
+    </script><meta name="robots" content="index, follow"><script async src="https://www.googletagmanager.com/gtag/js?id=G-WJJJTJ4FWX"></script><script>(function(){const measurementId = "G-WJJJTJ4FWX";
+
+    window.dataLayer = window.dataLayer || [];
+    function gtag(){ window.dataLayer.push(arguments); }
+    gtag('js', new Date());
+    gtag('config', measurementId);
+  })();</script><style>@keyframes astroFadeInOut{0%{opacity:1}to{opacity:0}}@keyframes astroFadeIn{0%{opacity:0;mix-blend-mode:plus-lighter}to{opacity:1;mix-blend-mode:plus-lighter}}@keyframes astroFadeOut{0%{opacity:1;mix-blend-mode:plus-lighter}to{opacity:0;mix-blend-mode:plus-lighter}}@keyframes astroSlideFromRight{0%{transform:translate(100%)}}@keyframes astroSlideFromLeft{0%{transform:translate(-100%)}}@keyframes astroSlideToRight{to{transform:translate(100%)}}@keyframes astroSlideToLeft{to{transform:translate(-100%)}}@media (prefers-reduced-motion){::view-transition-group(*),::view-transition-old(*),::view-transition-new(*),[data-astro-transition-scope]{animation:none!important}}
+</style><link rel="stylesheet" href="/_astro/Footer.wlxowfqU.css"><style>[data-astro-transition-scope="astro-bztu2lml-1"] { view-transition-name: \90AE\7BB1\7CFB\7EDF; }@layer astro { ::view-transition-old(\90AE\7BB1\7CFB\7EDF) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }::view-transition-new(\90AE\7BB1\7CFB\7EDF) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }[data-astro-transition=back]::view-transition-old(\90AE\7BB1\7CFB\7EDF) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition=back]::view-transition-new(\90AE\7BB1\7CFB\7EDF) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; } }[data-astro-transition-fallback="old"] [data-astro-transition-scope="astro-bztu2lml-1"],
+			[data-astro-transition-fallback="old"][data-astro-transition-scope="astro-bztu2lml-1"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition-fallback="new"] [data-astro-transition-scope="astro-bztu2lml-1"],
+			[data-astro-transition-fallback="new"][data-astro-transition-scope="astro-bztu2lml-1"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }[data-astro-transition=back][data-astro-transition-fallback="old"] [data-astro-transition-scope="astro-bztu2lml-1"],
+			[data-astro-transition=back][data-astro-transition-fallback="old"][data-astro-transition-scope="astro-bztu2lml-1"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition=back][data-astro-transition-fallback="new"] [data-astro-transition-scope="astro-bztu2lml-1"],
+			[data-astro-transition=back][data-astro-transition-fallback="new"][data-astro-transition-scope="astro-bztu2lml-1"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }</style><style>[data-astro-transition-scope="astro-bztu2lml-2"] { view-transition-name: dkim; }@layer astro { ::view-transition-old(dkim) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }::view-transition-new(dkim) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }[data-astro-transition=back]::view-transition-old(dkim) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition=back]::view-transition-new(dkim) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; } }[data-astro-transition-fallback="old"] [data-astro-transition-scope="astro-bztu2lml-2"],
+			[data-astro-transition-fallback="old"][data-astro-transition-scope="astro-bztu2lml-2"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition-fallback="new"] [data-astro-transition-scope="astro-bztu2lml-2"],
+			[data-astro-transition-fallback="new"][data-astro-transition-scope="astro-bztu2lml-2"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }[data-astro-transition=back][data-astro-transition-fallback="old"] [data-astro-transition-scope="astro-bztu2lml-2"],
+			[data-astro-transition=back][data-astro-transition-fallback="old"][data-astro-transition-scope="astro-bztu2lml-2"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition=back][data-astro-transition-fallback="new"] [data-astro-transition-scope="astro-bztu2lml-2"],
+			[data-astro-transition=back][data-astro-transition-fallback="new"][data-astro-transition-scope="astro-bztu2lml-2"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }</style><style>[data-astro-transition-scope="astro-bztu2lml-3"] { view-transition-name: \6570\5B57\7B7E\540D; }@layer astro { ::view-transition-old(\6570\5B57\7B7E\540D) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }::view-transition-new(\6570\5B57\7B7E\540D) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }[data-astro-transition=back]::view-transition-old(\6570\5B57\7B7E\540D) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition=back]::view-transition-new(\6570\5B57\7B7E\540D) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; } }[data-astro-transition-fallback="old"] [data-astro-transition-scope="astro-bztu2lml-3"],
+			[data-astro-transition-fallback="old"][data-astro-transition-scope="astro-bztu2lml-3"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition-fallback="new"] [data-astro-transition-scope="astro-bztu2lml-3"],
+			[data-astro-transition-fallback="new"][data-astro-transition-scope="astro-bztu2lml-3"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }[data-astro-transition=back][data-astro-transition-fallback="old"] [data-astro-transition-scope="astro-bztu2lml-3"],
+			[data-astro-transition=back][data-astro-transition-fallback="old"][data-astro-transition-scope="astro-bztu2lml-3"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition=back][data-astro-transition-fallback="new"] [data-astro-transition-scope="astro-bztu2lml-3"],
+			[data-astro-transition=back][data-astro-transition-fallback="new"][data-astro-transition-scope="astro-bztu2lml-3"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }</style><style>[data-astro-transition-scope="astro-bztu2lml-4"] { view-transition-name: \89C4\8303\5316; }@layer astro { ::view-transition-old(\89C4\8303\5316) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }::view-transition-new(\89C4\8303\5316) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }[data-astro-transition=back]::view-transition-old(\89C4\8303\5316) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition=back]::view-transition-new(\89C4\8303\5316) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; } }[data-astro-transition-fallback="old"] [data-astro-transition-scope="astro-bztu2lml-4"],
+			[data-astro-transition-fallback="old"][data-astro-transition-scope="astro-bztu2lml-4"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition-fallback="new"] [data-astro-transition-scope="astro-bztu2lml-4"],
+			[data-astro-transition-fallback="new"][data-astro-transition-scope="astro-bztu2lml-4"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }[data-astro-transition=back][data-astro-transition-fallback="old"] [data-astro-transition-scope="astro-bztu2lml-4"],
+			[data-astro-transition=back][data-astro-transition-fallback="old"][data-astro-transition-scope="astro-bztu2lml-4"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition=back][data-astro-transition-fallback="new"] [data-astro-transition-scope="astro-bztu2lml-4"],
+			[data-astro-transition=back][data-astro-transition-fallback="new"][data-astro-transition-scope="astro-bztu2lml-4"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }</style><style>[data-astro-transition-scope="astro-bztu2lml-5"] { view-transition-name: \5BC6\94A5\8F6E\6362; }@layer astro { ::view-transition-old(\5BC6\94A5\8F6E\6362) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }::view-transition-new(\5BC6\94A5\8F6E\6362) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }[data-astro-transition=back]::view-transition-old(\5BC6\94A5\8F6E\6362) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition=back]::view-transition-new(\5BC6\94A5\8F6E\6362) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; } }[data-astro-transition-fallback="old"] [data-astro-transition-scope="astro-bztu2lml-5"],
+			[data-astro-transition-fallback="old"][data-astro-transition-scope="astro-bztu2lml-5"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition-fallback="new"] [data-astro-transition-scope="astro-bztu2lml-5"],
+			[data-astro-transition-fallback="new"][data-astro-transition-scope="astro-bztu2lml-5"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }[data-astro-transition=back][data-astro-transition-fallback="old"] [data-astro-transition-scope="astro-bztu2lml-5"],
+			[data-astro-transition=back][data-astro-transition-fallback="old"][data-astro-transition-scope="astro-bztu2lml-5"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition=back][data-astro-transition-fallback="new"] [data-astro-transition-scope="astro-bztu2lml-5"],
+			[data-astro-transition=back][data-astro-transition-fallback="new"][data-astro-transition-scope="astro-bztu2lml-5"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }</style></head><body class="bg-background font-app text-foreground selection:bg-accent/75 selection:text-accent-foreground flex min-h-svh flex-col"><a id="skip-to-content" href="#main-content" class="bg-background text-accent absolute inset-s-16 -top-full z-50 px-3 py-2 backdrop-blur-lg transition-all focus:top-4">跳到正文</a><header class="app-layout flex flex-col items-center justify-between sm:flex-row"><div class="border-border bg-background relative flex w-full items-baseline justify-between border-b py-4 sm:items-center sm:py-6"><a href="/" class="absolute py-1 text-xl leading-8 font-semibold whitespace-nowrap sm:static sm:my-auto sm:text-2xl sm:leading-none">Sarom&#39;s Blog</a><nav id="nav-menu" class="flex w-full flex-col items-center sm:ms-2 sm:flex-row sm:justify-end sm:space-x-4 sm:py-0"><button id="menu-btn" class="focus-outline self-end p-2 sm:hidden" aria-label="展开菜单" aria-expanded="false" aria-controls="menu-items" data-label-open="展开菜单" data-label-close="收起菜单"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="hidden" viewBox="0 0 24 24" id="close-icon"><path stroke="none" d="M0 0h24v24H0z" /><path d="M18 6 6 18M6 6l12 12" /></svg><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="icon icon-tabler icons-tabler-outline icon-tabler-menu-deep" viewBox="0 0 24 24" id="menu-icon"><path stroke="none" d="M0 0h24v24H0z" /><path d="M4 6h16M7 12h13M10 18h10" /></svg></button><ul id="menu-items" class="[&amp;&gt;li&gt;a]:hover:text-accent mt-4 hidden w-44 grid-cols-2 place-content-center gap-2 sm:mt-0 sm:flex sm:w-auto sm:gap-x-5 sm:gap-y-0 sm:[&amp;&gt;li]:h-8 [&amp;&gt;li&gt;a]:block [&amp;&gt;li&gt;a]:px-4 [&amp;&gt;li&gt;a]:py-3 [&amp;&gt;li&gt;a]:text-center [&amp;&gt;li&gt;a]:font-medium sm:[&amp;&gt;li&gt;a]:px-2 sm:[&amp;&gt;li&gt;a]:py-1"><li class="col-span-2"><a href="/posts/" class="active-nav">文章</a></li><li class="col-span-2"><a href="/tags/">标签</a></li><li class="col-span-2"><a href="/about/">关于</a></li><li class="col-span-2"><a href="/archives/" title="归档" aria-label="归档" class="group inline-flex items-center gap-1 hover:text-accent focus-outline flex size-full justify-center p-3 sm:relative sm:size-8 sm:p-0"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="hidden sm:absolute sm:top-1/2 sm:left-1/2 sm:block sm:size-6 sm:-translate-x-1/2 sm:-translate-y-1/2" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M3 6a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2 2 2 0 0 1-2 2H5a2 2 0 0 1-2-2M5 8v10a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8M10 12h4" /></svg><span class="sm:sr-only">归档</span></a></li><li class="col-span-1 flex items-center justify-center"><a href="/search/" title="搜索" aria-label="搜索" class="group inline-flex items-center gap-1 hover:text-accent focus-outline relative size-8"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="absolute top-1/2 left-1/2 size-6 -translate-x-1/2 -translate-y-1/2" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M3 10a7 7 0 1 0 14 0 7 7 0 1 0-14 0M21 21l-6-6" /></svg><span class="sr-only">搜索</span></a></li><li class="col-span-1 flex items-center justify-center"><button id="theme-btn" class="focus-outline hover:[&amp;&gt;svg]:stroke-accent relative size-12 p-4 sm:size-8" title="切换主题" aria-label="auto" aria-live="polite"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="absolute top-[50%] left-[50%] translate-[-50%] scale-100 rotate-0 transition-all dark:scale-0 dark:-rotate-90" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M12 3h.393a7.5 7.5 0 0 0 7.92 12.446A9 9 0 1 1 12 2.992z" /></svg><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="absolute top-[50%] left-[50%] translate-[-50%] scale-0 rotate-90 transition-all dark:scale-100 dark:rotate-0" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M14.828 14.828a4 4 0 1 0-5.656-5.656 4 4 0 0 0 5.656 5.656M6.343 17.657l-1.414 1.414M6.343 6.343 4.929 4.929M17.657 6.343l1.414-1.414M17.657 17.657l1.414 1.414M4 12H2M12 4V2M20 12h2M12 20v2" /></svg></button></li></ul></nav></div></header><script type="module">function e(){let e=document.querySelector(`#menu-btn`),t=document.querySelector(`#menu-items`),n=document.querySelector(`#menu-icon`),r=document.querySelector(`#close-icon`);if(!e||!t||!n||!r)return;let i=e.dataset.labelOpen??`Open menu`,a=e.dataset.labelClose??`Close menu`;e.addEventListener(`click`,()=>{let o=e.getAttribute(`aria-expanded`)===`true`;e.setAttribute(`aria-expanded`,o?`false`:`true`),e.setAttribute(`aria-label`,o?i:a),t.classList.toggle(`hidden`),t.classList.toggle(`grid`),n.classList.toggle(`hidden`),r.classList.toggle(`hidden`)})}function t(){let e=document.getElementById(`skip-to-content`);e&&e.addEventListener(`click`,e=>{if(e.defaultPrevented||e.metaKey||e.ctrlKey||e.shiftKey||e.button!==0)return;e.preventDefault();let t=document.getElementById(`main-content`);t&&(t.setAttribute(`tabindex`,`-1`),t.addEventListener(`blur`,()=>t.removeAttribute(`tabindex`),{once:!0}),t.focus(),t.scrollIntoView({behavior:`smooth`}))})}e(),document.addEventListener(`astro:after-swap`,e),t(),document.addEventListener(`astro:after-swap`,t);</script><div class="app-layout flex items-center justify-start"><a id="back-button" href="/" class="group inline-flex items-center gap-1 hover:text-accent focus-outline hover:text-foreground/75 -ms-2 mt-8 mb-2"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="inline-block size-6 rtl:rotate-180" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="m15 6-6 6 6 6" /></svg><span>返回</span></a></div><script type="module">function e(){let e=document.querySelector(`#back-button`),t=sessionStorage.getItem(`backUrl`);t&&e&&(e.href=t)}document.addEventListener(`astro:page-load`,e),e();</script><main id="main-content" class="app-layout" data-pagefind-body><h1 style="view-transition-name:mail-dkim-signatures" class="text-accent inline-block text-2xl font-bold sm:text-3xl">DKIM 的邮件签名与验证</h1><div class="my-2 flex items-center gap-2"><div class="text-muted-foreground flex flex-wrap items-center gap-x-2 gap-y-1"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="inline-block size-6 min-w-5.5" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M4 7a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2zM16 3v4M8 3v4M4 11h16M7 14h.013M10.01 14h.005M13.01 14h.005M16.015 14h.005M13.015 17h.005M7.01 17h.005M10.01 17h.005" /></svg><time class="text-sm sm:text-base" datetime="2021-09-12T02:00:00.000Z">2021年9月12日</time></div><span aria-hidden="true" class="text-muted-foreground max-sm:hidden hidden">|</span></div><article id="article" class="mt-8 w-full app-prose max-w-app prose-pre:bg-(--shiki-light-bg) dark:prose-pre:bg-(--shiki-dark-bg)"><!--email_off-->
+<p>在电子邮件的传输路径中，信封地址由简单邮件传输协议（Simple Mail Transfer Protocol，SMTP）会话维护，而邮件内容中的头部与正文则由互联网邮件格式（Internet Message Format，IMF，即 RFC 5322）规范。然而，传统 SMTP 缺乏在报文内容层面证明责任主体或防止非授权篡改的通用密码学手段。</p>
+<p>为了在现存邮件基础设施上为报文建立可验证的组织责任关联，互联网工程任务组（Internet Engineering Task Force，IETF）制定了域名密钥识别邮件（DomainKeys Identified Mail，DKIM）标准。其核心规程定义于 2011 年发布的 <a href="#ref-rfc6376">RFC 6376</a>，并在 2018 年由 <a href="#ref-rfc8301">RFC 8301</a> 实施了针对哈希算法与密钥长度的正式安全更新。</p>
+<hr>
+<h2 id="协议定位与核心目标">协议定位与核心目标</h2>
+<p>DKIM 并非端到端的端用户保密通信工具，其机制与设计目标具有明确边界：</p>
+<ol>
+<li><strong>组织责任主张</strong>：DKIM 允许拥有签名域名的主体（可以是发信组织、传输中继或其代理）通过数字签名（Digital Signature）声明对邮件承担责任。</li>
+<li><strong>签名身份与作者身份解耦</strong>：RFC 6376 明确将签名域标识符（Signing Domain Identifier，SDID）与 RFC 5322 中声明的邮件作者（<code>From:</code> 字段）区分开来。签名有效仅代表指定域名声称对该报文负责，并不要求签名域必须与发件人邮箱后缀完全一致。</li>
+<li><strong>基于 DNS 的公钥发布</strong>：DKIM 无需依赖传统的层级式公钥基础设施（Public Key Infrastructure，PKI）或第三方数字证书（Digital Certificate）认证中心（Certificate Authority，CA），而是直接复用域名系统（Domain Name System，DNS）的 TXT 资源记录分发用于验证数字签名（验签，signature verification）的公钥。</li>
+<li><strong>报文无损穿越</strong>：签名数据直接封装为名为 <code>DKIM-Signature:</code> 的邮件头字段（Header Field），不需要修改邮件正文结构，对传统邮件用户代理（Message User Agent，MUA）和中间传输代理透明。</li>
+<li><strong>不提供传输加密与长期归档保证</strong>：DKIM 仅提供针对被签名内容的完整性验证（Data Integrity）与签名者身份认证（authentication），不涉及邮件内容加密（Encryption），也不以长期报文归档为目标。</li>
+</ol>
+<hr>
+<h2 id="协议要素与关键标签">协议要素与关键标签</h2>
+<p>在 DKIM 架构中，签名信息在邮件头部以 <code>DKIM-Signature:</code> 字段承载，而公钥则通过 DNS 记录发布。两者均采用基于分号分隔的 <code>tag=value</code> 标签列表语法。</p>
+<h3 id="1-dkim-signature-头部字段标签">1. DKIM-Signature 头部字段标签</h3>
+<p>根据 RFC 6376 第 3.5 节，<code>DKIM-Signature:</code> 常见标签如下：</p>
+<div class="table-wrapper" tabindex="0">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<table><thead><tr><th>标签</th><th>全称与含义</th><th>是否必需</th><th>说明与规范要求</th></tr></thead><tbody><tr><td><code>v=</code></td><td>版本（Version）</td><td>必需</td><td>目前固定为 <code>1</code>。若版本不匹配，验签方必须返回永久失败（<code>PERMFAIL</code>）。</td></tr><tr><td><code>a=</code></td><td>签名算法（Algorithm）</td><td>必需</td><td>格式为 <code>key-alg-hash-alg</code>。RFC 6376 原定义 <code>rsa-sha1</code> 与 <code>rsa-sha256</code>；RFC 8301 更新后禁止使用 <code>rsa-sha1</code>，必须使用 <code>rsa-sha256</code>。</td></tr><tr><td><code>b=</code></td><td>数字签名数据（Signature Data）</td><td>必需</td><td>对头部哈希的数字签名结果，采用 Base64 编码。计算时需删除本字段内 <code>b=</code> 的值及其周围所有折叠空白，具体处理见下文计算步骤。</td></tr><tr><td><code>bh=</code></td><td>正文哈希（Body Hash）</td><td>必需</td><td>经规范化并截断（若指定 <code>l=</code>）后的正文哈希摘要，Base64 编码。</td></tr><tr><td><code>c=</code></td><td>规范化算法（Canonicalization）</td><td>可选</td><td>格式为 <code>header/body</code>，可选 <code>simple</code> 或 <code>relaxed</code>，缺省默认值为 <code>simple/simple</code>。</td></tr><tr><td><code>d=</code></td><td>签名域标识符（SDID）</td><td>必需</td><td>声称对邮件承担责任的域名，用于定位 DNS 公钥检索路径。</td></tr><tr><td><code>s=</code></td><td>选择器（Selector）</td><td>必需</td><td>用于将域名的密钥命名空间细分，支持多密钥共存与独立轮换。</td></tr><tr><td><code>h=</code></td><td>签名包含的头部字段（Signed Headers）</td><td>必需</td><td>冒号分隔的头部字段名列表。必须包含 <code>From</code> 字段。</td></tr><tr><td><code>i=</code></td><td>代理或用户标识符（Agent or User Identifier，AUID）</td><td>可选</td><td>格式为 <code>local-part@domain</code>，缺省为 <code>@d</code>。其域名部分必须是 <code>d=</code> 域或其子域。</td></tr><tr><td><code>l=</code></td><td>正文长度限制（Body Length）</td><td>可选</td><td>参与哈希计算的正文字节数。缺省包含全部正文。存在严重安全风险，需谨慎使用。</td></tr><tr><td><code>t=</code></td><td>签名时间戳（Timestamp）</td><td>推荐</td><td>签名创建的 UTC 秒数（自 Unix 纪元起）。</td></tr><tr><td><code>x=</code></td><td>签名过期时间（Expiration）</td><td>推荐</td><td>绝对时间戳。若验签所用时间已超过该时间，验签方可判定签名失效。能可靠取得时，验签时间应采用邮件首次进入验签方管理域的接收时间，否则采用当前时间。若与 <code>t=</code> 同时存在，其值必须大于 <code>t=</code>。该标签不是防重放机制。</td></tr><tr><td><code>z=</code></td><td>头部字段副本（Copied Headers）</td><td>可选</td><td>签名时选定头部的原始副本，仅供诊断分析使用。</td></tr></tbody></table></div>
+<h3 id="2-选择器与-dns-公钥记录">2. 选择器与 DNS 公钥记录</h3>
+<p>为了支持单域名下部署多组密钥（例如区分部门、外包投递渠道或平滑进行密钥轮换），DKIM 引入了选择器（Selector）机制。</p>
+<p>公钥存放在 <code>_domainkey</code> 专用子域名下的 TXT 记录中。当验签方解析 <code>d=example.com</code> 且 <code>s=jun2021</code> 时，发起的 DNS 查询名称为：</p>
+<pre class="astro-code astro-code-themes min-light night-owl" style="--shiki-light:#24292eff;--shiki-dark:#d6deeb;--shiki-light-bg:#ffffff;--shiki-dark-bg:#011627; overflow-x: auto;--file-name-offset: -0.75rem;" tabindex="0" data-language="text"><code><span class="line"><span>jun2021._domainkey.example.com</span></span></code></pre>
+<p>根据 RFC 6376 第 3.6.1 节，DNS TXT 记录内容示例如下：</p>
+<pre class="astro-code astro-code-themes min-light night-owl" style="--shiki-light:#24292eff;--shiki-dark:#d6deeb;--shiki-light-bg:#ffffff;--shiki-dark-bg:#011627; overflow-x: auto;--file-name-offset: -0.75rem;" tabindex="0" data-language="text"><code><span class="line"><span>v=DKIM1; k=rsa; p=MIGfMA0GCSqGSIb3DQEBAQUAA4GNADCBiQKBgQC3...</span></span></code></pre>
+<ul>
+<li><code>v=DKIM1</code>：公钥记录版本（推荐）。若出现必须位于首位；若版本值不匹配，验签方必须丢弃该记录。</li>
+<li><code>k=rsa</code>：密钥算法类型，默认为 <code>rsa</code>。</li>
+<li><code>p=</code>：Base64 编码的公钥数据。若 <code>p=</code> 值为空字符串（即 <code>p=</code> 后无内容），表示<strong>该密钥已被吊销（Revoked）</strong>，验签方必须判定签名失败。</li>
+<li><code>t=</code>：标志位列表。<code>y</code> 表示发信域处于测试阶段（Testing Mode），验签失败不应直接作为拒收依据；<code>s</code> 表示约束 <code>i=</code> 标签域名必须与 <code>d=</code> 严格完全一致（禁止子域）。</li>
+</ul>
+<hr>
+<h2 id="规范化算法机制">规范化算法机制</h2>
+<p>在电子邮件从发件人传输到收件人的中继链路中，邮件传输代理（Message Transfer Agent，MTA）可能会调整头部折行、替换空格与制表符，或者统一行尾换行符。直接对原始文本计算哈希极易因无关紧要的空白变化导致验签断裂。</p>
+<p>DKIM 提出了规范化（Canonicalization）算法，在将数据送入哈希函数（hash function，也称散列函数）之前将其转换为确定格式。RFC 6376 为头部和正文分别定义了 <code>simple</code> 和 <code>relaxed</code> 两种算法（用 <code>c=header/body</code> 声明）。</p>
+<h3 id="1-头部规范化">1. 头部规范化</h3>
+<ul>
+<li><strong>simple 头部规范化</strong>：完全不改变头部文本。字段名大小写保持原样，字段内的空格、折行回车换行（CRLF）与制表符完全不改动。</li>
+<li><strong>relaxed 头部规范化</strong>：
+<ol>
+<li>将所有字段名转换为小写（字段值内容大小写不变）；</li>
+<li>展开所有折叠行（Unfold），将字段值内部的 <code>CRLF WSP</code> 中的 CRLF 剥除，仅保留空白字符；</li>
+<li>将字段值内部连续的一个或多个空白字符（<code>WSP</code>，即空格或制表符）压缩为单个 ASCII 空格（<code>SP</code>）；</li>
+<li>清除冒号前后残留的所有空白字符（保留冒号分隔符）；</li>
+<li>删除字段值末尾的所有空白字符；</li>
+<li>严格保留行尾的单个 <code>CRLF</code>。</li>
+</ol>
+</li>
+</ul>
+<h3 id="2-正文规范化">2. 正文规范化</h3>
+<ul>
+<li><strong>simple 正文规范化</strong>：
+<ul>
+<li>忽略正文末尾的所有空行（空行指剥离换行符后长度为 0 的行）；</li>
+<li>将正文末尾的所有连续空行转换为单个 <code>CRLF</code>；</li>
+<li>若正文完全为空或末尾缺少换行符，补齐单个 <code>CRLF</code>（即空正文的规范化输出固定为 2 字节的 <code>CRLF</code>）。</li>
+</ul>
+</li>
+<li><strong>relaxed 正文规范化</strong>：
+<ul>
+<li>压缩行内所有连续空白字符为单个空格，并删除行尾的所有空白字符（保留行尾换行 <code>CRLF</code>）；</li>
+<li>忽略正文末尾的所有空行；</li>
+<li>若正文非空但未以 <code>CRLF</code> 结尾，补齐一个 <code>CRLF</code>。完全为空的正文规范化后输入长度为 0 字节。</li>
+</ul>
+</li>
+</ul>
+<hr>
+<h2 id="签名生成与验证流程">签名生成与验证流程</h2>
+<p>DKIM 采用双哈希计算架构：先计算正文哈希并填入 <code>bh=</code> 标签，再将它与选定头部一起纳入数字签名。</p>
+<h3 id="1-签名生成流程">1. 签名生成流程</h3>
+<p>发信方签名步骤如下：</p>
+<ol>
+<li><strong>正文哈希计算</strong>：
+<ul>
+<li>提取正文，按照 <code>c=</code> 声明的正文规范化算法处理；</li>
+<li>若设置了 <code>l=</code> 标签，截取指定字节数；</li>
+<li>使用 <code>a=</code> 选定的哈希算法（RFC 8301 规定必须为 SHA-256）计算摘要，进行 Base64 编码，填入 <code>bh=</code> 标签。</li>
+</ul>
+</li>
+<li><strong>头部哈希计算</strong>：
+<ul>
+<li>按照 <code>h=</code> 标签中列出的字段名顺序，依次提取邮件头字段；若同名字段出现多次，遵循 RFC 6376 规定的自底向上规则；</li>
+<li>对提取出的头部字段按 <code>c=</code> 声明的头部规范化算法逐一处理，每个字段末尾以 <code>CRLF</code> 结束；</li>
+<li>构造即将插入的 <code>DKIM-Signature:</code> 头部，包含所有其余标签（包含刚计算出的 <code>bh=</code> 值）；删除 <code>b=</code> 的值及其周围的所有折叠空白（即把 <code>b=</code> 的值视为空字符串，保留 <code>b=</code> 标签本身）；</li>
+<li>对该 <code>DKIM-Signature:</code> 头部同样进行规范化（签名计算时末尾不追加 CRLF），追加到待签头部数据末尾；</li>
+<li>对拼接后的整个头部数据流计算哈希摘要。</li>
+</ul>
+</li>
+<li><strong>数字签名生成</strong>：
+<ul>
+<li>使用发信域的 RSA 私钥对头部哈希摘要进行数字签名；</li>
+<li>将签名输出 Base64 编码，填入 <code>b=</code> 标签；</li>
+<li>将完整的 <code>DKIM-Signature:</code> 字段插入到邮件头部顶端。</li>
+</ul>
+</li>
+</ol>
+<h3 id="2-验签与结果判定">2. 验签与结果判定</h3>
+<p>收件端验签方在收到邮件后，执行逆向验证：</p>
+<ol>
+<li><strong>语法与参数解析</strong>：提取 <code>DKIM-Signature:</code>，严格检查是否包含 <code>v=, a=, b=, bh=, d=, h=, s=</code> 等必需标签；检查 <code>h=</code> 中是否包含 <code>From</code> 字段。缺失必需项则直接判定为 <code>PERMFAIL</code>。</li>
+<li><strong>公钥检索</strong>：向 <code>s._domainkey.d</code> 发起 DNS 查询获取 TXT 记录。
+<ul>
+<li>若 DNS 返回记录不存在，判定为 <code>PERMFAIL</code>；</li>
+<li>若 DNS 查询发生临时超时或服务不可达，可返回 <code>TEMPFAIL</code>；</li>
+<li>若记录中 <code>p=</code> 为空，判定为密钥已吊销（<code>PERMFAIL</code>）。</li>
+</ul>
+</li>
+<li><strong>正文哈希比对</strong>：对接收到的正文按 <code>c=</code> 声明重新规范化并截断，计算哈希值，与报文中的 <code>bh=</code> 标签比对。若不匹配，则判定验证失败（<code>PERMFAIL</code>）。</li>
+<li><strong>头部验签</strong>：根据 <code>h=</code> 列表提取头部并追加删除 <code>b=</code> 值及周围空白后的 <code>DKIM-Signature:</code>，计算头部摘要，结合 DNS 查得的 RSA 公钥验证 <code>b=</code> 签名值。</li>
+</ol>
+<hr>
+<h2 id="密钥生命周期与安全边界">密钥生命周期与安全边界</h2>
+<h3 id="1-密钥轮换工程实践">1. 密钥轮换工程实践</h3>
+<p>为了防止私钥长期暴露引发泄露风险，发信方应当定期进行密钥轮换（Key Rotation）。在私钥未泄露的正常轮换场景下，发信方可通过双公钥过渡保持平滑验证：</p>
+<ul>
+<li><strong>重叠过渡期（Dual-Key Staging）</strong>：由于邮件在传输链路、队列重试或收件方延后处理过程中存在时间差，在正常维护中，发信方通常在启用新私钥签名的同时保留旧选择器的公钥记录，避免在途邮件在送达验签时因找不到公钥而失效。但如果发生私钥泄露，则应优先立即吊销或移除对应公钥，而非维持旧邮件验签。</li>
+<li><strong>工程切换流程</strong>：
+<ol>
+<li>生成新密钥对，分配新选择器（如 <code>202109._domainkey.example.com</code>）并在 DNS 中发布新公钥记录；</li>
+<li>根据权威 DNS 生效情况及相关缓存 TTL（包括负缓存）确定生效条件后，发信系统开始使用新私钥与新选择器签名；</li>
+<li>旧选择器的公钥记录在 DNS 中继续保留一段时间，具体时长取决于预估的邮件传输延迟与本地重试队列上限；</li>
+<li>待在途邮件投递生命周期结束后，从 DNS 移除旧记录，或发布 <code>p=</code> 为空的吊销记录。</li>
+</ol>
+</li>
+</ul>
+<h3 id="2-签名算法与密钥长度要求rfc-8301">2. 签名算法与密钥长度要求（RFC 8301）</h3>
+<p>随着密码学计算能力的提升，早期标准允许的算法显露出安全隐患：</p>
+<ul>
+<li><strong>禁止 SHA-1</strong>：RFC 6376 时代允许 <code>rsa-sha1</code> 与 <code>rsa-sha256</code>。2018 年发布的 RFC 8301 正式更新了规范，明确将 <code>rsa-sha1</code> 置为历史废弃状态（Historic）。发信方严禁使用（MUST NOT） <code>rsa-sha1</code> 进行签名，验签方也严禁使用（MUST NOT）该算法验证，遇到 <code>rsa-sha1</code> 必须视作永久失败。</li>
+<li><strong>密钥长度下限</strong>：RFC 6376 原先允许验证 512 位短密钥。RFC 8301 明确规定发信方所有密钥长度<strong>必须至少为 1024 位（MUST）</strong>，且<strong>推荐至少使用 2048 位（SHOULD）</strong>；验签方<strong>严禁将小于 1024 位的密钥视为有效签名（MUST NOT）</strong>。</li>
+</ul>
+<h3 id="3-常见安全陷阱与边界">3. 常见安全陷阱与边界</h3>
+<h4 id="a-头部重放与注入攻击header-injection">A. 头部重放与注入攻击（Header Injection）</h4>
+<p>RFC 6376 指出，若签名仅覆盖了现有头部中的某个字段（例如出现了一次 <code>Subject:</code> 且 <code>h=subject</code>），攻击者或恶意中继可在传输途中向头部上方再插入一个新的 <code>Subject:</code> 字段。部分宽松实现的 MUA 可能会优先显示新插入的顶部字段，而底层 DKIM 依然验证通过。</p>
+<ul>
+<li><strong>防护机制（Over-signing）</strong>：发信方可在 <code>h=</code> 列表中将该字段多列出一次（例如 <code>h=from:from:subject:subject</code>）。根据规范，如果某字段在报文中仅出现一次，而在 <code>h=</code> 中声明了两次，计算哈希时第二次将被视为空输入。若中间人额外插入了同名字段，验签时该字段就会参与哈希计算，导致哈希不匹配从而使签名失效。</li>
+</ul>
+<h4 id="b-正文长度标签l的滥用风险">B. 正文长度标签（<code>l=</code>）的滥用风险</h4>
+<p><code>l=</code> 标签初衷是允许邮件列表在正文末尾追加退订链接而不破坏原签名。然而 RFC 6376 第 8.2 节警告，任何位于 <code>l=</code> 指定长度之后的数据均未受密码学保护。恶意攻击者可利用这一空隙在末尾追加任意伪造正文，甚至通过注入多用途互联网邮件扩展（Multipurpose Internet Mail Extensions，MIME）分隔符或 HTML 闭合标签彻底颠覆原始邮件的展示。</p>
+<p>在实际安全运营中，通常强烈建议省略 <code>l=</code> 标签，对整封正文实施完整保护。</p>
+<h4 id="c-验签成功与内容可信的边界">C. 验签成功与内容可信的边界</h4>
+<p>在邮件安全架构中，DKIM 具有明确的语义界限：</p>
+<ul>
+<li><strong>验签通过的真实含义</strong>：验签通过仅表示所选头部和正文受保护部分在指定规范化规则下与签名时一致，以及声称的签名域名 <code>d=</code> 确实对该邮件主张了组织责任。它并不代表报文在逐字节层面完全未变（规范化允许的空白、折行等微小变动仍可通过）。</li>
+<li><strong>内容与作者可信度</strong>：DKIM 并不证明发件人邮箱真实可信，不能阻止发信域自身发送钓鱼或垃圾邮件，也无法单独保证 <code>From:</code> 作者身份未被伪造（在后续架构中，需进一步结合发件人策略框架（Sender Policy Framework，SPF）与基于域的消息身份认证、报告与一致性（Domain-based Message Authentication, Reporting, and Conformance，DMARC）机制进行多维对齐判定）。内容与信誉判定仍须依赖发信域名的历史信誉评估（Reputation System）与反垃圾安全引擎综合决策。</li>
+</ul>
+<hr>
+<h2 id="参考文献">参考文献</h2>
+<ul>
+<li><a id="ref-rfc6376" href="https://www.rfc-editor.org/rfc/rfc6376" target="_blank" rel="noopener noreferrer">RFC 6376: DomainKeys Identified Mail (DKIM) Signatures (2011)</a></li>
+<li><a id="ref-rfc8301" href="https://www.rfc-editor.org/rfc/rfc8301" target="_blank" rel="noopener noreferrer">RFC 8301: Cryptographic Algorithm and Key Usage Update to DomainKeys Identified Mail (DKIM) (2018)</a></li>
+<li><a id="ref-rfc5322" href="https://www.rfc-editor.org/rfc/rfc5322" target="_blank" rel="noopener noreferrer">RFC 5322: Internet Message Format (2008)</a></li>
+</ul>
+<!--/email_off--></article><hr class="my-8 border-dashed"><div id="btt-btn-container" class="fixed inset-e-4 bottom-8 z-50 md:sticky md:inset-e-auto md:float-end md:me-1 translate-y-14 opacity-0 transition duration-500"><button data-button="back-to-top" class="group bg-background relative px-2 py-1 size-14 rounded-full shadow-xl md:h-8 md:w-fit md:rounded-md md:shadow-none md:focus-visible:rounded-none md:bg-background/35 md:bg-clip-padding md:backdrop-blur-lg"><span id="progress-indicator" class="absolute inset-0 -z-10 block size-14 scale-110 rounded-full bg-transparent md:hidden md:h-8 md:rounded-md"></span><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="inline-block rotate-90 md:hidden" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M5 12h14M5 12l6 6M5 12l6-6" /></svg><span class="group-hover:text-accent sr-only text-sm md:not-sr-only"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="inline-block size-4" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M12 5v14M16 9l-4-4M8 9l4-4" /></svg> 回到顶部</span></button></div><script data-astro-rerun>
+  function backToTop() {
+    const rootElement = document.documentElement;
+    const btnContainer = document.querySelector("#btt-btn-container");
+    const backToTopBtn = document.querySelector("[data-button='back-to-top']");
+    const progressIndicator = document.querySelector("#progress-indicator");
+
+    if (!rootElement || !btnContainer || !backToTopBtn || !progressIndicator)
+      return;
+
+    backToTopBtn.addEventListener("click", () => {
+      document.body.scrollTop = 0;
+      document.documentElement.scrollTop = 0;
+    });
+
+    let lastVisible = null;
+    function handleScroll() {
+      const scrollTotal = rootElement.scrollHeight - rootElement.clientHeight;
+      const scrollTop = rootElement.scrollTop;
+      const scrollPercent = Math.floor((scrollTop / scrollTotal) * 100);
+
+      progressIndicator.style.setProperty(
+        "background-image",
+        `conic-gradient(var(--accent), var(--accent) ${scrollPercent}%, transparent ${scrollPercent}%)`
+      );
+
+      const isVisible = scrollTop / scrollTotal > 0.3;
+
+      if (isVisible !== lastVisible) {
+        btnContainer.classList.toggle("opacity-100", isVisible);
+        btnContainer.classList.toggle("translate-y-0", isVisible);
+        btnContainer.classList.toggle("opacity-0", !isVisible);
+        btnContainer.classList.toggle("translate-y-14", !isVisible);
+        lastVisible = isVisible;
+      }
+    }
+
+    let ticking = false;
+    document.addEventListener("scroll", () => {
+      if (!ticking) {
+        window.requestAnimationFrame(() => {
+          handleScroll();
+          ticking = false;
+        });
+        ticking = true;
+      }
+    });
+  }
+  backToTop();
+</script><ul class="mt-4 mb-8 flex flex-wrap gap-4 sm:my-8"><li><a data-astro-transition-scope="astro-bztu2lml-1" href="/tags/邮箱系统/" class="flex items-center gap-0.5 border-foreground border-b-2 border-dashed hover:border-accent hover:text-accent hover:-mt-0.5 focus-visible:text-accent focus-visible:border-none text-sm"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="opacity-80 size-4" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M5 9h14M5 15h14M11 4 7 20M17 4l-4 16" /></svg>邮箱系统</a></li><li><a data-astro-transition-scope="astro-bztu2lml-2" href="/tags/dkim/" class="flex items-center gap-0.5 border-foreground border-b-2 border-dashed hover:border-accent hover:text-accent hover:-mt-0.5 focus-visible:text-accent focus-visible:border-none text-sm"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="opacity-80 size-4" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M5 9h14M5 15h14M11 4 7 20M17 4l-4 16" /></svg>DKIM</a></li><li><a data-astro-transition-scope="astro-bztu2lml-3" href="/tags/数字签名/" class="flex items-center gap-0.5 border-foreground border-b-2 border-dashed hover:border-accent hover:text-accent hover:-mt-0.5 focus-visible:text-accent focus-visible:border-none text-sm"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="opacity-80 size-4" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M5 9h14M5 15h14M11 4 7 20M17 4l-4 16" /></svg>数字签名</a></li><li><a data-astro-transition-scope="astro-bztu2lml-4" href="/tags/规范化/" class="flex items-center gap-0.5 border-foreground border-b-2 border-dashed hover:border-accent hover:text-accent hover:-mt-0.5 focus-visible:text-accent focus-visible:border-none text-sm"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="opacity-80 size-4" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M5 9h14M5 15h14M11 4 7 20M17 4l-4 16" /></svg>规范化</a></li><li><a data-astro-transition-scope="astro-bztu2lml-5" href="/tags/密钥轮换/" class="flex items-center gap-0.5 border-foreground border-b-2 border-dashed hover:border-accent hover:text-accent hover:-mt-0.5 focus-visible:text-accent focus-visible:border-none text-sm"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="opacity-80 size-4" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M5 9h14M5 15h14M11 4 7 20M17 4l-4 16" /></svg>密钥轮换</a></li></ul><hr class="my-8 border-dashed"><div data-pagefind-ignore class="my-8 grid grid-cols-1 gap-6 sm:grid-cols-2"><a href="/posts/mail-spf-authorization/" class="flex w-full gap-1 hover:opacity-75"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="inline-block flex-none rtl:rotate-180" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M5 12h14M5 12l6 6M5 12l6-6" /></svg><div><span>上一篇</span><div class="text-accent/85 text-sm">SPF 发件主机授权与边界限制</div></div></a><a href="/posts/mail-dmarc-alignment/" class="flex w-full justify-end gap-1 text-end hover:opacity-75 sm:col-start-2"><div><span>下一篇</span><div class="text-accent/85 text-sm">DMARC 的身份对齐与报告机制</div></div><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="inline-block flex-none rtl:rotate-180" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M5 12h14M13 18l6-6M13 6l6 6" /></svg></a></div></main><footer class="app-layout mt-auto"><div class="border-border flex flex-col items-center justify-between border-t py-6 sm:flex-row-reverse sm:py-4"><div class="flex flex-wrap items-center gap-1"><a href="https://github.com/SaromChars" title="Sarom Chars 的 GitHub" class="group inline-flex items-center gap-1 hover:text-accent p-2 hover:rotate-6 sm:p-1"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="inline-block size-6 scale-125 fill-transparent stroke-current stroke-2 opacity-90 group-hover:fill-transparent sm:scale-110" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M9 19c-4.3 1.4-4.3-2.5-6-3m12 5v-3.5c0-1 .1-1.4-.5-2 2.8-.3 5.5-1.4 5.5-6a4.6 4.6 0 0 0-1.3-3.2 4.2 4.2 0 0 0-.1-3.2s-1.1-.3-3.5 1.3a12.3 12.3 0 0 0-6.2 0C6.5 2.8 5.4 3.1 5.4 3.1a4.2 4.2 0 0 0-.1 3.2A4.6 4.6 0 0 0 4 9.5c0 4.6 2.7 5.7 5.5 6-.6.6-.6 1.2-.5 2V21" /></svg><span class="sr-only">Sarom Chars 的 GitHub</span></a></div><div class="my-2 flex flex-col items-center whitespace-nowrap sm:flex-row"><span>版权 &#169; 2026</span><span class="hidden sm:inline">&nbsp;|&nbsp;</span><span>保留所有权利。</span></div></div></footer><script type="module">var e=`theme`,t=`light`,n=`dark`;function r(){return localStorage.getItem(e)||(window.matchMedia(`(prefers-color-scheme: dark)`).matches?n:t)}var i=window.__theme?.value??r();function a(){localStorage.setItem(e,i),o()}function o(){let e=document.firstElementChild;e?.setAttribute(`data-theme`,i),e?.classList.toggle(`dark`,i===n),document.querySelector(`#theme-btn`)?.setAttribute(`aria-label`,i);let t=window.getComputedStyle(document.body).backgroundColor;document.querySelector(`meta[name='theme-color']`)?.setAttribute(`content`,t)}function s(){o(),document.querySelector(`#theme-btn`)?.addEventListener(`click`,()=>{i=i===t?n:t,a()})}s(),document.addEventListener(`astro:after-swap`,s),document.addEventListener(`astro:before-swap`,e=>{let t=document.querySelector(`meta[name='theme-color']`)?.getAttribute(`content`);t&&e.newDocument.querySelector(`meta[name='theme-color']`)?.setAttribute(`content`,t)}),window.matchMedia(`(prefers-color-scheme: dark)`).addEventListener(`change`,({matches:e})=>{i=e?n:t,a()});</script></body></html><script type="module">var e=document.querySelector(`#article`);if(e?.querySelector(`a[href^="#ref-"]`)){let t=null,n=!1,r=document.createElement(`button`);r.type=`button`,r.className=`citation-return`,r.textContent=`返回阅读位置`,r.setAttribute(`data-pagefind-ignore`,``),e.addEventListener(`click`,n=>{if(n.button!==0||n.metaKey||n.ctrlKey||n.shiftKey||n.altKey)return;let i=n.target instanceof Element?n.target.closest(`a[href^="#ref-"]`):null;if(!i||!e.contains(i))return;let a=i.hash,o=document.getElementById(decodeURIComponent(a.slice(1)));o&&e.contains(o)&&(t={source:i,url:window.location.href,top:window.scrollY,left:window.scrollX,targetHash:a},o.insertAdjacentElement(`afterend`,r))}),r.addEventListener(`click`,()=>{if(!t||n)return;let e=t,i=i=>{r.remove(),window.requestAnimationFrame(()=>{window.requestAnimationFrame(()=>{e.source.focus({preventScroll:!0}),window.scrollTo({top:e.top,left:e.left,behavior:`instant`}),t=null,n=!1,i?.()})})};window.location.href===e.url?i():(n=!0,window.addEventListener(`popstate`,()=>{let e=window.history.scrollRestoration;window.history.scrollRestoration=`manual`,window.setTimeout(()=>{i(()=>{window.history.scrollRestoration=e})},0)},{once:!0}),window.history.back())}),window.addEventListener(`hashchange`,()=>{!n&&t&&window.location.hash!==t.targetHash&&(r.remove(),t=null)})}</script><script data-astro-rerun>
+  function createProgressBar() {
+    const progressContainer = document.createElement("div");
+    progressContainer.className =
+      "progress-container fixed top-0 z-10 h-1 w-full bg-background";
+
+    const progressBar = document.createElement("div");
+    progressBar.className = "progress-bar h-1 w-0 bg-accent";
+    progressBar.id = "myBar";
+
+    progressContainer.appendChild(progressBar);
+    document.body.appendChild(progressContainer);
+  }
+  createProgressBar();
+
+  function updateScrollProgress() {
+    document.addEventListener("scroll", () => {
+      const winScroll =
+        document.body.scrollTop || document.documentElement.scrollTop;
+      const height =
+        document.documentElement.scrollHeight -
+        document.documentElement.clientHeight;
+      const scrolled = (winScroll / height) * 100;
+      if (document) {
+        const myBar = document.getElementById("myBar");
+        if (myBar) {
+          myBar.style.width = scrolled + "%";
+        }
+      }
+    });
+  }
+  updateScrollProgress();
+
+  function addHeadingLinks() {
+    const headings = Array.from(
+      document.querySelectorAll("h2, h3, h4, h5, h6")
+    );
+    for (const heading of headings) {
+      heading.classList.add("group");
+      const link = document.createElement("a");
+      link.className =
+        "heading-link ms-2 no-underline opacity-75 md:opacity-0 md:group-hover:opacity-100 md:focus:opacity-100";
+      link.href = "#" + heading.id;
+
+      const span = document.createElement("span");
+      span.ariaHidden = "true";
+      span.innerText = "#";
+      link.appendChild(span);
+      heading.appendChild(link);
+    }
+  }
+  addHeadingLinks();
+
+  function attachCopyButtons() {
+    const copyButtonLabel = "Copy";
+    const codeBlocks = Array.from(document.querySelectorAll("pre"));
+
+    for (const codeBlock of codeBlocks) {
+      const wrapper = document.createElement("div");
+      wrapper.style.position = "relative";
+
+      const computedStyle = getComputedStyle(codeBlock);
+      const hasFileNameOffset =
+        computedStyle.getPropertyValue("--file-name-offset").trim() !== "";
+
+      const topClass = hasFileNameOffset
+        ? "top-(--file-name-offset)"
+        : "-top-3";
+
+      const copyButton = document.createElement("button");
+      copyButton.className = `copy-code absolute end-3 ${topClass} rounded bg-muted border border-muted px-2 py-1 text-xs leading-4 text-foreground font-medium`;
+      copyButton.innerHTML = copyButtonLabel;
+      codeBlock.setAttribute("tabindex", "0");
+      codeBlock.appendChild(copyButton);
+
+      codeBlock?.parentNode?.insertBefore(wrapper, codeBlock);
+      wrapper.appendChild(codeBlock);
+
+      copyButton.addEventListener("click", async () => {
+        await copyCode(codeBlock, copyButton);
+      });
+    }
+
+    async function copyCode(block, button) {
+      const code = block.querySelector("code");
+      const text = code?.innerText;
+
+      await navigator.clipboard.writeText(text ?? "");
+
+      button.innerText = "Copied";
+
+      setTimeout(() => {
+        button.innerText = copyButtonLabel;
+      }, 700);
+    }
+  }
+  attachCopyButtons();
+
+  /** Accessible image lightbox for article images. */
+  function initLightbox() {
+    const article = document.getElementById("article");
+    if (!article) return;
+
+    const prefersReducedMotion = () =>
+      window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+    let overlay = null;
+    let lastFocused = null;
+    let removeDragListeners = null;
+
+    // Defer attribute mutations so they don't push the LCP timestamp.
+    // Event listeners below use delegation and don't need the attributes to exist yet.
+    requestAnimationFrame(() => {
+      const images = Array.from(article.querySelectorAll("img"));
+      for (const image of images) {
+        if (image.closest("a")) continue;
+        image.setAttribute("role", "button");
+        image.setAttribute("tabindex", "0");
+        image.setAttribute("aria-haspopup", "dialog");
+        image.setAttribute(
+          "aria-label",
+          image.alt ? `Zoom image: ${image.alt}` : "Zoom image"
+        );
+      }
+    });
+
+    function open(src, alt, trigger) {
+      if (overlay) return;
+      lastFocused = trigger ?? document.activeElement;
+
+      overlay = document.createElement("div");
+      overlay.setAttribute("role", "dialog");
+      overlay.setAttribute("aria-modal", "true");
+      overlay.setAttribute(
+        "aria-label",
+        alt ? `Image preview: ${alt}` : "Image preview"
+      );
+      overlay.className =
+        "fixed inset-0 z-50 flex cursor-zoom-out items-center justify-center bg-black/70 backdrop-blur-sm opacity-0 transition-opacity duration-200 motion-reduce:transition-none";
+
+      const closeButton = document.createElement("button");
+      closeButton.type = "button";
+      closeButton.setAttribute("aria-label", "Close image preview");
+      closeButton.className =
+        "absolute end-4 top-4 z-1 flex size-11 items-center justify-center rounded bg-black/50 text-3xl leading-none text-white";
+      closeButton.innerHTML = "&#10005;";
+      closeButton.addEventListener("click", close);
+
+      const image = document.createElement("img");
+      image.src = src;
+      image.alt = "";
+      image.className =
+        "max-h-[90dvh] max-w-[90dvw] cursor-default object-contain transition-transform duration-100 ease-out motion-reduce:transition-none data-[zoom=drag]:cursor-grabbing data-[zoom=drag]:transition-none data-[zoom=in]:cursor-grab";
+
+      overlay.append(closeButton, image);
+      overlay.addEventListener("click", e => {
+        if (e.target === overlay && currentScale <= 1) close();
+      });
+
+      let currentScale = 1;
+      let translateX = 0;
+      let translateY = 0;
+      let initialDist = 0;
+      let initialScale = 1;
+      let panStartX = 0;
+      let panStartY = 0;
+      let panStartTranslateX = 0;
+      let panStartTranslateY = 0;
+      let lastTapTime = 0;
+
+      function applyTransform() {
+        image.style.transform = `scale(${currentScale}) translate(${translateX}px, ${translateY}px)`;
+        // A backdrop click only closes at fit size, so drop the zoom-out cursor while zoomed.
+        overlay?.classList.toggle("cursor-zoom-out", currentScale <= 1);
+      }
+
+      function resetTransform() {
+        currentScale = 1;
+        translateX = 0;
+        translateY = 0;
+        image.style.transform = "";
+        image.removeAttribute("data-zoom");
+        overlay?.classList.add("cursor-zoom-out");
+      }
+
+      // Keep the zoomed image from being panned past its edges.
+      function clampTranslate() {
+        if (!overlay) return;
+        const maxX = Math.max(
+          0,
+          (image.clientWidth - overlay.clientWidth / currentScale) / 2
+        );
+        const maxY = Math.max(
+          0,
+          (image.clientHeight - overlay.clientHeight / currentScale) / 2
+        );
+        translateX = Math.min(maxX, Math.max(-maxX, translateX));
+        translateY = Math.min(maxY, Math.max(-maxY, translateY));
+      }
+
+      overlay.addEventListener(
+        "touchstart",
+        e => {
+          const t = e.touches;
+          if (t.length === 2) {
+            image.setAttribute("data-zoom", "drag");
+            initialDist = Math.hypot(
+              t[1].clientX - t[0].clientX,
+              t[1].clientY - t[0].clientY
+            );
+            initialScale = currentScale;
+          } else if (t.length === 1) {
+            const now = Date.now();
+            if (now - lastTapTime < 300) {
+              e.preventDefault();
+              if (currentScale > 1) {
+                resetTransform();
+              } else {
+                currentScale = 2;
+                translateX = 0;
+                translateY = 0;
+                applyTransform();
+                image.setAttribute("data-zoom", "in");
+              }
+              lastTapTime = 0;
+              panStartX = t[0].clientX;
+              panStartY = t[0].clientY;
+              panStartTranslateX = translateX;
+              panStartTranslateY = translateY;
+            } else {
+              lastTapTime = now;
+              if (currentScale > 1) {
+                image.setAttribute("data-zoom", "drag");
+                panStartX = t[0].clientX;
+                panStartY = t[0].clientY;
+                panStartTranslateX = translateX;
+                panStartTranslateY = translateY;
+              }
+            }
+          }
+        },
+        { passive: false }
+      );
+
+      overlay.addEventListener(
+        "touchmove",
+        e => {
+          const t = e.touches;
+          if (t.length === 2) {
+            e.preventDefault();
+            const dist = Math.hypot(
+              t[1].clientX - t[0].clientX,
+              t[1].clientY - t[0].clientY
+            );
+            const oldScale = currentScale;
+            currentScale = Math.min(
+              4,
+              Math.max(1, initialScale * (dist / initialDist))
+            );
+
+            // Zoom to the geometric center of the two fingers
+            const midX = (t[0].clientX + t[1].clientX) / 2;
+            const midY = (t[0].clientY + t[1].clientY) / 2;
+            const ox = overlay.clientWidth / 2;
+            const oy = overlay.clientHeight / 2;
+            translateX =
+              (midX - ox) * (1 / currentScale - 1 / oldScale) + translateX;
+            translateY =
+              (midY - oy) * (1 / currentScale - 1 / oldScale) + translateY;
+            clampTranslate();
+            applyTransform();
+          } else if (t.length === 1) {
+            if (currentScale > 1) {
+              e.preventDefault();
+              image.setAttribute("data-zoom", "drag");
+              translateX =
+                panStartTranslateX + (t[0].clientX - panStartX) / currentScale;
+              translateY =
+                panStartTranslateY + (t[0].clientY - panStartY) / currentScale;
+              clampTranslate();
+              applyTransform();
+            } else {
+              e.preventDefault();
+            }
+          }
+        },
+        { passive: false }
+      );
+
+      overlay.addEventListener("touchend", e => {
+        if (e.touches.length === 0) {
+          if (currentScale > 1) {
+            image.setAttribute("data-zoom", "in");
+          } else {
+            image.removeAttribute("data-zoom");
+          }
+          if (currentScale <= 1.05) resetTransform();
+        }
+      });
+
+      overlay.addEventListener("touchcancel", e => {
+        if (e.touches.length === 0) {
+          if (currentScale > 1) {
+            image.setAttribute("data-zoom", "in");
+          } else {
+            image.removeAttribute("data-zoom");
+          }
+          if (currentScale <= 1.05) resetTransform();
+        }
+      });
+
+      overlay.addEventListener(
+        "wheel",
+        e => {
+          e.preventDefault();
+          const oldScale = currentScale;
+          const delta = -e.deltaY * 0.001;
+          currentScale = Math.min(4, Math.max(1, currentScale * (1 + delta)));
+
+          if (currentScale <= 1.05) {
+            resetTransform();
+          } else {
+            image.setAttribute("data-zoom", "in");
+            // Zoom to cursor: adjust translate so the point under cursor stays fixed
+            const ox = overlay.clientWidth / 2;
+            const oy = overlay.clientHeight / 2;
+            translateX =
+              (e.clientX - ox) * (1 / currentScale - 1 / oldScale) + translateX;
+            translateY =
+              (e.clientY - oy) * (1 / currentScale - 1 / oldScale) + translateY;
+            clampTranslate();
+            applyTransform();
+          }
+        },
+        { passive: false }
+      );
+
+      let isMouseDown = false;
+      let mouseStartX = 0;
+      let mouseStartY = 0;
+
+      overlay.addEventListener("mousedown", e => {
+        if (e.button !== 0 || currentScale <= 1) return;
+        if (e.target.closest("button")) return;
+        isMouseDown = true;
+        mouseStartX = e.clientX;
+        mouseStartY = e.clientY;
+        panStartTranslateX = translateX;
+        panStartTranslateY = translateY;
+        image.setAttribute("data-zoom", "drag");
+        e.preventDefault();
+      });
+
+      function onMouseMove(e) {
+        if (!isMouseDown || !overlay) return;
+        translateX =
+          panStartTranslateX + (e.clientX - mouseStartX) / currentScale;
+        translateY =
+          panStartTranslateY + (e.clientY - mouseStartY) / currentScale;
+        clampTranslate();
+        applyTransform();
+      }
+
+      function onMouseUp() {
+        if (!isMouseDown) return;
+        isMouseDown = false;
+        if (currentScale > 1) {
+          image.setAttribute("data-zoom", "in");
+        } else {
+          image.removeAttribute("data-zoom");
+        }
+      }
+
+      document.addEventListener("mousemove", onMouseMove);
+      document.addEventListener("mouseup", onMouseUp);
+      removeDragListeners = () => {
+        document.removeEventListener("mousemove", onMouseMove);
+        document.removeEventListener("mouseup", onMouseUp);
+      };
+
+      document.body.appendChild(overlay);
+      document.documentElement.style.overflow = "hidden";
+      document.addEventListener("keydown", onKeyDown);
+      window.__closeLightbox = close;
+
+      requestAnimationFrame(() => overlay?.classList.add("opacity-100"));
+      closeButton.focus();
+    }
+
+    function close() {
+      if (!overlay) return;
+      const el = overlay;
+      overlay = null;
+      el.classList.add("pointer-events-none");
+      window.__closeLightbox = null;
+
+      document.removeEventListener("keydown", onKeyDown);
+      removeDragListeners?.();
+      removeDragListeners = null;
+      document.documentElement.style.overflow = "";
+      lastFocused?.focus();
+      lastFocused = null;
+
+      if (prefersReducedMotion()) {
+        el.remove();
+        return;
+      }
+      const remove = () => el.remove();
+      el.addEventListener("transitionend", remove, { once: true });
+      setTimeout(remove, 250); // fallback in case transitionend never fires
+      el.classList.remove("opacity-100");
+    }
+
+    function onKeyDown(e) {
+      if (e.key === "Escape") {
+        close();
+      } else if (e.key === "Tab") {
+        trapFocus(e);
+      }
+    }
+
+    // Keep keyboard focus inside the open dialog.
+    function trapFocus(e) {
+      if (!overlay) return;
+      const focusables = overlay.querySelectorAll(
+        'a[href], button, [tabindex]:not([tabindex="-1"])'
+      );
+      if (focusables.length === 0) return;
+      const first = focusables[0];
+      const last = focusables[focusables.length - 1];
+      if (e.shiftKey && document.activeElement === first) {
+        e.preventDefault();
+        last.focus();
+      } else if (!e.shiftKey && document.activeElement === last) {
+        e.preventDefault();
+        first.focus();
+      }
+    }
+
+    function triggerFromEvent(e) {
+      const image = e.target.closest("img");
+      if (!image || !article.contains(image) || image.closest("a")) return null;
+      return image;
+    }
+
+    function activate(image) {
+      open(image.currentSrc || image.src, image.alt, image);
+    }
+
+    article.addEventListener("click", e => {
+      const image = triggerFromEvent(e);
+      if (!image) return;
+      e.preventDefault();
+      activate(image);
+    });
+
+    article.addEventListener("keydown", e => {
+      if (e.key !== "Enter" && e.key !== " " && e.key !== "Spacebar") return;
+      const image = triggerFromEvent(e);
+      if (!image) return;
+      e.preventDefault();
+      activate(image);
+    });
+  }
+  initLightbox();
+
+  if (!window.__lightboxSwapBound) {
+    window.__lightboxSwapBound = true;
+    document.addEventListener("astro:before-swap", () =>
+      window.__closeLightbox?.()
+    );
+  }
+
+  document.addEventListener("astro:after-swap", () =>
+    window.scrollTo({ left: 0, top: 0, behavior: "instant" })
+  );
+</script>

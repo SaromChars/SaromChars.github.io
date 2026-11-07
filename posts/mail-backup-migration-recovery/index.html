@@ -1,0 +1,1044 @@
+<!DOCTYPE html><html dir="ltr" lang="zh-CN" class="overflow-y-scroll scroll-smooth"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1"><link rel="icon" type="image/png" href="/images/favicon-32x32-next.png"><link rel="icon" href="/favicon.ico"><link rel="canonical" href="https://www.saromchars.tech/posts/mail-backup-migration-recovery/"><meta name="generator" content="Astro v7.4.5"><!-- Primary meta --><title>邮箱服务的备份、迁移与恢复 | Sarom&#39;s Blog</title><meta name="title" content="邮箱服务的备份、迁移与恢复 | Sarom's Blog"><meta name="description" content="从 IMAP4rev1 与离线同步机制切入，深入解析邮箱状态的 UID 稳定性保证、UIDVALIDITY 校验与失效处理、多邮箱数据迁移中的断点重试与幂等重放，以及备份恢复时的一致性校验与恢复目标工程权衡。"><meta name="author" content="Sarom Chars"><link rel="sitemap" href="/sitemap-index.xml"><!-- Open Graph --><meta property="og:type" content="article"><meta property="og:site_name" content="Sarom's Blog"><meta property="og:title" content="邮箱服务的备份、迁移与恢复 | Sarom's Blog"><meta property="og:description" content="从 IMAP4rev1 与离线同步机制切入，深入解析邮箱状态的 UID 稳定性保证、UIDVALIDITY 校验与失效处理、多邮箱数据迁移中的断点重试与幂等重放，以及备份恢复时的一致性校验与恢复目标工程权衡。"><meta property="og:url" content="https://www.saromchars.tech/posts/mail-backup-migration-recovery/"><meta property="og:image" content="https://www.saromchars.tech/og.png"><!-- Twitter / X --><meta property="twitter:card" content="summary_large_image"><meta property="twitter:url" content="https://www.saromchars.tech/posts/mail-backup-migration-recovery/"><meta property="twitter:title" content="邮箱服务的备份、迁移与恢复 | Sarom's Blog"><meta property="twitter:description" content="从 IMAP4rev1 与离线同步机制切入，深入解析邮箱状态的 UID 稳定性保证、UIDVALIDITY 校验与失效处理、多邮箱数据迁移中的断点重试与幂等重放，以及备份恢复时的一致性校验与恢复目标工程权衡。"><meta property="twitter:image" content="https://www.saromchars.tech/og.png"><!-- RSS autodiscovery --><link rel="alternate" type="application/rss+xml" title="Sarom's Blog" href="https://www.saromchars.tech/rss.xml"><!-- Filled at runtime by theme.ts to match the current background colour --><meta name="theme-color" content=""><!-- Extra head content injected by child layouts (e.g. JSON-LD, article meta) --><meta property="article:published_time" content="2021-09-01T02:00:00.000Z"><script type="application/ld+json">{"@context":"https://schema.org","@type":"BlogPosting","headline":"邮箱服务的备份、迁移与恢复","mainEntityOfPage":"https://www.saromchars.tech/posts/mail-backup-migration-recovery/","datePublished":"2021-09-01T02:00:00.000Z","author":[{"@type":"Person","name":"Sarom Chars","url":"https://github.com/SaromChars"}]}</script><!--
+      Inline FOUC-prevention script: sets data-theme on <html> before
+      the browser paints. Runs synchronously, no defer/async.
+    --><script>
+      (function () {
+        const stored = localStorage.getItem("theme");
+        const prefersDark = window.matchMedia(
+          "(prefers-color-scheme: dark)"
+        ).matches;
+        const theme = stored ?? (prefersDark ? "dark" : "light");
+        const root = document.firstElementChild;
+        root?.setAttribute("data-theme", theme);
+        root?.classList.toggle("dark", theme === "dark");
+        // Expose value so theme.ts can skip re-detection.
+        window.__theme = { value: theme };
+      })();
+    </script><meta name="robots" content="index, follow"><script async src="https://www.googletagmanager.com/gtag/js?id=G-WJJJTJ4FWX"></script><script>(function(){const measurementId = "G-WJJJTJ4FWX";
+
+    window.dataLayer = window.dataLayer || [];
+    function gtag(){ window.dataLayer.push(arguments); }
+    gtag('js', new Date());
+    gtag('config', measurementId);
+  })();</script><style>@keyframes astroFadeInOut{0%{opacity:1}to{opacity:0}}@keyframes astroFadeIn{0%{opacity:0;mix-blend-mode:plus-lighter}to{opacity:1;mix-blend-mode:plus-lighter}}@keyframes astroFadeOut{0%{opacity:1;mix-blend-mode:plus-lighter}to{opacity:0;mix-blend-mode:plus-lighter}}@keyframes astroSlideFromRight{0%{transform:translate(100%)}}@keyframes astroSlideFromLeft{0%{transform:translate(-100%)}}@keyframes astroSlideToRight{to{transform:translate(100%)}}@keyframes astroSlideToLeft{to{transform:translate(-100%)}}@media (prefers-reduced-motion){::view-transition-group(*),::view-transition-old(*),::view-transition-new(*),[data-astro-transition-scope]{animation:none!important}}
+</style><link rel="stylesheet" href="/_astro/Footer.wlxowfqU.css"><style>[data-astro-transition-scope="astro-bztu2lml-1"] { view-transition-name: \90AE\7BB1\7CFB\7EDF; }@layer astro { ::view-transition-old(\90AE\7BB1\7CFB\7EDF) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }::view-transition-new(\90AE\7BB1\7CFB\7EDF) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }[data-astro-transition=back]::view-transition-old(\90AE\7BB1\7CFB\7EDF) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition=back]::view-transition-new(\90AE\7BB1\7CFB\7EDF) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; } }[data-astro-transition-fallback="old"] [data-astro-transition-scope="astro-bztu2lml-1"],
+			[data-astro-transition-fallback="old"][data-astro-transition-scope="astro-bztu2lml-1"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition-fallback="new"] [data-astro-transition-scope="astro-bztu2lml-1"],
+			[data-astro-transition-fallback="new"][data-astro-transition-scope="astro-bztu2lml-1"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }[data-astro-transition=back][data-astro-transition-fallback="old"] [data-astro-transition-scope="astro-bztu2lml-1"],
+			[data-astro-transition=back][data-astro-transition-fallback="old"][data-astro-transition-scope="astro-bztu2lml-1"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition=back][data-astro-transition-fallback="new"] [data-astro-transition-scope="astro-bztu2lml-1"],
+			[data-astro-transition=back][data-astro-transition-fallback="new"][data-astro-transition-scope="astro-bztu2lml-1"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }</style><style>[data-astro-transition-scope="astro-bztu2lml-2"] { view-transition-name: \5907\4EFD\4E0E\6062\590D; }@layer astro { ::view-transition-old(\5907\4EFD\4E0E\6062\590D) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }::view-transition-new(\5907\4EFD\4E0E\6062\590D) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }[data-astro-transition=back]::view-transition-old(\5907\4EFD\4E0E\6062\590D) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition=back]::view-transition-new(\5907\4EFD\4E0E\6062\590D) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; } }[data-astro-transition-fallback="old"] [data-astro-transition-scope="astro-bztu2lml-2"],
+			[data-astro-transition-fallback="old"][data-astro-transition-scope="astro-bztu2lml-2"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition-fallback="new"] [data-astro-transition-scope="astro-bztu2lml-2"],
+			[data-astro-transition-fallback="new"][data-astro-transition-scope="astro-bztu2lml-2"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }[data-astro-transition=back][data-astro-transition-fallback="old"] [data-astro-transition-scope="astro-bztu2lml-2"],
+			[data-astro-transition=back][data-astro-transition-fallback="old"][data-astro-transition-scope="astro-bztu2lml-2"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition=back][data-astro-transition-fallback="new"] [data-astro-transition-scope="astro-bztu2lml-2"],
+			[data-astro-transition=back][data-astro-transition-fallback="new"][data-astro-transition-scope="astro-bztu2lml-2"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }</style><style>[data-astro-transition-scope="astro-bztu2lml-3"] { view-transition-name: \6570\636E\8FC1\79FB; }@layer astro { ::view-transition-old(\6570\636E\8FC1\79FB) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }::view-transition-new(\6570\636E\8FC1\79FB) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }[data-astro-transition=back]::view-transition-old(\6570\636E\8FC1\79FB) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition=back]::view-transition-new(\6570\636E\8FC1\79FB) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; } }[data-astro-transition-fallback="old"] [data-astro-transition-scope="astro-bztu2lml-3"],
+			[data-astro-transition-fallback="old"][data-astro-transition-scope="astro-bztu2lml-3"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition-fallback="new"] [data-astro-transition-scope="astro-bztu2lml-3"],
+			[data-astro-transition-fallback="new"][data-astro-transition-scope="astro-bztu2lml-3"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }[data-astro-transition=back][data-astro-transition-fallback="old"] [data-astro-transition-scope="astro-bztu2lml-3"],
+			[data-astro-transition=back][data-astro-transition-fallback="old"][data-astro-transition-scope="astro-bztu2lml-3"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition=back][data-astro-transition-fallback="new"] [data-astro-transition-scope="astro-bztu2lml-3"],
+			[data-astro-transition=back][data-astro-transition-fallback="new"][data-astro-transition-scope="astro-bztu2lml-3"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }</style><style>[data-astro-transition-scope="astro-bztu2lml-4"] { view-transition-name: imap; }@layer astro { ::view-transition-old(imap) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }::view-transition-new(imap) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }[data-astro-transition=back]::view-transition-old(imap) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition=back]::view-transition-new(imap) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; } }[data-astro-transition-fallback="old"] [data-astro-transition-scope="astro-bztu2lml-4"],
+			[data-astro-transition-fallback="old"][data-astro-transition-scope="astro-bztu2lml-4"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition-fallback="new"] [data-astro-transition-scope="astro-bztu2lml-4"],
+			[data-astro-transition-fallback="new"][data-astro-transition-scope="astro-bztu2lml-4"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }[data-astro-transition=back][data-astro-transition-fallback="old"] [data-astro-transition-scope="astro-bztu2lml-4"],
+			[data-astro-transition=back][data-astro-transition-fallback="old"][data-astro-transition-scope="astro-bztu2lml-4"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition=back][data-astro-transition-fallback="new"] [data-astro-transition-scope="astro-bztu2lml-4"],
+			[data-astro-transition=back][data-astro-transition-fallback="new"][data-astro-transition-scope="astro-bztu2lml-4"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }</style><style>[data-astro-transition-scope="astro-bztu2lml-5"] { view-transition-name: rfc-3501; }@layer astro { ::view-transition-old(rfc-3501) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }::view-transition-new(rfc-3501) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }[data-astro-transition=back]::view-transition-old(rfc-3501) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition=back]::view-transition-new(rfc-3501) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; } }[data-astro-transition-fallback="old"] [data-astro-transition-scope="astro-bztu2lml-5"],
+			[data-astro-transition-fallback="old"][data-astro-transition-scope="astro-bztu2lml-5"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition-fallback="new"] [data-astro-transition-scope="astro-bztu2lml-5"],
+			[data-astro-transition-fallback="new"][data-astro-transition-scope="astro-bztu2lml-5"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }[data-astro-transition=back][data-astro-transition-fallback="old"] [data-astro-transition-scope="astro-bztu2lml-5"],
+			[data-astro-transition=back][data-astro-transition-fallback="old"][data-astro-transition-scope="astro-bztu2lml-5"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition=back][data-astro-transition-fallback="new"] [data-astro-transition-scope="astro-bztu2lml-5"],
+			[data-astro-transition=back][data-astro-transition-fallback="new"][data-astro-transition-scope="astro-bztu2lml-5"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }</style><style>[data-astro-transition-scope="astro-bztu2lml-6"] { view-transition-name: rfc-4549; }@layer astro { ::view-transition-old(rfc-4549) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }::view-transition-new(rfc-4549) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }[data-astro-transition=back]::view-transition-old(rfc-4549) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition=back]::view-transition-new(rfc-4549) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; } }[data-astro-transition-fallback="old"] [data-astro-transition-scope="astro-bztu2lml-6"],
+			[data-astro-transition-fallback="old"][data-astro-transition-scope="astro-bztu2lml-6"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition-fallback="new"] [data-astro-transition-scope="astro-bztu2lml-6"],
+			[data-astro-transition-fallback="new"][data-astro-transition-scope="astro-bztu2lml-6"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }[data-astro-transition=back][data-astro-transition-fallback="old"] [data-astro-transition-scope="astro-bztu2lml-6"],
+			[data-astro-transition=back][data-astro-transition-fallback="old"][data-astro-transition-scope="astro-bztu2lml-6"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition=back][data-astro-transition-fallback="new"] [data-astro-transition-scope="astro-bztu2lml-6"],
+			[data-astro-transition=back][data-astro-transition-fallback="new"][data-astro-transition-scope="astro-bztu2lml-6"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }</style></head><body class="bg-background font-app text-foreground selection:bg-accent/75 selection:text-accent-foreground flex min-h-svh flex-col"><a id="skip-to-content" href="#main-content" class="bg-background text-accent absolute inset-s-16 -top-full z-50 px-3 py-2 backdrop-blur-lg transition-all focus:top-4">跳到正文</a><header class="app-layout flex flex-col items-center justify-between sm:flex-row"><div class="border-border bg-background relative flex w-full items-baseline justify-between border-b py-4 sm:items-center sm:py-6"><a href="/" class="absolute py-1 text-xl leading-8 font-semibold whitespace-nowrap sm:static sm:my-auto sm:text-2xl sm:leading-none">Sarom&#39;s Blog</a><nav id="nav-menu" class="flex w-full flex-col items-center sm:ms-2 sm:flex-row sm:justify-end sm:space-x-4 sm:py-0"><button id="menu-btn" class="focus-outline self-end p-2 sm:hidden" aria-label="展开菜单" aria-expanded="false" aria-controls="menu-items" data-label-open="展开菜单" data-label-close="收起菜单"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="hidden" viewBox="0 0 24 24" id="close-icon"><path stroke="none" d="M0 0h24v24H0z" /><path d="M18 6 6 18M6 6l12 12" /></svg><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="icon icon-tabler icons-tabler-outline icon-tabler-menu-deep" viewBox="0 0 24 24" id="menu-icon"><path stroke="none" d="M0 0h24v24H0z" /><path d="M4 6h16M7 12h13M10 18h10" /></svg></button><ul id="menu-items" class="[&amp;&gt;li&gt;a]:hover:text-accent mt-4 hidden w-44 grid-cols-2 place-content-center gap-2 sm:mt-0 sm:flex sm:w-auto sm:gap-x-5 sm:gap-y-0 sm:[&amp;&gt;li]:h-8 [&amp;&gt;li&gt;a]:block [&amp;&gt;li&gt;a]:px-4 [&amp;&gt;li&gt;a]:py-3 [&amp;&gt;li&gt;a]:text-center [&amp;&gt;li&gt;a]:font-medium sm:[&amp;&gt;li&gt;a]:px-2 sm:[&amp;&gt;li&gt;a]:py-1"><li class="col-span-2"><a href="/posts/" class="active-nav">文章</a></li><li class="col-span-2"><a href="/tags/">标签</a></li><li class="col-span-2"><a href="/about/">关于</a></li><li class="col-span-2"><a href="/archives/" title="归档" aria-label="归档" class="group inline-flex items-center gap-1 hover:text-accent focus-outline flex size-full justify-center p-3 sm:relative sm:size-8 sm:p-0"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="hidden sm:absolute sm:top-1/2 sm:left-1/2 sm:block sm:size-6 sm:-translate-x-1/2 sm:-translate-y-1/2" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M3 6a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2 2 2 0 0 1-2 2H5a2 2 0 0 1-2-2M5 8v10a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8M10 12h4" /></svg><span class="sm:sr-only">归档</span></a></li><li class="col-span-1 flex items-center justify-center"><a href="/search/" title="搜索" aria-label="搜索" class="group inline-flex items-center gap-1 hover:text-accent focus-outline relative size-8"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="absolute top-1/2 left-1/2 size-6 -translate-x-1/2 -translate-y-1/2" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M3 10a7 7 0 1 0 14 0 7 7 0 1 0-14 0M21 21l-6-6" /></svg><span class="sr-only">搜索</span></a></li><li class="col-span-1 flex items-center justify-center"><button id="theme-btn" class="focus-outline hover:[&amp;&gt;svg]:stroke-accent relative size-12 p-4 sm:size-8" title="切换主题" aria-label="auto" aria-live="polite"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="absolute top-[50%] left-[50%] translate-[-50%] scale-100 rotate-0 transition-all dark:scale-0 dark:-rotate-90" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M12 3h.393a7.5 7.5 0 0 0 7.92 12.446A9 9 0 1 1 12 2.992z" /></svg><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="absolute top-[50%] left-[50%] translate-[-50%] scale-0 rotate-90 transition-all dark:scale-100 dark:rotate-0" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M14.828 14.828a4 4 0 1 0-5.656-5.656 4 4 0 0 0 5.656 5.656M6.343 17.657l-1.414 1.414M6.343 6.343 4.929 4.929M17.657 6.343l1.414-1.414M17.657 17.657l1.414 1.414M4 12H2M12 4V2M20 12h2M12 20v2" /></svg></button></li></ul></nav></div></header><script type="module">function e(){let e=document.querySelector(`#menu-btn`),t=document.querySelector(`#menu-items`),n=document.querySelector(`#menu-icon`),r=document.querySelector(`#close-icon`);if(!e||!t||!n||!r)return;let i=e.dataset.labelOpen??`Open menu`,a=e.dataset.labelClose??`Close menu`;e.addEventListener(`click`,()=>{let o=e.getAttribute(`aria-expanded`)===`true`;e.setAttribute(`aria-expanded`,o?`false`:`true`),e.setAttribute(`aria-label`,o?i:a),t.classList.toggle(`hidden`),t.classList.toggle(`grid`),n.classList.toggle(`hidden`),r.classList.toggle(`hidden`)})}function t(){let e=document.getElementById(`skip-to-content`);e&&e.addEventListener(`click`,e=>{if(e.defaultPrevented||e.metaKey||e.ctrlKey||e.shiftKey||e.button!==0)return;e.preventDefault();let t=document.getElementById(`main-content`);t&&(t.setAttribute(`tabindex`,`-1`),t.addEventListener(`blur`,()=>t.removeAttribute(`tabindex`),{once:!0}),t.focus(),t.scrollIntoView({behavior:`smooth`}))})}e(),document.addEventListener(`astro:after-swap`,e),t(),document.addEventListener(`astro:after-swap`,t);</script><div class="app-layout flex items-center justify-start"><a id="back-button" href="/" class="group inline-flex items-center gap-1 hover:text-accent focus-outline hover:text-foreground/75 -ms-2 mt-8 mb-2"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="inline-block size-6 rtl:rotate-180" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="m15 6-6 6 6 6" /></svg><span>返回</span></a></div><script type="module">function e(){let e=document.querySelector(`#back-button`),t=sessionStorage.getItem(`backUrl`);t&&e&&(e.href=t)}document.addEventListener(`astro:page-load`,e),e();</script><main id="main-content" class="app-layout" data-pagefind-body><h1 style="view-transition-name:mail-backup-migration-recovery" class="text-accent inline-block text-2xl font-bold sm:text-3xl">邮箱服务的备份、迁移与恢复</h1><div class="my-2 flex items-center gap-2"><div class="text-muted-foreground flex flex-wrap items-center gap-x-2 gap-y-1"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="inline-block size-6 min-w-5.5" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M4 7a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2zM16 3v4M8 3v4M4 11h16M7 14h.013M10.01 14h.005M13.01 14h.005M16.015 14h.005M13.015 17h.005M7.01 17h.005M10.01 17h.005" /></svg><time class="text-sm sm:text-base" datetime="2021-09-01T02:00:00.000Z">2021年9月1日</time></div><span aria-hidden="true" class="text-muted-foreground max-sm:hidden hidden">|</span></div><article id="article" class="mt-8 w-full app-prose max-w-app prose-pre:bg-(--shiki-light-bg) dark:prose-pre:bg-(--shiki-dark-bg)"><!--email_off-->
+<p>在企业与服务提供商的邮件基础设施运维中，恢复邮件内容不仅要还原文件，还需要恢复或重建唯一标识符（Unique Identifier，UID）、消息标志与客户端状态之间的对应关系。邮件存储系统既包含只读且内容不可变的历史消息内容（Message Content），又包含随用户操作高频变动的标志（Flags，如 <code>\Seen</code>、<code>\Flagged</code>、<code>\Deleted</code>），并在协议层向客户端暴露出 UID 身份与事件通知层面的强一致状态规则。</p>
+<p>互联网消息访问协议第 4 版修订版 1（Internet Message Access Protocol - Version 4rev1，IMAP4rev1，<a href="#ref-rfc3501">RFC 3501</a>）确立了以唯一标识符（UID）和唯一标识符有效性（Unique Identifier Validity，UIDVALIDITY）为核心的状态机；而针对离线断开客户端同步机制的指导规范（Synchronization Operations for Disconnected IMAP4 Clients，<a href="#ref-rfc4549">RFC 4549</a>，属于 Informational 类别）则给出了客户端缓存与服务端状态对齐的算法参考。</p>
+<p>需要明确的是，RFC 4549 旨在指导离线 IMAP 客户端的缓存同步，其将本地数据视作临时缓存且可在失效时清空的假定，并不等同于具有独立保留价值的历史备份体系，也不能直接替代双端权威数据迁移程序。理解协议状态机的边界与工程推导，对于防范数据迁移与灾难恢复中的逻辑错位至关重要。</p>
+<hr>
+<h2 id="协议一致性基石uiduidvalidity-与状态机">协议一致性基石：UID、UIDVALIDITY 与状态机</h2>
+<p>在 IMAP4rev1 协议中，邮件在邮箱内部有两种寻址方式：基于相对位置动态变化的消息序号（Message Sequence Number），以及在会话间保持持久稳定的唯一标识符（UID）。为了让离线客户端或数据处理程序能够准确识别远端变动，<a href="#ref-rfc3501">RFC 3501</a> 第 2.3.1.1 节确立了严密的标识符不变性约束。</p>
+<h3 id="1-三元组不可变性">1. 三元组不可变性</h3>
+<p>RFC 3501 第 2.3.1.1 节明确规定：<strong>邮箱名称、UIDVALIDITY 与 UID 的三元组合，必须永久（forever）在对应服务端上唯一对应一封内容不可变的具体邮件</strong>。</p>
+<p>具体而言，邮件一旦分配了某个 UID，其内部日期（INTERNALDATE）、RFC 2822 大小（RFC822.SIZE）、信封结构（ENVELOPE）、正文结构（BODYSTRUCTURE）以及所有正文与信头文本（RFC822、RFC822.HEADER、RFC822.TEXT 与 <code>BODY[...]</code> 获取项）都绝对不允许发生变动。这一不变性保证不包含通过 <code>STORE</code> 命令可更新的动态属性（例如标志 FLAGS），也不包含随增删重排的消息序号。需要强调的是，三元组的有效范围限定于生成该标识的单一服务器实例，不同服务器之间的 UID 数值即便相同亦无必然对应关系。</p>
+<h3 id="2-uidvalidity-的生命周期与严格递增性">2. UIDVALIDITY 的生命周期与严格递增性</h3>
+<p>UID 是一个 32 位无符号整数，取值范围为 1 至 4294967295（2 的 32 次方减 1，0 为非法值）。在单个邮箱内部，分配给新邮件的 UID 必须严格单调递增。</p>
+<p>当服务端因为底层物理存储重建、跨引擎数据格式转换、无 UID 存储机制或灾难恢复导致原有 UID 无法沿用或单调顺序被打乱时，服务端必须（MUST）更改该邮箱的 UIDVALIDITY 数值。依据 RFC 3501 第 2.3.1.1 节，新分配的 UIDVALIDITY 必须大于（MUST be greater than）前一会话所使用的数值。</p>
+<div class="callout" data-callout="note" data-collapsible="false"><div class="callout-title"><div class="callout-title-icon" aria-hidden="true"><svg xmlns="http://www.w3.org/2000/svg" width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="2" x2="22" y2="6"></line><path d="M7.5 20.5 19 9l-4-4L3.5 16.5 2 22z"></path></svg></div><div class="callout-title-text">Note</div></div><div class="callout-content"><p>规范强烈建议服务端尽量保持 UID 持久稳定。若邮箱被删除后又以相同名称重新创建，服务端若无法追踪旧实例分配过的 UID，就必须为新邮箱实例分配全新的 UIDVALIDITY（RFC 3501 建议可采用邮箱创建时的时间戳作为 32 位整数值）。</p></div></div>
+<h3 id="3-下一标识符指示值-uidnext">3. 下一标识符指示值 UIDNEXT</h3>
+<p>服务端在邮箱选中响应或 <code>STATUS</code> 查询中返回的 <code>UIDNEXT</code>，表示预计分配给下一封存入该邮箱的新邮件的 UID：</p>
+<ul>
+<li>在 UIDVALIDITY 未改变的前提下，只要没有新邮件加入，<code>UIDNEXT</code> 必须绝对不发生变化；</li>
+<li>在 UIDVALIDITY 未改变的前提下，只要有新邮件写入，<code>UIDNEXT</code> 必须递增，即便该新邮件随后被立即物理清除（Expunged）；</li>
+<li><code>UIDNEXT</code> 仅作为变动探测指示值，供客户端判断上次检查后是否有新邮件到达，协议<strong>并不保证</strong>后续存入的邮件 UID 一定严格等于该预测值（RFC 3501 第 2.3.1.1 节）。若 UIDVALIDITY 本身被重建更新，<code>UIDNEXT</code> 的重置不受上述“无新邮件绝对不变”的限制。</li>
+</ul>
+<hr>
+<h2 id="邮箱同步机制与-uidvalidity-校验">邮箱同步机制与 UIDVALIDITY 校验</h2>
+<p>在分析数据同步逻辑时，离线客户端交互常参考 <a href="#ref-rfc4549">RFC 4549</a> 描述的同步算法。RFC 4549 第 2 节确立了客户端视角的同步设计原则：<strong>离线客户端本地保存的邮箱内容或状态，本质上属于服务端主状态（Master State）的缓存；但本地脱机期间产生的标志修改与待上传队列，则由离线客户端独立负责维护</strong>。客户端在建立连接后需先完成身份认证（authentication），并依据协议响应维护本地缓存。这与归档性质的独立历史备份在生命周期上具有本质区别。</p>
+<pre class="astro-code astro-code-themes min-light night-owl" style="--shiki-light:#24292eff;--shiki-dark:#d6deeb;--shiki-light-bg:#ffffff;--shiki-dark-bg:#011627; overflow-x: auto;--file-name-offset: -0.75rem;" tabindex="0" data-language="text"><code><span class="line"><span>+-------------------------------------------------------------------------+</span></span>
+<span class="line"><span>|                    离线客户端邮箱同步状态流转（RFC 4549）                |</span></span>
+<span class="line"><span>+-------------------------------------------------------------------------+</span></span>
+<span class="line"><span>| 1. 连接与身份认证 (CAPABILITY / LOGIN / AUTHENTICATE)                   |</span></span>
+<span class="line"><span>|    ↓                                                                    |</span></span>
+<span class="line"><span>| 2. 检查邮箱 UIDVALIDITY (SELECT / STATUS)                               |</span></span>
+<span class="line"><span>|    ├── 不一致 (UID 失效) ──→ 清空本地缓存，作废旧 UID 关联未决动作      |</span></span>
+<span class="line"><span>|    │                         【保留待上传 APPEND 任务】                 |</span></span>
+<span class="line"><span>|    └── 一致 (有效)                                                      |</span></span>
+<span class="line"><span>|         ↓                                                               |</span></span>
+<span class="line"><span>| 3. 重放本地未决动作 (Client-to-Server Replay)                            |</span></span>
+<span class="line"><span>|    ├── 仅使用 +FLAGS.SILENT / -FLAGS.SILENT 增量改动                    |</span></span>
+<span class="line"><span>|    ├── 依赖 UIDPLUS 扩展 (APPENDUID / COPYUID) 映射实际服务端 UID        |</span></span>
+<span class="line"><span>|    └── 遇到非幂等指令中断，重连后必须校验执行状态                       |</span></span>
+<span class="line"><span>|         ↓                                                               |</span></span>
+<span class="line"><span>| 4. 拉取服务端最新状态 (Server-to-Client Sync)                            |</span></span>
+<span class="line"><span>|    ├── 遍历探测新增邮件 (UID FETCH 范围查询并校验 UID > lastseenuid)    |</span></span>
+<span class="line"><span>|    ├── 命令成功后依据完整响应缺席项识别物理清除 (Expunged) 邮件          |</span></span>
+<span class="line"><span>|    └── 采用 BODY.PEEK 抓取邮件正文（避免无意修改 \Seen 标志）            |</span></span>
+<span class="line"><span>+-------------------------------------------------------------------------+</span></span></code></pre>
+<h3 id="1-uidvalidity-失效处理cache-invalidation">1. UIDVALIDITY 失效处理（Cache Invalidation）</h3>
+<p>在离线客户端打开或检查任何邮箱时，首要动作是对比服务端返回的 UIDVALIDITY 与本地记录的值（以下示例仅展示 UID 相关的核心响应状态，略去常规 FLAGS 与 RECENT 等通报）：</p>
+<pre class="astro-code astro-code-themes min-light night-owl" style="--shiki-light:#24292eff;--shiki-dark:#d6deeb;--shiki-light-bg:#ffffff;--shiki-dark-bg:#011627; overflow-x: auto;--file-name-offset: -0.75rem;" tabindex="0" data-language="text"><code><span class="line"><span>C: A001 SELECT "INBOX"</span></span>
+<span class="line"><span>S: * 150 EXISTS</span></span>
+<span class="line"><span>S: * OK [UIDVALIDITY 1629850000] UIDs valid</span></span>
+<span class="line"><span>S: * OK [UIDNEXT 520] Predicted next UID</span></span>
+<span class="line"><span>S: A001 OK [READ-WRITE] SELECT completed</span></span></code></pre>
+<p>依据 RFC 4549 第 3 节与第 4.1 节规范：</p>
+<ul>
+<li>若服务端返回的 UIDVALIDITY 与本地缓存一致，说明本地持有的历史 UID 依然合法，可继续执行增量差异对比；</li>
+<li>若 UIDVALIDITY 发生改变，说明服务端的 UID 映射基准已失效。此时客户端<strong>必须（MUST）清空该邮箱的本地缓存，并废除所有引用了旧 UID 的待重放动作（Pending Actions），将其判定为失败</strong>；</li>
+<li><strong>关键例外</strong>：清空缓存与作废动作仅针对依赖旧 UID 的操作；客户端中计划执行的邮件上传动作（如本地已排队的 <code>APPEND</code> 指令）绝对不得（MUST NOT）被一并取消，因为待上传邮件尚未与服务端旧 UID 建立强绑定；</li>
+<li><strong>备份与迁移策略边界</strong>：在独立数据备份或异构迁移系统中，源端或目标端 UIDVALIDITY 的变动仅代表两端映射关系需重新对齐，绝不意味着备份系统应同步销毁已持久化的独立历史邮件档案。</li>
+</ul>
+<h3 id="2-客户端向服务端重放操作的边界">2. 客户端向服务端重放操作的边界</h3>
+<p>在执行离线变更重放时，客户端需遵守下列协议边界：</p>
+<h4 id="标志变动的增量更新">标志变动的增量更新</h4>
+<p>根据 RFC 4549 第 4.2.3 节，在重放脱机期间的标志修改时，客户端应当（SHOULD）使用增量式的 <code>+FLAGS.SILENT</code> 或 <code>-FLAGS.SILENT</code> 形式。在此类离线重放语境下，<strong>不得（MUST NOT）使用全量覆盖形式的 <code>FLAGS</code> 命令</strong>，否则极易将其他并发客户端在服务端设置的标志（如远端收件人打上的 <code>\Seen</code> 或自定义关键字）覆盖丢失。但在全新的、无并发写者的目标邮箱中进行初始数据灌入时，协议本身允许在 <code>APPEND</code> 或管理会话中初始化标志。此外，若目标服务端的 <code>PERMANENTFLAGS</code> 不支持自定义关键字，客户端必须容忍部分关键字无法持久化的差异。</p>
+<pre class="astro-code astro-code-themes min-light night-owl" style="--shiki-light:#24292eff;--shiki-dark:#d6deeb;--shiki-light-bg:#ffffff;--shiki-dark-bg:#011627; overflow-x: auto;--file-name-offset: -0.75rem;" tabindex="0" data-language="text"><code><span class="line"><span>C: A002 UID STORE 412 +FLAGS.SILENT (\Seen)</span></span>
+<span class="line"><span>S: A002 OK STORE completed</span></span>
+<span class="line"><span>C: A003 UID STORE 412 -FLAGS.SILENT ($Spam)</span></span>
+<span class="line"><span>S: A003 OK STORE completed</span></span></code></pre>
+<h4 id="物理清理与-uid-expunge">物理清理与 UID EXPUNGE</h4>
+<p>传统的 <code>EXPUNGE</code> 命令会彻底移除当前邮箱中所有带有 <code>\Deleted</code> 标志的邮件。RFC 4549 第 4.2.4 节指出，盲目发出 <code>EXPUNGE</code> 会带来误删并发打标邮件的风险。支持 UIDPLUS 扩展（<a href="#ref-rfc4315">RFC 4315</a>）的服务端允许执行精准的 <code>UID EXPUNGE &#x3C;uid-set></code>，仅清理指定 UID 集合中标记删除的邮件；若服务端不支持该扩展，迁移或同步程序应格外审慎，不应随意触发全局清理。</p>
+<h4 id="避免使用-close-导致静默清除">避免使用 CLOSE 导致静默清除</h4>
+<p>依据 RFC 3501 第 6.4.2 节与 RFC 4549 第 4.2.5 节，在以读写模式（<code>SELECT</code>）打开的邮箱上执行 <code>CLOSE</code> 命令，会触发隐式的静默清除（Silent EXPUNGE）。若客户端仅需退出邮箱而不希望触发清理，应使用 <code>UNSELECT</code> 扩展指令（RFC 3691），或直接选择另一个邮箱、发起 <code>LOGOUT</code>，或在打开时采用只读的 <code>EXAMINE</code> 模式。</p>
+<h3 id="3-服务端向客户端增量拉取">3. 服务端向客户端增量拉取</h3>
+<p>当需要检视远端新增或删除的邮件时，标准 IMAP 采取分段查询策略（RFC 4549 第 4.3.1 节）：</p>
+<ol>
+<li><strong>探测新邮件</strong>：发出 <code>UID FETCH &#x3C;lastseenuid+1>:* (FLAGS BODYSTRUCTURE INTERNALDATE RFC822.SIZE)</code>。需要注意的是，在 IMAP 语法中星号 <code>*</code> 代表当前邮箱内的最大有效序号或 UID；当 <code>&#x3C;lastseenuid+1></code> 大于当前邮箱最大 UID 时，反向范围仍可能返回现有最后一封邮件的数据。因此，客户端收到数据后<strong>必须显式过滤并仅接受 UID 严格大于 <code>lastseenuid</code> 的条目</strong>作为新邮件；</li>
+<li><strong>检测旧邮件变动与物理移除</strong>：发出 <code>UID FETCH 1:&#x3C;lastseenuid> FLAGS</code>（若邮箱历史为空且 <code>lastseenuid</code> 为 0，则应跳过该查询，避免发出非法的 <code>1:0</code> 范围）。<strong>只有在该命令执行成功且客户端完整接收并记录了所有未加标签响应后</strong>，方可将本地缓存中存在但服务端响应列表中缺席的 UID 判定为已被物理清除（Expunged）；若查询中途中断、超时或返回 <code>NO</code>/<code>BAD</code>，客户端必须保留现有缓存状态，绝不能将网络失败误判为远端删信；</li>
+<li><strong>获取邮件内容</strong>：下载邮件正文时，若意图仅为后台缓存或备份，客户端应当使用 <code>.PEEK</code> 后缀的抓取项（如 <code>BODY.PEEK[]</code>），因为标准 <code>BODY[]</code> 会被服务端隐式标记为 <code>\Seen</code> 已读，从而改变用户的阅读状态（RFC 4549 第 4.3.3 节）。</li>
+</ol>
+<hr>
+<h2 id="邮箱迁移与中断恢复">邮箱迁移与中断恢复</h2>
+<p>在实际业务场景中，邮箱迁移指将邮件数据从源服务器（Source Server）完整复制到目标服务器（Target Server）。这一过程需明确应用层消息复制与完整邮箱服务恢复的边界。</p>
+<h3 id="1-服务恢复边界与凭据保护工程建议">1. 服务恢复边界与凭据保护（工程建议）</h3>
+<p>使用 IMAP 协议进行数据搬迁仅能同步逻辑文件夹内的邮件报文与部分系统标志。<strong>访问控制列表（Access Control List，ACL，RFC 4314）、配额根配置（RFC 2087）、邮件域 DNS 路由与 MX 记录、用户别名（Aliases）与密码凭据，均无法通过 IMAP <code>APPEND</code> 自动还原</strong>。完整的邮箱服务恢复需在服务编排层独立重建上述配置。</p>
+<p>在迁移与恢复工程中，应遵循下列凭据与权限保护实践：</p>
+<ul>
+<li><strong>最小权限与传输安全</strong>：源端与目标端连接必须强制启用传输层安全（Transport Layer Security，TLS）加密；迁移工具应尽量使用专用管理员令牌或单次受限凭据，避免直接明文持有用户主密码；</li>
+<li><strong>配置与数据分离备份</strong>：邮箱的账户定义、别名表与配额设定应通过独立运维接口单独导出并加密保存，且独立副本与敏感材料必须配置专门的访问控制，避免与生产系统处于同一受损域；</li>
+<li><strong>一致性校验基准</strong>：迁移程序应建立包含 <code>(源服务器, 源邮箱, 源UIDVALIDITY, 源UID) -> (目标服务器, 目标邮箱, 目标UIDVALIDITY, 目标UID)</code> 的全套映射记录，并在迁移完成后抽查或全量比对邮件内容摘要（如 SHA-256 哈希）、邮件总数与关键标志。</li>
+</ul>
+<h3 id="2-迁移阶段状态矩阵">2. 迁移阶段状态矩阵</h3>
+<p>在应用层执行批量邮箱迁移时，各阶段的核心协议交互与失败处理策略如下：</p>
+<div class="table-wrapper" tabindex="0">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<table><thead><tr><th align="left">迁移阶段</th><th align="left">关键命令与动作</th><th align="left">依赖扩展与响应码</th><th align="left">失败边界与断点处理</th></tr></thead><tbody><tr><td align="left"><strong>1. 凭据与连通性校验</strong></td><td align="left"><code>AUTHENTICATE</code> / <code>LOGIN</code>，获取能力集</td><td align="left">RFC 3501 <code>CAPABILITY</code></td><td align="left">源端或目标端身份认证失败直接终止；捕获凭据过期或网络拒绝</td></tr><tr><td align="left"><strong>2. 目录结构枚举</strong></td><td align="left"><code>LIST "" "*"</code>，对齐文件夹与专用属性</td><td align="left">RFC 6154 <code>SPECIAL-USE</code></td><td align="left">目标端若缺少对应目录则调用 <code>CREATE</code>；若不支持专用属性则降级为普通目录</td></tr><tr><td align="left"><strong>3. 邮箱状态基准探测</strong></td><td align="left"><code>STATUS &#x3C;mailbox> (UIDVALIDITY UIDNEXT MESSAGES)</code></td><td align="left">RFC 3501 <code>STATUS</code></td><td align="left">记录源端基准；若目标端原已有数据，记录其 <code>UIDVALIDITY</code> 防止混淆</td></tr><tr><td align="left"><strong>4. 消息本体同步写入</strong></td><td align="left">源端 <code>UID FETCH</code>，目标端 <code>APPEND</code></td><td align="left">RFC 4315 <code>UIDPLUS</code>（<code>APPENDUID</code>）</td><td align="left">建议保留内部日期 <code>INTERNALDATE</code>；记录完整映射表</td></tr><tr><td align="left"><strong>5. 标志对齐与差异重试</strong></td><td align="left">比对两端 <code>FLAGS</code>，执行 <code>UID STORE +FLAGS.SILENT</code></td><td align="left">RFC 4549 §4.2.3</td><td align="left">网络中断时保留断点；目标端不支持的关键字记录为可接受差异</td></tr></tbody></table></div>
+<h3 id="3-消息上传与断点非幂等重试">3. 消息上传与断点非幂等重试</h3>
+<p>将邮件写入目标服务器的核心指令是 <code>APPEND</code>（RFC 3501 第 6.3.11 节）。若目标服务端支持 RFC 4315 UIDPLUS 扩展，可在追加成功后直接返回包含分配 UID 的 <code>APPENDUID</code> 响应码（UIDPLUS 扩展提供了 <code>APPENDUID</code>、<code>COPYUID</code> 写入标识反馈以及 <code>UID EXPUNGE</code> 等高级支持，避免了客户端盲目反查）。</p>
+<p>在以下教学示例中，假定客户端通过字面量（Literal）传输一段包含信头与正文的 ASCII 文本，行尾均采用标准 CRLF 换行；包括末行 CRLF 在内，字面量总长度经严格计算为 163 字节（即 <code>{163}</code>，注意 <code>C:</code> 前缀仅为教学标记，不计入网络实际传输的字节流）：</p>
+<pre class="astro-code astro-code-themes min-light night-owl" style="--shiki-light:#24292eff;--shiki-dark:#d6deeb;--shiki-light-bg:#ffffff;--shiki-dark-bg:#011627; overflow-x: auto;--file-name-offset: -0.75rem;" tabindex="0" data-language="text"><code><span class="line"><span>C: A101 APPEND "Archive" (\Seen) "25-Aug-2021 14:30:00 +0800" {163}</span></span>
+<span class="line"><span>S: + Ready for literal data</span></span>
+<span class="line"><span>C: Date: Wed, 25 Aug 2021 14:29:50 +0800</span></span>
+<span class="line"><span>C: From: alice@example.com</span></span>
+<span class="line"><span>C: To: bob@example.net</span></span>
+<span class="line"><span>C: Message-Id: &#x3C;msg-20210825-01@example.com></span></span>
+<span class="line"><span>C: </span></span>
+<span class="line"><span>C: Migration test message content.</span></span>
+<span class="line"><span>S: A101 OK [APPENDUID 1629850000 801] APPEND completed</span></span></code></pre>
+<h4 id="保留原始内部接收日期">保留原始内部接收日期</h4>
+<p>在执行 <code>APPEND</code> 时，迁移程序应当（SHOULD）显式带上源端提取到的 <code>INTERNALDATE</code> 时间戳字符串（RFC 4549 第 4.2.2.3 节）。若省略此参数，目标服务端将按当前系统时间记录接收日期，导致客户端按接收时间排序时发生错乱。工程上需验证目标服务端是否准确支持并持久化了该日期。</p>
+<h4 id="网络中断与非幂等重试恢复">网络中断与非幂等重试恢复</h4>
+<p><code>APPEND</code> 是一个典型的非幂等操作（Non-idempotent Command）。如果在发送完数据后、收到 <code>OK</code> 之前网络连接意外断开，迁移程序无法通过协议返回直接确定该邮件是否已在目标端成功落盘（RFC 4549 第 5.1 节）。</p>
+<ul>
+<li>盲目重发极易导致目标端生成两封包含不同 UID 的重复邮件；</li>
+<li>重连后，程序可利用 <code>UID SEARCH HEADER "Message-Id" "&#x3C;...>" ON &#x3C;date></code> 作为候选排查线索。但依据 RFC 4549 第 4.2.2.1 节，由于网络邮件中可能存在缺失、重复或恶意的 <code>Message-Id</code>，且搜索结果可能返回多个 UID，<strong>一旦检索返回多个匹配条目，程序绝对不得（MUST NOT）随意采纳其中任何一个 UID</strong>；</li>
+<li>单条搜索结果同样只能作为候选；迁移程序需结合内容哈希摘要、本次上传前记录的目标端 UID 基线与操作日志等额外证据，确认该邮件确属本次未确认追加所产生；仅凭字节大小或单条 Message-ID 相同，绝对不得直接推定并推进断点。若无法彻底排除既有副本或无法确认执行状态，迁移程序必须保留不确定状态，暂停自动化处理并报警交由人工审计；只有在确认该邮件未被目标端持久化接收的前提下，方可安全发起重传。</li>
+</ul>
+<h3 id="4-multiappend-与批量性能权衡">4. MULTIAPPEND 与批量性能权衡</h3>
+<p>当需要迁移海量历史邮件时，逐封进行 <code>APPEND</code> 会因反复等待服务端响应而产生往返时延（Round-Trip Time，RTT）。</p>
+<ul>
+<li>若目标端支持 <code>MULTIAPPEND</code>（RFC 3502，支持单命令追加多封邮件）与 <code>LITERAL+</code>（RFC 2088，支持非同步字面量传输），程序可在单次网络往返中连续提交多封邮件（RFC 4549 第 4.2.2.5 节）；</li>
+<li><strong>失败边界考量</strong>：<code>MULTIAPPEND</code> 的执行是<strong>原子的（Atomic）</strong>。若一组待写入的多封邮件中，前部分合法而最后一封由于超出单信大小限制或格式错误被目标端拒绝，整批操作将被整体回滚，没有任何一封邮件会被保存。因此，批量写入必须具备单信降级拆分与错误隔离重试逻辑。</li>
+</ul>
+<hr>
+<h2 id="备份方式与恢复目标">备份方式与恢复目标</h2>
+<p>邮件系统的数据保护需统筹考虑误操作、硬件故障与介质灾难。工程设计中通常围绕恢复点目标（Recovery Point Objective，RPO，即业务设定的允许数据丢失时间目标）与恢复时间目标（Recovery Time Objective，RTO，即系统发生灾难后服务恢复所需的时间上限目标）进行技术权衡。</p>
+<h3 id="1-物理层备份与逻辑层导出的设计取舍">1. 物理层备份与逻辑层导出的设计取舍</h3>
+<p>邮件系统的备份方案通常在底层存储快照与应用层逻辑导出之间进行选型，两者具有不同的适用条件与工程边界：</p>
+<div class="table-wrapper" tabindex="0">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<table><thead><tr><th align="left">维度</th><th align="left">物理层镜像 / 存储快照（如 Maildir/Mbox 快照）</th><th align="left">应用层协议导出（如 IMAP 同步归档）</th></tr></thead><tbody><tr><td align="left"><strong>一致性机制</strong></td><td align="left">依赖底层文件系统冻结或写时复制（Copy-on-Write）；需防范内存索引与磁盘文件的时间点裂痕；快照本身可能处于同一故障域，需定期同步至异地独立副本</td><td align="left">依赖应用层读取；在用户持续写入时，需配合相关写入操作冻结、增量追平并结合切换维护窗口方能获取严格时间点视图</td></tr><tr><td align="left"><strong>资源消耗</strong></td><td align="left">备份开销通常较小，执行耗时与磁盘增量规模直接相关</td><td align="left">需逐条通过网络解析信头与正文，占用较多的 CPU、内存与网络带宽</td></tr><tr><td align="left"><strong>恢复特性（RTO）</strong></td><td align="left">整卷挂载或块级回滚较快，具体时间取决于介质吞吐与索引修复耗时，须结合实测确定</td><td align="left">需通过协议指令逐封写入并重建目标端存储与检索索引，整体耗时相对较长</td></tr><tr><td align="left"><strong>灾难恢复颗粒度</strong></td><td align="left">偏向全实例或整卷级粗粒度恢复；单封邮件或单用户定向提取相对繁琐</td><td align="left">具备天然的逻辑细粒度；支持单文件夹、单时间段或单封误删邮件的就地注入与重放</td></tr><tr><td align="left"><strong>异构适应性</strong></td><td align="left">强绑定于特定的底层操作系统、文件系统布局或邮件服务端软件版本</td><td align="left">基于标准协议报文格式；具备良好的跨版本与跨邮件系统迁移能力</td></tr></tbody></table></div>
+<h3 id="2-备份恢复中的-uidvalidity-冲突与防范">2. 备份恢复中的 UIDVALIDITY 冲突与防范</h3>
+<p>在从历史快照或离线备份中恢复邮件系统时，常见的逻辑隐患在于：<strong>底层数据回滚到了旧状态，但系统未能正确识别 UID 的历史分配水位，且未更新 UIDVALIDITY</strong>。</p>
+<p>考虑如下典型故障场景：</p>
+<pre class="astro-code astro-code-themes min-light night-owl" style="--shiki-light:#24292eff;--shiki-dark:#d6deeb;--shiki-light-bg:#ffffff;--shiki-dark-bg:#011627; overflow-x: auto;--file-name-offset: -0.75rem;" tabindex="0" data-language="text"><code><span class="line"><span>阶段一（生产运行）：</span></span>
+<span class="line"><span>  INBOX UIDVALIDITY: 1000</span></span>
+<span class="line"><span>  最高已分配 UID: 500</span></span>
+<span class="line"><span>  新邮件接入，系统分配 UID 501: "Important Contract"</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>阶段二（系统故障并回滚旧快照）：</span></span>
+<span class="line"><span>  运维人员从昨天的快照完整回滚，此时快照中的最高 UID 仅记录到 500；</span></span>
+<span class="line"><span>  若系统恢复上线后未更新 UIDVALIDITY，仍沿用 1000：</span></span>
+<span class="line"><span>  新邮件再次到达，系统误将已分配过的 UID 501 重新分配给另一封邮件 "Draft Idea"！</span></span></code></pre>
+<p>在此场景下，若已缓存过旧状态的客户端重新连上服务器：</p>
+<ol>
+<li>客户端对比 UIDVALIDITY 发现依然是 1000，错误判定本地缓存依然合法；</li>
+<li>客户端本地缓存的 UID 501 为 “Important Contract”，而服务端当前 UID 501 对应 “Draft Idea”，两者发生致命内容错位，后续的标志变更与删除操作将导致严重的数据损毁；</li>
+<li><strong>状态重置准则</strong>：当系统恢复无法严格保证原有“邮箱名 + UIDVALIDITY + UID”三元组与历史内容一一对应，或无法确保未来不会复用已分配过的 UID 水位时，<strong>服务端必须为受影响邮箱分配一个严格大于原数值的全新 UIDVALIDITY</strong>。该变动将指示客户端安全作废本地旧缓存并全量重新拉取，确保状态机恢复自洽（RFC 3501 第 2.3.1.1 节）。若底层系统具备持久的全局分配器，能够完整维系历史水位且三元组对应关系毫发无损，则可合规保持原 UIDVALIDITY。</li>
+</ol>
+<h3 id="3-恢复点目标rpo与恢复时间目标rto的推导">3. 恢复点目标（RPO）与恢复时间目标（RTO）的推导</h3>
+<p>在无特化分布式数据库支持的环境下，结合标准邮件系统架构进行工程推导：</p>
+<ul>
+<li><strong>RPO 边界</strong>：实际可恢复的数据点取决于最后经核验的有效恢复点、定时备份频率与数据复制延迟。若仅依赖定期的离线定时备份，发生故障时的潜在数据损失窗口将受限于备份轮次的时间间隔；若引入底层存储的主从实时复制，复制链路虽然能够显著缩小潜在数据损失时间，但也存在将源端误删或软件逻辑损坏实时同步至副本的风险；</li>
+<li><strong>RTO 优化与恢复编排</strong>：系统的实际恢复时间必须基于灾备演练实测。在具备可靠的持久化进站队列、充足磁盘容量与正确路由规则的前提下，一种可选的恢复调度范例是：优先拉起边缘传输代理以恢复简单邮件传输协议（Simple Mail Transfer Protocol，SMTP）的进站排队，向发信方确认收件以避免跨域退信；随后按用户活跃度分批挂载恢复后端存储；最后逐步放行客户端的 IMAP 检索与读写。</li>
+</ul>
+<hr>
+<h2 id="规范约束must--should与工程实现边界">规范约束（MUST / SHOULD）与工程实现边界</h2>
+<p>下表对照了相关 RFC 规范对邮箱状态同步的基线要求与生产环境下的工程实践：</p>
+<div class="table-wrapper" tabindex="0">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<table><thead><tr><th align="left">机制维度</th><th align="left">RFC 协议基线规范</th><th align="left">生产运维与工程实现考量</th></tr></thead><tbody><tr><td align="left"><strong>三元组唯一性</strong></td><td align="left">邮箱名 + UIDVALIDITY + UID 必须（MUST）永久唯一对应一封不可变邮件（RFC 3501 §2.3.1.1）</td><td align="left">底层存储发生不连续变动、历史 UID 水位无法保证不被复用时，必须更新 UIDVALIDITY</td></tr><tr><td align="left"><strong>UID 失效处理</strong></td><td align="left">UIDVALIDITY 变动时，客户端必须（MUST）清空本地缓存并废除依赖旧 UID 的动作（RFC 4549 §4.1）</td><td align="left">独立数据备份工具应保留独立历史归档，仅作废与服务端失效 UID 的映射缓存</td></tr><tr><td align="left"><strong>保留待上传项</strong></td><td align="left">UID 失效时，客户端绝对不得（MUST NOT）取消未完成的上传排队任务（RFC 4549 §4.1）</td><td align="left">离线撰写的草稿和待归档邮件保留在本地待发队列中，待邮箱重新对齐后再次写入</td></tr><tr><td align="left"><strong>标志同步方式</strong></td><td align="left">离线重放时不得（MUST NOT）使用全量 <code>FLAGS</code> 覆盖，应当（SHOULD）使用增量 <code>+FLAGS.SILENT</code>（RFC 4549 §4.2.3）</td><td align="left">目标邮箱新建且无并发写者时可全量写入初始标志；对于不支持的关键字应记录差异</td></tr><tr><td align="left"><strong>断点操作恢复</strong></td><td align="left">连接中断时必须（MUST）记录位置；非幂等操作重连后必须（MUST）校验执行情况（RFC 4549 §5.1）</td><td align="left">对中断的 <code>APPEND</code>，仅凭 Message-ID 或大小不得推定已落盘，无法排查时须暂停自动重试</td></tr><tr><td align="left"><strong>读取正文防污染</strong></td><td align="left">抓取待缓存的正文时应避免修改 <code>\Seen</code>（RFC 4549 §4.3.3，建议使用 <code>.PEEK</code>）</td><td align="left">后台数据迁移或索引构建时，抓取消息数据应当使用 <code>BODY.PEEK[...]</code> 代替 <code>BODY[...]</code></td></tr></tbody></table></div>
+<hr>
+<h2 id="总结">总结</h2>
+<p>邮箱服务的备份、迁移与恢复核心在于维系状态机的逻辑一致性。RFC 3501 确立的“邮箱名 + UIDVALIDITY + UID”三元组不可变性，构成了邮件稳定寻址的基石；而在灾难回滚、异构搬迁或网络重连时，清晰界定离线客户端同步算法与独立数据备份的职责差异，严格执行 UIDVALIDITY 校验、采用增量式标志对齐并防范非幂等追加产生的重复数据，是确保邮件系统高可用与数据自洽的关键准则。在方案落地中，结合实际业务容忍度客观评估物理快照与逻辑导出的设计取舍，并通过常态化实测校准实际恢复能力，方能构建出健壮可靠的邮件灾备架构。</p>
+<hr>
+<h2 id="参考文献">参考文献</h2>
+<ul>
+<li><a id="ref-rfc3501" href="https://www.rfc-editor.org/rfc/rfc3501" target="_blank" rel="noopener noreferrer">RFC 3501: INTERNET MESSAGE ACCESS PROTOCOL - VERSION 4rev1 (Standards Track, 2003-03)</a></li>
+<li><a id="ref-rfc4549" href="https://www.rfc-editor.org/rfc/rfc4549" target="_blank" rel="noopener noreferrer">RFC 4549: Synchronization Operations for Disconnected IMAP4 Clients (Informational, 2006-06)</a></li>
+<li><a id="ref-rfc4315" href="https://www.rfc-editor.org/rfc/rfc4315" target="_blank" rel="noopener noreferrer">RFC 4315: Internet Message Access Protocol (IMAP) - UIDPLUS extension (Standards Track, 2005-12)</a></li>
+<li><a id="ref-rfc6154" href="https://www.rfc-editor.org/rfc/rfc6154" target="_blank" rel="noopener noreferrer">RFC 6154: IMAP LIST Extension for Special-Use Mailboxes (Standards Track, 2011-03)</a></li>
+</ul>
+<!--/email_off--></article><hr class="my-8 border-dashed"><div id="btt-btn-container" class="fixed inset-e-4 bottom-8 z-50 md:sticky md:inset-e-auto md:float-end md:me-1 translate-y-14 opacity-0 transition duration-500"><button data-button="back-to-top" class="group bg-background relative px-2 py-1 size-14 rounded-full shadow-xl md:h-8 md:w-fit md:rounded-md md:shadow-none md:focus-visible:rounded-none md:bg-background/35 md:bg-clip-padding md:backdrop-blur-lg"><span id="progress-indicator" class="absolute inset-0 -z-10 block size-14 scale-110 rounded-full bg-transparent md:hidden md:h-8 md:rounded-md"></span><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="inline-block rotate-90 md:hidden" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M5 12h14M5 12l6 6M5 12l6-6" /></svg><span class="group-hover:text-accent sr-only text-sm md:not-sr-only"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="inline-block size-4" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M12 5v14M16 9l-4-4M8 9l4-4" /></svg> 回到顶部</span></button></div><script data-astro-rerun>
+  function backToTop() {
+    const rootElement = document.documentElement;
+    const btnContainer = document.querySelector("#btt-btn-container");
+    const backToTopBtn = document.querySelector("[data-button='back-to-top']");
+    const progressIndicator = document.querySelector("#progress-indicator");
+
+    if (!rootElement || !btnContainer || !backToTopBtn || !progressIndicator)
+      return;
+
+    backToTopBtn.addEventListener("click", () => {
+      document.body.scrollTop = 0;
+      document.documentElement.scrollTop = 0;
+    });
+
+    let lastVisible = null;
+    function handleScroll() {
+      const scrollTotal = rootElement.scrollHeight - rootElement.clientHeight;
+      const scrollTop = rootElement.scrollTop;
+      const scrollPercent = Math.floor((scrollTop / scrollTotal) * 100);
+
+      progressIndicator.style.setProperty(
+        "background-image",
+        `conic-gradient(var(--accent), var(--accent) ${scrollPercent}%, transparent ${scrollPercent}%)`
+      );
+
+      const isVisible = scrollTop / scrollTotal > 0.3;
+
+      if (isVisible !== lastVisible) {
+        btnContainer.classList.toggle("opacity-100", isVisible);
+        btnContainer.classList.toggle("translate-y-0", isVisible);
+        btnContainer.classList.toggle("opacity-0", !isVisible);
+        btnContainer.classList.toggle("translate-y-14", !isVisible);
+        lastVisible = isVisible;
+      }
+    }
+
+    let ticking = false;
+    document.addEventListener("scroll", () => {
+      if (!ticking) {
+        window.requestAnimationFrame(() => {
+          handleScroll();
+          ticking = false;
+        });
+        ticking = true;
+      }
+    });
+  }
+  backToTop();
+</script><ul class="mt-4 mb-8 flex flex-wrap gap-4 sm:my-8"><li><a data-astro-transition-scope="astro-bztu2lml-1" href="/tags/邮箱系统/" class="flex items-center gap-0.5 border-foreground border-b-2 border-dashed hover:border-accent hover:text-accent hover:-mt-0.5 focus-visible:text-accent focus-visible:border-none text-sm"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="opacity-80 size-4" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M5 9h14M5 15h14M11 4 7 20M17 4l-4 16" /></svg>邮箱系统</a></li><li><a data-astro-transition-scope="astro-bztu2lml-2" href="/tags/备份与恢复/" class="flex items-center gap-0.5 border-foreground border-b-2 border-dashed hover:border-accent hover:text-accent hover:-mt-0.5 focus-visible:text-accent focus-visible:border-none text-sm"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="opacity-80 size-4" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M5 9h14M5 15h14M11 4 7 20M17 4l-4 16" /></svg>备份与恢复</a></li><li><a data-astro-transition-scope="astro-bztu2lml-3" href="/tags/数据迁移/" class="flex items-center gap-0.5 border-foreground border-b-2 border-dashed hover:border-accent hover:text-accent hover:-mt-0.5 focus-visible:text-accent focus-visible:border-none text-sm"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="opacity-80 size-4" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M5 9h14M5 15h14M11 4 7 20M17 4l-4 16" /></svg>数据迁移</a></li><li><a data-astro-transition-scope="astro-bztu2lml-4" href="/tags/imap/" class="flex items-center gap-0.5 border-foreground border-b-2 border-dashed hover:border-accent hover:text-accent hover:-mt-0.5 focus-visible:text-accent focus-visible:border-none text-sm"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="opacity-80 size-4" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M5 9h14M5 15h14M11 4 7 20M17 4l-4 16" /></svg>IMAP</a></li><li><a data-astro-transition-scope="astro-bztu2lml-5" href="/tags/rfc-3501/" class="flex items-center gap-0.5 border-foreground border-b-2 border-dashed hover:border-accent hover:text-accent hover:-mt-0.5 focus-visible:text-accent focus-visible:border-none text-sm"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="opacity-80 size-4" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M5 9h14M5 15h14M11 4 7 20M17 4l-4 16" /></svg>RFC 3501</a></li><li><a data-astro-transition-scope="astro-bztu2lml-6" href="/tags/rfc-4549/" class="flex items-center gap-0.5 border-foreground border-b-2 border-dashed hover:border-accent hover:text-accent hover:-mt-0.5 focus-visible:text-accent focus-visible:border-none text-sm"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="opacity-80 size-4" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M5 9h14M5 15h14M11 4 7 20M17 4l-4 16" /></svg>RFC 4549</a></li></ul><hr class="my-8 border-dashed"><div data-pagefind-ignore class="my-8 grid grid-cols-1 gap-6 sm:grid-cols-2"><a href="/posts/mail-domains-aliases-tenancy/" class="flex w-full gap-1 hover:opacity-75"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="inline-block flex-none rtl:rotate-180" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M5 12h14M5 12l6 6M5 12l6-6" /></svg><div><span>上一篇</span><div class="text-accent/85 text-sm">域、账号、别名与多租户隔离</div></div></a><a href="/posts/mail-spam-classification/" class="flex w-full justify-end gap-1 text-end hover:opacity-75 sm:col-start-2"><div><span>下一篇</span><div class="text-accent/85 text-sm">垃圾邮件判定与误杀成本</div></div><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="inline-block flex-none rtl:rotate-180" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M5 12h14M13 18l6-6M13 6l6 6" /></svg></a></div></main><footer class="app-layout mt-auto"><div class="border-border flex flex-col items-center justify-between border-t py-6 sm:flex-row-reverse sm:py-4"><div class="flex flex-wrap items-center gap-1"><a href="https://github.com/SaromChars" title="Sarom Chars 的 GitHub" class="group inline-flex items-center gap-1 hover:text-accent p-2 hover:rotate-6 sm:p-1"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="inline-block size-6 scale-125 fill-transparent stroke-current stroke-2 opacity-90 group-hover:fill-transparent sm:scale-110" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M9 19c-4.3 1.4-4.3-2.5-6-3m12 5v-3.5c0-1 .1-1.4-.5-2 2.8-.3 5.5-1.4 5.5-6a4.6 4.6 0 0 0-1.3-3.2 4.2 4.2 0 0 0-.1-3.2s-1.1-.3-3.5 1.3a12.3 12.3 0 0 0-6.2 0C6.5 2.8 5.4 3.1 5.4 3.1a4.2 4.2 0 0 0-.1 3.2A4.6 4.6 0 0 0 4 9.5c0 4.6 2.7 5.7 5.5 6-.6.6-.6 1.2-.5 2V21" /></svg><span class="sr-only">Sarom Chars 的 GitHub</span></a></div><div class="my-2 flex flex-col items-center whitespace-nowrap sm:flex-row"><span>版权 &#169; 2026</span><span class="hidden sm:inline">&nbsp;|&nbsp;</span><span>保留所有权利。</span></div></div></footer><script type="module">var e=`theme`,t=`light`,n=`dark`;function r(){return localStorage.getItem(e)||(window.matchMedia(`(prefers-color-scheme: dark)`).matches?n:t)}var i=window.__theme?.value??r();function a(){localStorage.setItem(e,i),o()}function o(){let e=document.firstElementChild;e?.setAttribute(`data-theme`,i),e?.classList.toggle(`dark`,i===n),document.querySelector(`#theme-btn`)?.setAttribute(`aria-label`,i);let t=window.getComputedStyle(document.body).backgroundColor;document.querySelector(`meta[name='theme-color']`)?.setAttribute(`content`,t)}function s(){o(),document.querySelector(`#theme-btn`)?.addEventListener(`click`,()=>{i=i===t?n:t,a()})}s(),document.addEventListener(`astro:after-swap`,s),document.addEventListener(`astro:before-swap`,e=>{let t=document.querySelector(`meta[name='theme-color']`)?.getAttribute(`content`);t&&e.newDocument.querySelector(`meta[name='theme-color']`)?.setAttribute(`content`,t)}),window.matchMedia(`(prefers-color-scheme: dark)`).addEventListener(`change`,({matches:e})=>{i=e?n:t,a()});</script></body></html><script type="module">var e=document.querySelector(`#article`);if(e?.querySelector(`a[href^="#ref-"]`)){let t=null,n=!1,r=document.createElement(`button`);r.type=`button`,r.className=`citation-return`,r.textContent=`返回阅读位置`,r.setAttribute(`data-pagefind-ignore`,``),e.addEventListener(`click`,n=>{if(n.button!==0||n.metaKey||n.ctrlKey||n.shiftKey||n.altKey)return;let i=n.target instanceof Element?n.target.closest(`a[href^="#ref-"]`):null;if(!i||!e.contains(i))return;let a=i.hash,o=document.getElementById(decodeURIComponent(a.slice(1)));o&&e.contains(o)&&(t={source:i,url:window.location.href,top:window.scrollY,left:window.scrollX,targetHash:a},o.insertAdjacentElement(`afterend`,r))}),r.addEventListener(`click`,()=>{if(!t||n)return;let e=t,i=i=>{r.remove(),window.requestAnimationFrame(()=>{window.requestAnimationFrame(()=>{e.source.focus({preventScroll:!0}),window.scrollTo({top:e.top,left:e.left,behavior:`instant`}),t=null,n=!1,i?.()})})};window.location.href===e.url?i():(n=!0,window.addEventListener(`popstate`,()=>{let e=window.history.scrollRestoration;window.history.scrollRestoration=`manual`,window.setTimeout(()=>{i(()=>{window.history.scrollRestoration=e})},0)},{once:!0}),window.history.back())}),window.addEventListener(`hashchange`,()=>{!n&&t&&window.location.hash!==t.targetHash&&(r.remove(),t=null)})}</script><script data-astro-rerun>
+  function createProgressBar() {
+    const progressContainer = document.createElement("div");
+    progressContainer.className =
+      "progress-container fixed top-0 z-10 h-1 w-full bg-background";
+
+    const progressBar = document.createElement("div");
+    progressBar.className = "progress-bar h-1 w-0 bg-accent";
+    progressBar.id = "myBar";
+
+    progressContainer.appendChild(progressBar);
+    document.body.appendChild(progressContainer);
+  }
+  createProgressBar();
+
+  function updateScrollProgress() {
+    document.addEventListener("scroll", () => {
+      const winScroll =
+        document.body.scrollTop || document.documentElement.scrollTop;
+      const height =
+        document.documentElement.scrollHeight -
+        document.documentElement.clientHeight;
+      const scrolled = (winScroll / height) * 100;
+      if (document) {
+        const myBar = document.getElementById("myBar");
+        if (myBar) {
+          myBar.style.width = scrolled + "%";
+        }
+      }
+    });
+  }
+  updateScrollProgress();
+
+  function addHeadingLinks() {
+    const headings = Array.from(
+      document.querySelectorAll("h2, h3, h4, h5, h6")
+    );
+    for (const heading of headings) {
+      heading.classList.add("group");
+      const link = document.createElement("a");
+      link.className =
+        "heading-link ms-2 no-underline opacity-75 md:opacity-0 md:group-hover:opacity-100 md:focus:opacity-100";
+      link.href = "#" + heading.id;
+
+      const span = document.createElement("span");
+      span.ariaHidden = "true";
+      span.innerText = "#";
+      link.appendChild(span);
+      heading.appendChild(link);
+    }
+  }
+  addHeadingLinks();
+
+  function attachCopyButtons() {
+    const copyButtonLabel = "Copy";
+    const codeBlocks = Array.from(document.querySelectorAll("pre"));
+
+    for (const codeBlock of codeBlocks) {
+      const wrapper = document.createElement("div");
+      wrapper.style.position = "relative";
+
+      const computedStyle = getComputedStyle(codeBlock);
+      const hasFileNameOffset =
+        computedStyle.getPropertyValue("--file-name-offset").trim() !== "";
+
+      const topClass = hasFileNameOffset
+        ? "top-(--file-name-offset)"
+        : "-top-3";
+
+      const copyButton = document.createElement("button");
+      copyButton.className = `copy-code absolute end-3 ${topClass} rounded bg-muted border border-muted px-2 py-1 text-xs leading-4 text-foreground font-medium`;
+      copyButton.innerHTML = copyButtonLabel;
+      codeBlock.setAttribute("tabindex", "0");
+      codeBlock.appendChild(copyButton);
+
+      codeBlock?.parentNode?.insertBefore(wrapper, codeBlock);
+      wrapper.appendChild(codeBlock);
+
+      copyButton.addEventListener("click", async () => {
+        await copyCode(codeBlock, copyButton);
+      });
+    }
+
+    async function copyCode(block, button) {
+      const code = block.querySelector("code");
+      const text = code?.innerText;
+
+      await navigator.clipboard.writeText(text ?? "");
+
+      button.innerText = "Copied";
+
+      setTimeout(() => {
+        button.innerText = copyButtonLabel;
+      }, 700);
+    }
+  }
+  attachCopyButtons();
+
+  /** Accessible image lightbox for article images. */
+  function initLightbox() {
+    const article = document.getElementById("article");
+    if (!article) return;
+
+    const prefersReducedMotion = () =>
+      window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+    let overlay = null;
+    let lastFocused = null;
+    let removeDragListeners = null;
+
+    // Defer attribute mutations so they don't push the LCP timestamp.
+    // Event listeners below use delegation and don't need the attributes to exist yet.
+    requestAnimationFrame(() => {
+      const images = Array.from(article.querySelectorAll("img"));
+      for (const image of images) {
+        if (image.closest("a")) continue;
+        image.setAttribute("role", "button");
+        image.setAttribute("tabindex", "0");
+        image.setAttribute("aria-haspopup", "dialog");
+        image.setAttribute(
+          "aria-label",
+          image.alt ? `Zoom image: ${image.alt}` : "Zoom image"
+        );
+      }
+    });
+
+    function open(src, alt, trigger) {
+      if (overlay) return;
+      lastFocused = trigger ?? document.activeElement;
+
+      overlay = document.createElement("div");
+      overlay.setAttribute("role", "dialog");
+      overlay.setAttribute("aria-modal", "true");
+      overlay.setAttribute(
+        "aria-label",
+        alt ? `Image preview: ${alt}` : "Image preview"
+      );
+      overlay.className =
+        "fixed inset-0 z-50 flex cursor-zoom-out items-center justify-center bg-black/70 backdrop-blur-sm opacity-0 transition-opacity duration-200 motion-reduce:transition-none";
+
+      const closeButton = document.createElement("button");
+      closeButton.type = "button";
+      closeButton.setAttribute("aria-label", "Close image preview");
+      closeButton.className =
+        "absolute end-4 top-4 z-1 flex size-11 items-center justify-center rounded bg-black/50 text-3xl leading-none text-white";
+      closeButton.innerHTML = "&#10005;";
+      closeButton.addEventListener("click", close);
+
+      const image = document.createElement("img");
+      image.src = src;
+      image.alt = "";
+      image.className =
+        "max-h-[90dvh] max-w-[90dvw] cursor-default object-contain transition-transform duration-100 ease-out motion-reduce:transition-none data-[zoom=drag]:cursor-grabbing data-[zoom=drag]:transition-none data-[zoom=in]:cursor-grab";
+
+      overlay.append(closeButton, image);
+      overlay.addEventListener("click", e => {
+        if (e.target === overlay && currentScale <= 1) close();
+      });
+
+      let currentScale = 1;
+      let translateX = 0;
+      let translateY = 0;
+      let initialDist = 0;
+      let initialScale = 1;
+      let panStartX = 0;
+      let panStartY = 0;
+      let panStartTranslateX = 0;
+      let panStartTranslateY = 0;
+      let lastTapTime = 0;
+
+      function applyTransform() {
+        image.style.transform = `scale(${currentScale}) translate(${translateX}px, ${translateY}px)`;
+        // A backdrop click only closes at fit size, so drop the zoom-out cursor while zoomed.
+        overlay?.classList.toggle("cursor-zoom-out", currentScale <= 1);
+      }
+
+      function resetTransform() {
+        currentScale = 1;
+        translateX = 0;
+        translateY = 0;
+        image.style.transform = "";
+        image.removeAttribute("data-zoom");
+        overlay?.classList.add("cursor-zoom-out");
+      }
+
+      // Keep the zoomed image from being panned past its edges.
+      function clampTranslate() {
+        if (!overlay) return;
+        const maxX = Math.max(
+          0,
+          (image.clientWidth - overlay.clientWidth / currentScale) / 2
+        );
+        const maxY = Math.max(
+          0,
+          (image.clientHeight - overlay.clientHeight / currentScale) / 2
+        );
+        translateX = Math.min(maxX, Math.max(-maxX, translateX));
+        translateY = Math.min(maxY, Math.max(-maxY, translateY));
+      }
+
+      overlay.addEventListener(
+        "touchstart",
+        e => {
+          const t = e.touches;
+          if (t.length === 2) {
+            image.setAttribute("data-zoom", "drag");
+            initialDist = Math.hypot(
+              t[1].clientX - t[0].clientX,
+              t[1].clientY - t[0].clientY
+            );
+            initialScale = currentScale;
+          } else if (t.length === 1) {
+            const now = Date.now();
+            if (now - lastTapTime < 300) {
+              e.preventDefault();
+              if (currentScale > 1) {
+                resetTransform();
+              } else {
+                currentScale = 2;
+                translateX = 0;
+                translateY = 0;
+                applyTransform();
+                image.setAttribute("data-zoom", "in");
+              }
+              lastTapTime = 0;
+              panStartX = t[0].clientX;
+              panStartY = t[0].clientY;
+              panStartTranslateX = translateX;
+              panStartTranslateY = translateY;
+            } else {
+              lastTapTime = now;
+              if (currentScale > 1) {
+                image.setAttribute("data-zoom", "drag");
+                panStartX = t[0].clientX;
+                panStartY = t[0].clientY;
+                panStartTranslateX = translateX;
+                panStartTranslateY = translateY;
+              }
+            }
+          }
+        },
+        { passive: false }
+      );
+
+      overlay.addEventListener(
+        "touchmove",
+        e => {
+          const t = e.touches;
+          if (t.length === 2) {
+            e.preventDefault();
+            const dist = Math.hypot(
+              t[1].clientX - t[0].clientX,
+              t[1].clientY - t[0].clientY
+            );
+            const oldScale = currentScale;
+            currentScale = Math.min(
+              4,
+              Math.max(1, initialScale * (dist / initialDist))
+            );
+
+            // Zoom to the geometric center of the two fingers
+            const midX = (t[0].clientX + t[1].clientX) / 2;
+            const midY = (t[0].clientY + t[1].clientY) / 2;
+            const ox = overlay.clientWidth / 2;
+            const oy = overlay.clientHeight / 2;
+            translateX =
+              (midX - ox) * (1 / currentScale - 1 / oldScale) + translateX;
+            translateY =
+              (midY - oy) * (1 / currentScale - 1 / oldScale) + translateY;
+            clampTranslate();
+            applyTransform();
+          } else if (t.length === 1) {
+            if (currentScale > 1) {
+              e.preventDefault();
+              image.setAttribute("data-zoom", "drag");
+              translateX =
+                panStartTranslateX + (t[0].clientX - panStartX) / currentScale;
+              translateY =
+                panStartTranslateY + (t[0].clientY - panStartY) / currentScale;
+              clampTranslate();
+              applyTransform();
+            } else {
+              e.preventDefault();
+            }
+          }
+        },
+        { passive: false }
+      );
+
+      overlay.addEventListener("touchend", e => {
+        if (e.touches.length === 0) {
+          if (currentScale > 1) {
+            image.setAttribute("data-zoom", "in");
+          } else {
+            image.removeAttribute("data-zoom");
+          }
+          if (currentScale <= 1.05) resetTransform();
+        }
+      });
+
+      overlay.addEventListener("touchcancel", e => {
+        if (e.touches.length === 0) {
+          if (currentScale > 1) {
+            image.setAttribute("data-zoom", "in");
+          } else {
+            image.removeAttribute("data-zoom");
+          }
+          if (currentScale <= 1.05) resetTransform();
+        }
+      });
+
+      overlay.addEventListener(
+        "wheel",
+        e => {
+          e.preventDefault();
+          const oldScale = currentScale;
+          const delta = -e.deltaY * 0.001;
+          currentScale = Math.min(4, Math.max(1, currentScale * (1 + delta)));
+
+          if (currentScale <= 1.05) {
+            resetTransform();
+          } else {
+            image.setAttribute("data-zoom", "in");
+            // Zoom to cursor: adjust translate so the point under cursor stays fixed
+            const ox = overlay.clientWidth / 2;
+            const oy = overlay.clientHeight / 2;
+            translateX =
+              (e.clientX - ox) * (1 / currentScale - 1 / oldScale) + translateX;
+            translateY =
+              (e.clientY - oy) * (1 / currentScale - 1 / oldScale) + translateY;
+            clampTranslate();
+            applyTransform();
+          }
+        },
+        { passive: false }
+      );
+
+      let isMouseDown = false;
+      let mouseStartX = 0;
+      let mouseStartY = 0;
+
+      overlay.addEventListener("mousedown", e => {
+        if (e.button !== 0 || currentScale <= 1) return;
+        if (e.target.closest("button")) return;
+        isMouseDown = true;
+        mouseStartX = e.clientX;
+        mouseStartY = e.clientY;
+        panStartTranslateX = translateX;
+        panStartTranslateY = translateY;
+        image.setAttribute("data-zoom", "drag");
+        e.preventDefault();
+      });
+
+      function onMouseMove(e) {
+        if (!isMouseDown || !overlay) return;
+        translateX =
+          panStartTranslateX + (e.clientX - mouseStartX) / currentScale;
+        translateY =
+          panStartTranslateY + (e.clientY - mouseStartY) / currentScale;
+        clampTranslate();
+        applyTransform();
+      }
+
+      function onMouseUp() {
+        if (!isMouseDown) return;
+        isMouseDown = false;
+        if (currentScale > 1) {
+          image.setAttribute("data-zoom", "in");
+        } else {
+          image.removeAttribute("data-zoom");
+        }
+      }
+
+      document.addEventListener("mousemove", onMouseMove);
+      document.addEventListener("mouseup", onMouseUp);
+      removeDragListeners = () => {
+        document.removeEventListener("mousemove", onMouseMove);
+        document.removeEventListener("mouseup", onMouseUp);
+      };
+
+      document.body.appendChild(overlay);
+      document.documentElement.style.overflow = "hidden";
+      document.addEventListener("keydown", onKeyDown);
+      window.__closeLightbox = close;
+
+      requestAnimationFrame(() => overlay?.classList.add("opacity-100"));
+      closeButton.focus();
+    }
+
+    function close() {
+      if (!overlay) return;
+      const el = overlay;
+      overlay = null;
+      el.classList.add("pointer-events-none");
+      window.__closeLightbox = null;
+
+      document.removeEventListener("keydown", onKeyDown);
+      removeDragListeners?.();
+      removeDragListeners = null;
+      document.documentElement.style.overflow = "";
+      lastFocused?.focus();
+      lastFocused = null;
+
+      if (prefersReducedMotion()) {
+        el.remove();
+        return;
+      }
+      const remove = () => el.remove();
+      el.addEventListener("transitionend", remove, { once: true });
+      setTimeout(remove, 250); // fallback in case transitionend never fires
+      el.classList.remove("opacity-100");
+    }
+
+    function onKeyDown(e) {
+      if (e.key === "Escape") {
+        close();
+      } else if (e.key === "Tab") {
+        trapFocus(e);
+      }
+    }
+
+    // Keep keyboard focus inside the open dialog.
+    function trapFocus(e) {
+      if (!overlay) return;
+      const focusables = overlay.querySelectorAll(
+        'a[href], button, [tabindex]:not([tabindex="-1"])'
+      );
+      if (focusables.length === 0) return;
+      const first = focusables[0];
+      const last = focusables[focusables.length - 1];
+      if (e.shiftKey && document.activeElement === first) {
+        e.preventDefault();
+        last.focus();
+      } else if (!e.shiftKey && document.activeElement === last) {
+        e.preventDefault();
+        first.focus();
+      }
+    }
+
+    function triggerFromEvent(e) {
+      const image = e.target.closest("img");
+      if (!image || !article.contains(image) || image.closest("a")) return null;
+      return image;
+    }
+
+    function activate(image) {
+      open(image.currentSrc || image.src, image.alt, image);
+    }
+
+    article.addEventListener("click", e => {
+      const image = triggerFromEvent(e);
+      if (!image) return;
+      e.preventDefault();
+      activate(image);
+    });
+
+    article.addEventListener("keydown", e => {
+      if (e.key !== "Enter" && e.key !== " " && e.key !== "Spacebar") return;
+      const image = triggerFromEvent(e);
+      if (!image) return;
+      e.preventDefault();
+      activate(image);
+    });
+  }
+  initLightbox();
+
+  if (!window.__lightboxSwapBound) {
+    window.__lightboxSwapBound = true;
+    document.addEventListener("astro:before-swap", () =>
+      window.__closeLightbox?.()
+    );
+  }
+
+  document.addEventListener("astro:after-swap", () =>
+    window.scrollTo({ left: 0, top: 0, behavior: "instant" })
+  );
+</script>

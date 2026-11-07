@@ -1,0 +1,1023 @@
+<!DOCTYPE html><html dir="ltr" lang="zh-CN" class="overflow-y-scroll scroll-smooth"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1"><link rel="icon" type="image/png" href="/images/favicon-32x32-next.png"><link rel="icon" href="/favicon.ico"><link rel="canonical" href="https://www.saromchars.tech/posts/mail-storage-search-quota/"><meta name="generator" content="Astro v7.4.5"><!-- Primary meta --><title>邮箱存储、检索与配额 | Sarom&#39;s Blog</title><meta name="title" content="邮箱存储、检索与配额 | Sarom's Blog"><meta name="description" content="解析基于 IMAP4rev1、QUOTA 扩展与专用邮箱标识的邮箱存储组织，探讨邮箱层级结构、服务端检索与字符集约束，并剖析配额根容量限制与并发运维边界。"><meta name="author" content="Sarom Chars"><link rel="sitemap" href="/sitemap-index.xml"><!-- Open Graph --><meta property="og:type" content="article"><meta property="og:site_name" content="Sarom's Blog"><meta property="og:title" content="邮箱存储、检索与配额 | Sarom's Blog"><meta property="og:description" content="解析基于 IMAP4rev1、QUOTA 扩展与专用邮箱标识的邮箱存储组织，探讨邮箱层级结构、服务端检索与字符集约束，并剖析配额根容量限制与并发运维边界。"><meta property="og:url" content="https://www.saromchars.tech/posts/mail-storage-search-quota/"><meta property="og:image" content="https://www.saromchars.tech/og.png"><!-- Twitter / X --><meta property="twitter:card" content="summary_large_image"><meta property="twitter:url" content="https://www.saromchars.tech/posts/mail-storage-search-quota/"><meta property="twitter:title" content="邮箱存储、检索与配额 | Sarom's Blog"><meta property="twitter:description" content="解析基于 IMAP4rev1、QUOTA 扩展与专用邮箱标识的邮箱存储组织，探讨邮箱层级结构、服务端检索与字符集约束，并剖析配额根容量限制与并发运维边界。"><meta property="twitter:image" content="https://www.saromchars.tech/og.png"><!-- RSS autodiscovery --><link rel="alternate" type="application/rss+xml" title="Sarom's Blog" href="https://www.saromchars.tech/rss.xml"><!-- Filled at runtime by theme.ts to match the current background colour --><meta name="theme-color" content=""><!-- Extra head content injected by child layouts (e.g. JSON-LD, article meta) --><meta property="article:published_time" content="2021-08-25T02:00:00.000Z"><script type="application/ld+json">{"@context":"https://schema.org","@type":"BlogPosting","headline":"邮箱存储、检索与配额","mainEntityOfPage":"https://www.saromchars.tech/posts/mail-storage-search-quota/","datePublished":"2021-08-25T02:00:00.000Z","author":[{"@type":"Person","name":"Sarom Chars","url":"https://github.com/SaromChars"}]}</script><!--
+      Inline FOUC-prevention script: sets data-theme on <html> before
+      the browser paints. Runs synchronously, no defer/async.
+    --><script>
+      (function () {
+        const stored = localStorage.getItem("theme");
+        const prefersDark = window.matchMedia(
+          "(prefers-color-scheme: dark)"
+        ).matches;
+        const theme = stored ?? (prefersDark ? "dark" : "light");
+        const root = document.firstElementChild;
+        root?.setAttribute("data-theme", theme);
+        root?.classList.toggle("dark", theme === "dark");
+        // Expose value so theme.ts can skip re-detection.
+        window.__theme = { value: theme };
+      })();
+    </script><meta name="robots" content="index, follow"><script async src="https://www.googletagmanager.com/gtag/js?id=G-WJJJTJ4FWX"></script><script>(function(){const measurementId = "G-WJJJTJ4FWX";
+
+    window.dataLayer = window.dataLayer || [];
+    function gtag(){ window.dataLayer.push(arguments); }
+    gtag('js', new Date());
+    gtag('config', measurementId);
+  })();</script><style>@keyframes astroFadeInOut{0%{opacity:1}to{opacity:0}}@keyframes astroFadeIn{0%{opacity:0;mix-blend-mode:plus-lighter}to{opacity:1;mix-blend-mode:plus-lighter}}@keyframes astroFadeOut{0%{opacity:1;mix-blend-mode:plus-lighter}to{opacity:0;mix-blend-mode:plus-lighter}}@keyframes astroSlideFromRight{0%{transform:translate(100%)}}@keyframes astroSlideFromLeft{0%{transform:translate(-100%)}}@keyframes astroSlideToRight{to{transform:translate(100%)}}@keyframes astroSlideToLeft{to{transform:translate(-100%)}}@media (prefers-reduced-motion){::view-transition-group(*),::view-transition-old(*),::view-transition-new(*),[data-astro-transition-scope]{animation:none!important}}
+</style><link rel="stylesheet" href="/_astro/Footer.wlxowfqU.css"><style>[data-astro-transition-scope="astro-bztu2lml-1"] { view-transition-name: \90AE\7BB1\7CFB\7EDF; }@layer astro { ::view-transition-old(\90AE\7BB1\7CFB\7EDF) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }::view-transition-new(\90AE\7BB1\7CFB\7EDF) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }[data-astro-transition=back]::view-transition-old(\90AE\7BB1\7CFB\7EDF) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition=back]::view-transition-new(\90AE\7BB1\7CFB\7EDF) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; } }[data-astro-transition-fallback="old"] [data-astro-transition-scope="astro-bztu2lml-1"],
+			[data-astro-transition-fallback="old"][data-astro-transition-scope="astro-bztu2lml-1"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition-fallback="new"] [data-astro-transition-scope="astro-bztu2lml-1"],
+			[data-astro-transition-fallback="new"][data-astro-transition-scope="astro-bztu2lml-1"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }[data-astro-transition=back][data-astro-transition-fallback="old"] [data-astro-transition-scope="astro-bztu2lml-1"],
+			[data-astro-transition=back][data-astro-transition-fallback="old"][data-astro-transition-scope="astro-bztu2lml-1"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition=back][data-astro-transition-fallback="new"] [data-astro-transition-scope="astro-bztu2lml-1"],
+			[data-astro-transition=back][data-astro-transition-fallback="new"][data-astro-transition-scope="astro-bztu2lml-1"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }</style><style>[data-astro-transition-scope="astro-bztu2lml-2"] { view-transition-name: \5B58\50A8; }@layer astro { ::view-transition-old(\5B58\50A8) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }::view-transition-new(\5B58\50A8) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }[data-astro-transition=back]::view-transition-old(\5B58\50A8) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition=back]::view-transition-new(\5B58\50A8) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; } }[data-astro-transition-fallback="old"] [data-astro-transition-scope="astro-bztu2lml-2"],
+			[data-astro-transition-fallback="old"][data-astro-transition-scope="astro-bztu2lml-2"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition-fallback="new"] [data-astro-transition-scope="astro-bztu2lml-2"],
+			[data-astro-transition-fallback="new"][data-astro-transition-scope="astro-bztu2lml-2"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }[data-astro-transition=back][data-astro-transition-fallback="old"] [data-astro-transition-scope="astro-bztu2lml-2"],
+			[data-astro-transition=back][data-astro-transition-fallback="old"][data-astro-transition-scope="astro-bztu2lml-2"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition=back][data-astro-transition-fallback="new"] [data-astro-transition-scope="astro-bztu2lml-2"],
+			[data-astro-transition=back][data-astro-transition-fallback="new"][data-astro-transition-scope="astro-bztu2lml-2"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }</style><style>[data-astro-transition-scope="astro-bztu2lml-3"] { view-transition-name: \68C0\7D22; }@layer astro { ::view-transition-old(\68C0\7D22) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }::view-transition-new(\68C0\7D22) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }[data-astro-transition=back]::view-transition-old(\68C0\7D22) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition=back]::view-transition-new(\68C0\7D22) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; } }[data-astro-transition-fallback="old"] [data-astro-transition-scope="astro-bztu2lml-3"],
+			[data-astro-transition-fallback="old"][data-astro-transition-scope="astro-bztu2lml-3"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition-fallback="new"] [data-astro-transition-scope="astro-bztu2lml-3"],
+			[data-astro-transition-fallback="new"][data-astro-transition-scope="astro-bztu2lml-3"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }[data-astro-transition=back][data-astro-transition-fallback="old"] [data-astro-transition-scope="astro-bztu2lml-3"],
+			[data-astro-transition=back][data-astro-transition-fallback="old"][data-astro-transition-scope="astro-bztu2lml-3"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition=back][data-astro-transition-fallback="new"] [data-astro-transition-scope="astro-bztu2lml-3"],
+			[data-astro-transition=back][data-astro-transition-fallback="new"][data-astro-transition-scope="astro-bztu2lml-3"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }</style><style>[data-astro-transition-scope="astro-bztu2lml-4"] { view-transition-name: \914D\989D; }@layer astro { ::view-transition-old(\914D\989D) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }::view-transition-new(\914D\989D) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }[data-astro-transition=back]::view-transition-old(\914D\989D) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition=back]::view-transition-new(\914D\989D) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; } }[data-astro-transition-fallback="old"] [data-astro-transition-scope="astro-bztu2lml-4"],
+			[data-astro-transition-fallback="old"][data-astro-transition-scope="astro-bztu2lml-4"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition-fallback="new"] [data-astro-transition-scope="astro-bztu2lml-4"],
+			[data-astro-transition-fallback="new"][data-astro-transition-scope="astro-bztu2lml-4"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }[data-astro-transition=back][data-astro-transition-fallback="old"] [data-astro-transition-scope="astro-bztu2lml-4"],
+			[data-astro-transition=back][data-astro-transition-fallback="old"][data-astro-transition-scope="astro-bztu2lml-4"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition=back][data-astro-transition-fallback="new"] [data-astro-transition-scope="astro-bztu2lml-4"],
+			[data-astro-transition=back][data-astro-transition-fallback="new"][data-astro-transition-scope="astro-bztu2lml-4"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }</style><style>[data-astro-transition-scope="astro-bztu2lml-5"] { view-transition-name: imap; }@layer astro { ::view-transition-old(imap) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }::view-transition-new(imap) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }[data-astro-transition=back]::view-transition-old(imap) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition=back]::view-transition-new(imap) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; } }[data-astro-transition-fallback="old"] [data-astro-transition-scope="astro-bztu2lml-5"],
+			[data-astro-transition-fallback="old"][data-astro-transition-scope="astro-bztu2lml-5"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition-fallback="new"] [data-astro-transition-scope="astro-bztu2lml-5"],
+			[data-astro-transition-fallback="new"][data-astro-transition-scope="astro-bztu2lml-5"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }[data-astro-transition=back][data-astro-transition-fallback="old"] [data-astro-transition-scope="astro-bztu2lml-5"],
+			[data-astro-transition=back][data-astro-transition-fallback="old"][data-astro-transition-scope="astro-bztu2lml-5"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition=back][data-astro-transition-fallback="new"] [data-astro-transition-scope="astro-bztu2lml-5"],
+			[data-astro-transition=back][data-astro-transition-fallback="new"][data-astro-transition-scope="astro-bztu2lml-5"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }</style><style>[data-astro-transition-scope="astro-bztu2lml-6"] { view-transition-name: rfc-3501; }@layer astro { ::view-transition-old(rfc-3501) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }::view-transition-new(rfc-3501) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }[data-astro-transition=back]::view-transition-old(rfc-3501) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition=back]::view-transition-new(rfc-3501) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; } }[data-astro-transition-fallback="old"] [data-astro-transition-scope="astro-bztu2lml-6"],
+			[data-astro-transition-fallback="old"][data-astro-transition-scope="astro-bztu2lml-6"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition-fallback="new"] [data-astro-transition-scope="astro-bztu2lml-6"],
+			[data-astro-transition-fallback="new"][data-astro-transition-scope="astro-bztu2lml-6"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }[data-astro-transition=back][data-astro-transition-fallback="old"] [data-astro-transition-scope="astro-bztu2lml-6"],
+			[data-astro-transition=back][data-astro-transition-fallback="old"][data-astro-transition-scope="astro-bztu2lml-6"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition=back][data-astro-transition-fallback="new"] [data-astro-transition-scope="astro-bztu2lml-6"],
+			[data-astro-transition=back][data-astro-transition-fallback="new"][data-astro-transition-scope="astro-bztu2lml-6"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }</style><style>[data-astro-transition-scope="astro-bztu2lml-7"] { view-transition-name: rfc-2087; }@layer astro { ::view-transition-old(rfc-2087) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }::view-transition-new(rfc-2087) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }[data-astro-transition=back]::view-transition-old(rfc-2087) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition=back]::view-transition-new(rfc-2087) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; } }[data-astro-transition-fallback="old"] [data-astro-transition-scope="astro-bztu2lml-7"],
+			[data-astro-transition-fallback="old"][data-astro-transition-scope="astro-bztu2lml-7"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition-fallback="new"] [data-astro-transition-scope="astro-bztu2lml-7"],
+			[data-astro-transition-fallback="new"][data-astro-transition-scope="astro-bztu2lml-7"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }[data-astro-transition=back][data-astro-transition-fallback="old"] [data-astro-transition-scope="astro-bztu2lml-7"],
+			[data-astro-transition=back][data-astro-transition-fallback="old"][data-astro-transition-scope="astro-bztu2lml-7"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition=back][data-astro-transition-fallback="new"] [data-astro-transition-scope="astro-bztu2lml-7"],
+			[data-astro-transition=back][data-astro-transition-fallback="new"][data-astro-transition-scope="astro-bztu2lml-7"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }</style><style>[data-astro-transition-scope="astro-bztu2lml-8"] { view-transition-name: rfc-6154; }@layer astro { ::view-transition-old(rfc-6154) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }::view-transition-new(rfc-6154) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }[data-astro-transition=back]::view-transition-old(rfc-6154) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition=back]::view-transition-new(rfc-6154) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; } }[data-astro-transition-fallback="old"] [data-astro-transition-scope="astro-bztu2lml-8"],
+			[data-astro-transition-fallback="old"][data-astro-transition-scope="astro-bztu2lml-8"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition-fallback="new"] [data-astro-transition-scope="astro-bztu2lml-8"],
+			[data-astro-transition-fallback="new"][data-astro-transition-scope="astro-bztu2lml-8"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }[data-astro-transition=back][data-astro-transition-fallback="old"] [data-astro-transition-scope="astro-bztu2lml-8"],
+			[data-astro-transition=back][data-astro-transition-fallback="old"][data-astro-transition-scope="astro-bztu2lml-8"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition=back][data-astro-transition-fallback="new"] [data-astro-transition-scope="astro-bztu2lml-8"],
+			[data-astro-transition=back][data-astro-transition-fallback="new"][data-astro-transition-scope="astro-bztu2lml-8"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }</style></head><body class="bg-background font-app text-foreground selection:bg-accent/75 selection:text-accent-foreground flex min-h-svh flex-col"><a id="skip-to-content" href="#main-content" class="bg-background text-accent absolute inset-s-16 -top-full z-50 px-3 py-2 backdrop-blur-lg transition-all focus:top-4">跳到正文</a><header class="app-layout flex flex-col items-center justify-between sm:flex-row"><div class="border-border bg-background relative flex w-full items-baseline justify-between border-b py-4 sm:items-center sm:py-6"><a href="/" class="absolute py-1 text-xl leading-8 font-semibold whitespace-nowrap sm:static sm:my-auto sm:text-2xl sm:leading-none">Sarom&#39;s Blog</a><nav id="nav-menu" class="flex w-full flex-col items-center sm:ms-2 sm:flex-row sm:justify-end sm:space-x-4 sm:py-0"><button id="menu-btn" class="focus-outline self-end p-2 sm:hidden" aria-label="展开菜单" aria-expanded="false" aria-controls="menu-items" data-label-open="展开菜单" data-label-close="收起菜单"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="hidden" viewBox="0 0 24 24" id="close-icon"><path stroke="none" d="M0 0h24v24H0z" /><path d="M18 6 6 18M6 6l12 12" /></svg><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="icon icon-tabler icons-tabler-outline icon-tabler-menu-deep" viewBox="0 0 24 24" id="menu-icon"><path stroke="none" d="M0 0h24v24H0z" /><path d="M4 6h16M7 12h13M10 18h10" /></svg></button><ul id="menu-items" class="[&amp;&gt;li&gt;a]:hover:text-accent mt-4 hidden w-44 grid-cols-2 place-content-center gap-2 sm:mt-0 sm:flex sm:w-auto sm:gap-x-5 sm:gap-y-0 sm:[&amp;&gt;li]:h-8 [&amp;&gt;li&gt;a]:block [&amp;&gt;li&gt;a]:px-4 [&amp;&gt;li&gt;a]:py-3 [&amp;&gt;li&gt;a]:text-center [&amp;&gt;li&gt;a]:font-medium sm:[&amp;&gt;li&gt;a]:px-2 sm:[&amp;&gt;li&gt;a]:py-1"><li class="col-span-2"><a href="/posts/" class="active-nav">文章</a></li><li class="col-span-2"><a href="/tags/">标签</a></li><li class="col-span-2"><a href="/about/">关于</a></li><li class="col-span-2"><a href="/archives/" title="归档" aria-label="归档" class="group inline-flex items-center gap-1 hover:text-accent focus-outline flex size-full justify-center p-3 sm:relative sm:size-8 sm:p-0"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="hidden sm:absolute sm:top-1/2 sm:left-1/2 sm:block sm:size-6 sm:-translate-x-1/2 sm:-translate-y-1/2" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M3 6a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2 2 2 0 0 1-2 2H5a2 2 0 0 1-2-2M5 8v10a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8M10 12h4" /></svg><span class="sm:sr-only">归档</span></a></li><li class="col-span-1 flex items-center justify-center"><a href="/search/" title="搜索" aria-label="搜索" class="group inline-flex items-center gap-1 hover:text-accent focus-outline relative size-8"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="absolute top-1/2 left-1/2 size-6 -translate-x-1/2 -translate-y-1/2" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M3 10a7 7 0 1 0 14 0 7 7 0 1 0-14 0M21 21l-6-6" /></svg><span class="sr-only">搜索</span></a></li><li class="col-span-1 flex items-center justify-center"><button id="theme-btn" class="focus-outline hover:[&amp;&gt;svg]:stroke-accent relative size-12 p-4 sm:size-8" title="切换主题" aria-label="auto" aria-live="polite"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="absolute top-[50%] left-[50%] translate-[-50%] scale-100 rotate-0 transition-all dark:scale-0 dark:-rotate-90" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M12 3h.393a7.5 7.5 0 0 0 7.92 12.446A9 9 0 1 1 12 2.992z" /></svg><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="absolute top-[50%] left-[50%] translate-[-50%] scale-0 rotate-90 transition-all dark:scale-100 dark:rotate-0" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M14.828 14.828a4 4 0 1 0-5.656-5.656 4 4 0 0 0 5.656 5.656M6.343 17.657l-1.414 1.414M6.343 6.343 4.929 4.929M17.657 6.343l1.414-1.414M17.657 17.657l1.414 1.414M4 12H2M12 4V2M20 12h2M12 20v2" /></svg></button></li></ul></nav></div></header><script type="module">function e(){let e=document.querySelector(`#menu-btn`),t=document.querySelector(`#menu-items`),n=document.querySelector(`#menu-icon`),r=document.querySelector(`#close-icon`);if(!e||!t||!n||!r)return;let i=e.dataset.labelOpen??`Open menu`,a=e.dataset.labelClose??`Close menu`;e.addEventListener(`click`,()=>{let o=e.getAttribute(`aria-expanded`)===`true`;e.setAttribute(`aria-expanded`,o?`false`:`true`),e.setAttribute(`aria-label`,o?i:a),t.classList.toggle(`hidden`),t.classList.toggle(`grid`),n.classList.toggle(`hidden`),r.classList.toggle(`hidden`)})}function t(){let e=document.getElementById(`skip-to-content`);e&&e.addEventListener(`click`,e=>{if(e.defaultPrevented||e.metaKey||e.ctrlKey||e.shiftKey||e.button!==0)return;e.preventDefault();let t=document.getElementById(`main-content`);t&&(t.setAttribute(`tabindex`,`-1`),t.addEventListener(`blur`,()=>t.removeAttribute(`tabindex`),{once:!0}),t.focus(),t.scrollIntoView({behavior:`smooth`}))})}e(),document.addEventListener(`astro:after-swap`,e),t(),document.addEventListener(`astro:after-swap`,t);</script><div class="app-layout flex items-center justify-start"><a id="back-button" href="/" class="group inline-flex items-center gap-1 hover:text-accent focus-outline hover:text-foreground/75 -ms-2 mt-8 mb-2"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="inline-block size-6 rtl:rotate-180" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="m15 6-6 6 6 6" /></svg><span>返回</span></a></div><script type="module">function e(){let e=document.querySelector(`#back-button`),t=sessionStorage.getItem(`backUrl`);t&&e&&(e.href=t)}document.addEventListener(`astro:page-load`,e),e();</script><main id="main-content" class="app-layout" data-pagefind-body><h1 style="view-transition-name:mail-storage-search-quota" class="text-accent inline-block text-2xl font-bold sm:text-3xl">邮箱存储、检索与配额</h1><div class="my-2 flex items-center gap-2"><div class="text-muted-foreground flex flex-wrap items-center gap-x-2 gap-y-1"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="inline-block size-6 min-w-5.5" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M4 7a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2zM16 3v4M8 3v4M4 11h16M7 14h.013M10.01 14h.005M13.01 14h.005M16.015 14h.005M13.015 17h.005M7.01 17h.005M10.01 17h.005" /></svg><time class="text-sm sm:text-base" datetime="2021-08-25T02:00:00.000Z">2021年8月25日</time></div><span aria-hidden="true" class="text-muted-foreground max-sm:hidden hidden">|</span></div><article id="article" class="mt-8 w-full app-prose max-w-app prose-pre:bg-(--shiki-light-bg) dark:prose-pre:bg-(--shiki-dark-bg)"><!--email_off-->
+<p>在互联网邮件访问体系中，当邮件由投递代理（Mail Delivery Agent，MDA）写入用户的后端存储区后，如何让客户端有序组织文件夹、检索特定邮件并遵守容量边界，构成了邮箱存储服务（Message Store）的核心职责。</p>
+<p>本文讨论互联网消息访问协议第 4 版修订版 1（Internet Message Access Protocol - Version 4rev1，IMAP4rev1，<a href="#ref-rfc3501">RFC 3501</a>）访问接口下的邮箱组织。配合 IMAP4 配额扩展（IMAP4 QUOTA extension，<a href="#ref-rfc2087">RFC 2087</a>）以及专用邮箱列表扩展（IMAP LIST Extension for Special-Use Mailboxes，<a href="#ref-rfc6154">RFC 6154</a>），服务端在网络层提供了层级目录、结构化检索能力、多邮箱共享配额以及语义化文件夹识别机制。</p>
+<p>需要指出的是，协议本身定义的是网络交互中可观察的逻辑语义（如消息属性、可变标志与查询响应），并不指定底层的具体存储引擎、文件格式或索引数据库结构。</p>
+<hr>
+<h2 id="邮箱层级模型与专用文件夹语义">邮箱层级模型与专用文件夹语义</h2>
+<p>在 IMAP4rev1 架构中，邮箱（Mailbox）指的是存放消息的远端容器或文件夹。规范允许服务端实现任意层级的命名空间，并通过层级分隔符（Hierarchy Delimiter）将路径串联。</p>
+<p>本文中的客户端与服务端交互片段均为教学简化示意，客户端请求以 <code>C:</code> 标出，服务端响应以 <code>S:</code> 标出。</p>
+<h3 id="1-命名空间通配符与状态探测">1. 命名空间、通配符与状态探测</h3>
+<p>客户端在枚举服务端目录时，主要通过 <code>LIST</code> 与 <code>LSUB</code> 命令配合两类通配符（RFC 3501 第 6.3.8 节）：</p>
+<ul>
+<li><code>*</code>（星号）：匹配零个或多个字符，能够跨越层级分隔符向下递归匹配所有子目录。</li>
+<li><code>%</code>（百分号）：匹配零个或多个字符，但<strong>不匹配</strong>层级分隔符。当 <code>%</code> 位于参数末尾时，仅展开当前层级的直属子目录；若匹配到的某一层级本身不可被 <code>SELECT</code> 选中（例如仅作为中间目录节点存在），服务端在响应中需附带 <code>\Noselect</code> 属性。</li>
+</ul>
+<p>RFC 3501 规定特殊邮箱名称 <code>INBOX</code> 不区分大小写；若服务端支持某用户的 <code>INBOX</code>，在 <code>LIST</code> 输出中必须采用大写形式 <code>INBOX</code>（RFC 3501 第 6.3.8 节）。此外，服务端允许对特定路径隐藏通配符匹配（例如类 UNIX 系统服务端可限制 <code>*</code> 不匹配首字符为 <code>/</code> 的路径）。</p>
+<p>以下为分层枚举的简化示意：</p>
+<pre class="astro-code astro-code-themes min-light night-owl" style="--shiki-light:#24292eff;--shiki-dark:#d6deeb;--shiki-light-bg:#ffffff;--shiki-dark-bg:#011627; overflow-x: auto;--file-name-offset: -0.75rem;" tabindex="0" data-language="text"><code><span class="line"><span>C: A101 LIST "" "%"</span></span>
+<span class="line"><span>S: * LIST (\Noselect) "/" "Archive"</span></span>
+<span class="line"><span>S: * LIST () "/" "INBOX"</span></span>
+<span class="line"><span>S: A101 OK LIST completed</span></span>
+<span class="line"><span>C: A102 LIST "" "Archive/%"</span></span>
+<span class="line"><span>S: * LIST () "/" "Archive/2021"</span></span>
+<span class="line"><span>S: A102 OK LIST completed</span></span>
+<span class="line"><span>C: A103 STATUS "Archive/2021" (MESSAGES UNSEEN UIDNEXT UIDVALIDITY)</span></span>
+<span class="line"><span>S: * STATUS "Archive/2021" (MESSAGES 142 UNSEEN 3 UIDNEXT 501 UIDVALIDITY 1629850000)</span></span>
+<span class="line"><span>S: A103 OK STATUS completed</span></span></code></pre>
+<p>当客户端需要探测未选中邮箱的状态时，可发出 <code>STATUS</code> 命令查询特定数据项（RFC 3501 第 6.3.10 节）：</p>
+<ul>
+<li><code>MESSAGES</code>：邮箱内的总消息数。</li>
+<li><code>RECENT</code>：带有 <code>\Recent</code> 标志的消息数。</li>
+<li><code>UIDNEXT</code>：预测分配给下一封新消息的唯一标识符（Unique Identifier，UID）。它仅作为指示值，并非下一封可用 UID 必然取该值的强保证。</li>
+<li><code>UIDVALIDITY</code>：邮箱的唯一标识符有效性数值。</li>
+<li><code>UNSEEN</code>：未设置 <code>\Seen</code> 已读标志的消息数。</li>
+</ul>
+<p>针对 <code>STATUS</code> 命令的调用，RFC 3501 第 6.3.10 节给出了明确的性能边界与行为禁令：</p>
+<ol>
+<li><code>STATUS</code> 命令不保证返回速度；在部分后端实现中，服务端可能需要在内部以只读方式打开对应存储才能汇总数据，因此客户端不应预期连续大量调用该命令仍能保持良好响应性能。</li>
+<li>鉴于当前处于已选中状态（Selected State）的邮箱其内部状态已可通过会话常规更新获取，客户端不应（SHOULD NOT）对当前已选中的邮箱执行 <code>STATUS</code> 命令。</li>
+<li>客户端严禁（MUST NOT）将 <code>STATUS</code> 命令作为检查已选中邮箱新邮件到达的手段；已选中邮箱的新消息发现应依赖空闲 <code>NOOP</code> 等常规交互中服务端主动返回的未加标签通知。</li>
+</ol>
+<h3 id="2-专用邮箱special-use-mailboxes与语义统一">2. 专用邮箱（Special-Use Mailboxes）与语义统一</h3>
+<p>在多客户端共存的环境中，各客户端往往对草稿箱、已发送箱、垃圾箱或废件箱采用不同名称（例如 <code>Sent</code>、<code>Sent Messages</code>、<code>已发送邮件</code>）。为消除硬编码路径造成的歧义，RFC 6154 引入了专用邮箱属性。</p>
+<p>在基础 <code>LIST</code> 响应中，支持该扩展的服务端可直接在邮箱属性列表中返回语义属性；而在支持扩展 <code>LIST</code>（RFC 5258）时，客户端可通过 <code>SPECIAL-USE</code> 选项进行精准过滤（RFC 6154 第 2 节与第 3 节）：</p>
+<div class="table-wrapper" tabindex="0">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<table><thead><tr><th align="left">属性名称</th><th align="left">语义与规范说明（RFC 6154 第 2 节）</th><th align="left">典型服务端行为或客户端处理</th></tr></thead><tbody><tr><td align="left"><code>\All</code></td><td align="left">呈现用户存储中的所有邮件</td><td align="left">通常作为虚拟视图（Virtual Mailbox），可能排除垃圾与废件</td></tr><tr><td align="left"><code>\Archive</code></td><td align="left">归档存储，移出收件箱但长期保留</td><td align="left">具体的归档策略与触发条件由服务端定义</td></tr><tr><td align="left"><code>\Drafts</code></td><td align="left">存放草稿（正在撰写尚未发送的邮件）</td><td align="left">可为独立文件夹，或汇聚带有 <code>\Draft</code> 标志邮件的虚拟视图</td></tr><tr><td align="left"><code>\Flagged</code></td><td align="left">呈现所有标记为重要的邮件</td><td align="left">通常为汇总带有 <code>\Flagged</code> 标志邮件的虚拟视图</td></tr><tr><td align="left"><code>\Junk</code></td><td align="left">存放被判定为垃圾邮件的消息</td><td align="left">服务端过滤引擎自动投递，或向客户端垃圾邮件模块提供建议位置</td></tr><tr><td align="left"><code>\Sent</code></td><td align="left">保存已发送邮件的副本</td><td align="left">发信流程完成后自动或手动通过 <code>APPEND</code> 归档</td></tr><tr><td align="left"><code>\Trash</code></td><td align="left">存放已删除或标记待清理的邮件</td><td align="left">供不采用 IMAP <code>\Deleted</code> 标志覆盖模型的客户端作为废件箱</td></tr></tbody></table></div>
+<p>RFC 6154 强调所有上述属性均为可选（OPTIONAL）。若服务端在 <code>CAPABILITY</code> 中通告了 <code>CREATE-SPECIAL-USE</code>，客户端可在 <code>CREATE</code> 命令中使用 <code>USE (...)</code> 参数为新建文件夹指定属性；若无法按所指定用途创建，服务端不得（MUST NOT）创建该邮箱，并必须（MUST）返回标记 <code>NO</code>；如果失败原因与用途属性相关，应当（SHOULD）在该 <code>NO</code> 响应中附带 <code>USEATTR</code> 响应码（RFC 6154 第 3 节）：</p>
+<pre class="astro-code astro-code-themes min-light night-owl" style="--shiki-light:#24292eff;--shiki-dark:#d6deeb;--shiki-light-bg:#ffffff;--shiki-dark-bg:#011627; overflow-x: auto;--file-name-offset: -0.75rem;" tabindex="0" data-language="text"><code><span class="line"><span>C: A201 CREATE "Spam" (USE (\Junk))</span></span>
+<span class="line"><span>S: A201 OK CREATE completed</span></span>
+<span class="line"><span>C: A202 CREATE "VirtualAll" (USE (\All))</span></span>
+<span class="line"><span>S: A202 NO [USEATTR] \All not supported</span></span></code></pre>
+<hr>
+<h2 id="消息寻址存储解耦与服务端检索">消息寻址、存储解耦与服务端检索</h2>
+<p>在邮件存储的工程实践中，为了兼顾高频访问效率与协议规范要求，系统通常将邮件体、元数据标志与检索索引进行分层维护。</p>
+<h3 id="1-存储分层与-uid-稳定性工程示意">1. 存储分层与 UID 稳定性（工程示意）</h3>
+<p>RFC 3501 并不强制特定的物理存储结构，但从协议的可观察语义出发，一种典型的工程分层模型可示意如下：</p>
+<ul>
+<li><strong>整信内容（Message Content）</strong>：包含信头（Header）与正文（Body），通常以静态文件或对象形式持久化，并记录协议内部日期（INTERNALDATE）。</li>
+<li><strong>可变元数据（Flags &#x26; State）</strong>：包括 <code>\Seen</code>、<code>\Flagged</code>、<code>\Deleted</code> 等状态标志。多客户端并发修改标志时仅变更轻量元数据记录。</li>
+<li><strong>检索索引与配额统计</strong>：为加速 <code>SEARCH</code> 与容量统计构建的辅助结构。索引可由整信内容异步解析生成，并在损坏时重建。</li>
+</ul>
+<p>在会话生命周期内，消息序号（Message Sequence Number）会随着邮件的移除发生动态重排；因此，跨连接、跨离线重同步的邮件身份必须依赖<strong>邮箱名、UIDVALIDITY 与 UID</strong> 的三元组合进行确认（RFC 3501 第 2.3.1 节）。UID 在同一邮箱内单调递增但不一定连续。只要 UIDVALIDITY 未发生变化，已分配的 UID 便具有全局稳定对应关系；若服务端发生重建或迁移导致 UID 无法沿用，服务端必须更新 UIDVALIDITY，客户端收到后必须废除旧有的本地 UID 缓存并重新建立同步。</p>
+<h3 id="2-search-命令语法与布尔逻辑">2. SEARCH 命令语法与布尔逻辑</h3>
+<p>客户端在已选中状态下通过 <code>SEARCH</code> 命令发起检索（RFC 3501 第 6.4.4 节）。当给出多个检索键（Search Keys）时，默认求所有条件的<strong>交集（AND 逻辑）</strong>。若需使用析取（OR）或否定（NOT），需显式声明前缀操作符：</p>
+<pre class="astro-code astro-code-themes min-light night-owl" style="--shiki-light:#24292eff;--shiki-dark:#d6deeb;--shiki-light-bg:#ffffff;--shiki-dark-bg:#011627; overflow-x: auto;--file-name-offset: -0.75rem;" tabindex="0" data-language="text"><code><span class="line"><span>C: A301 SEARCH FLAGGED SINCE 1-Aug-2021 NOT FROM "notifications@example.com"</span></span>
+<span class="line"><span>S: * SEARCH 12 15 48</span></span>
+<span class="line"><span>S: A301 OK SEARCH completed</span></span></code></pre>
+<p>服务端匹配成功后，在未加标签的 <code>* SEARCH</code> 响应中返回符合条件的消息序列号；若以 <code>UID SEARCH</code> 发起，则返回对应的 UID 集合。RFC 3501 并不对返回的数字列表做强制升序保证。</p>
+<p>常用检索键在 RFC 3501 第 6.4.4 节中的定义如下：</p>
+<ul>
+<li><strong>标志状态</strong>：<code>ALL</code>（默认全集）、<code>ANSWERED</code>/<code>UNANSWERED</code>、<code>DELETED</code>/<code>UNDELETED</code>、<code>FLAGGED</code>/<code>UNFLAGGED</code>、<code>SEEN</code>/<code>UNSEEN</code>、<code>RECENT</code>/<code>OLD</code>（<code>OLD</code> 等价于 <code>NOT RECENT</code>）。此外，<code>NEW</code> 严格等价于 <code>(RECENT UNSEEN)</code>。</li>
+<li><strong>信头字段与子串匹配</strong>：<code>FROM &#x3C;string></code>、<code>TO &#x3C;string></code>、<code>CC &#x3C;string></code>、<code>BCC &#x3C;string></code>、<code>SUBJECT &#x3C;string></code>。此类匹配针对 IMAP 从邮件头字段解析出的 <code>ENVELOPE</code> 结构（并非 SMTP 传输阶段的 <code>MAIL FROM</code>/<code>RCPT TO</code> 信封参数）进行子串比对，且<strong>不区分大小写（case-insensitive）</strong>。若需匹配任意自定义信头，使用 <code>HEADER &#x3C;field-name> &#x3C;string></code>。</li>
+<li><strong>正文与全文内容</strong>：
+<ul>
+<li><code>BODY &#x3C;string></code>：匹配邮件正文（Body）文本中包含指定子串的邮件。</li>
+<li><code>TEXT &#x3C;string></code>：匹配邮件信头（Header）或正文（Body）中包含指定子串的邮件。</li>
+<li>规范明确允许：服务端实现可以（MAY）在执行检索匹配时，排除多用途互联网邮件扩展（Multipurpose Internet Mail Extensions，MIME）中终端媒体类型非 <code>TEXT</code> 与 <code>MESSAGE</code> 的实体部分（例如二进制附件）。</li>
+</ul>
+</li>
+<li><strong>日期对比范围</strong>：
+<ul>
+<li>区分内部接收日期（<code>BEFORE</code>、<code>ON</code>、<code>SINCE</code>，以协议内部日期 INTERNALDATE 为准，忽略时分秒与时区；该日期可通过 <code>APPEND</code> 显式指定或由系统接收时赋予，并非统一的磁盘落盘时间）与发件人信头日期（<code>SENTBEFORE</code>、<code>SENTON</code>、<code>SENTSINCE</code>，解析邮件信头的 <code>Date:</code> 字段）。</li>
+</ul>
+</li>
+<li><strong>容量对比</strong>：<code>LARGER &#x3C;n></code> 与 <code>SMALLER &#x3C;n></code>，按邮件的八位组字节数（RFC 2822 大小）进行筛选。</li>
+</ul>
+<h3 id="3-字符集声明与解码约束">3. 字符集声明与解码约束</h3>
+<p>在处理非纯 ASCII 文本时，客户端可在检索条件前置 <code>CHARSET &#x3C;registered-charset></code>。</p>
+<p>RFC 3501 第 6.4.4 节作出了严格的兼容性规范：</p>
+<ol>
+<li>服务端必须（MUST）支持美国信息交换标准代码（American Standard Code for Information Interchange，ASCII，具体为 US-ASCII）字符集；对其他字符集（如 <code>UTF-8</code> 或 <code>GB2312</code>）的支持为可选（MAY）。</li>
+<li>在比对非 <code>US-ASCII</code> 字符集前，服务端必须（MUST）先将邮件内容传输编码（Content-Transfer-Encoding，如 Base64 或 Quoted-Printable）以及信头中的 MIME 编码字（RFC 2047 格式）解码为原生字符序列，再进行文本匹配。</li>
+<li>若客户端请求了服务端未实现的字符集，服务端必须（MUST）返回标记 <code>NO</code> 响应（而<strong>不得</strong>返回语法错误的 <code>BAD</code>），并且该响应中应当（SHOULD）包含 <code>BADCHARSET</code> 响应码，其参数可列出服务端当前支持的字符集列表。</li>
+</ol>
+<p>以下为探测字符集支持情况的教学简化示意：</p>
+<pre class="astro-code astro-code-themes min-light night-owl" style="--shiki-light:#24292eff;--shiki-dark:#d6deeb;--shiki-light-bg:#ffffff;--shiki-dark-bg:#011627; overflow-x: auto;--file-name-offset: -0.75rem;" tabindex="0" data-language="text"><code><span class="line"><span>C: A302 SEARCH CHARSET GB2312 TEXT "query"</span></span>
+<span class="line"><span>S: A302 NO [BADCHARSET (US-ASCII UTF-8)] Unsupported charset</span></span></code></pre>
+<hr>
+<h2 id="邮箱配额体系rfc-2087-quota-扩展">邮箱配额体系：RFC 2087 QUOTA 扩展</h2>
+<p>随着邮件系统的长期运行，存储膨胀与资源耗尽是邮件服务器面临的主要风险。在服务端通告了 <code>QUOTA</code> 功能能力（CAPABILITY）的前提下，RFC 2087 为 IMAP4 提供了配额管理机制。</p>
+<h3 id="1-配额根quota-root与资源抽象">1. 配额根（Quota Root）与资源抽象</h3>
+<p>RFC 2087 的核心设计在于解耦“具体邮箱路径”与“配额计算实体”：</p>
+<ul>
+<li><strong>配额根（Quota Root）</strong>：服务端内部定义的资源限制命名实体。一个配额根拥有零个或多个资源限制。配额根的名称由实现定义，不必然（do not necessarily have to）与现实存在的邮箱名称重合（RFC 2087 第 3 节）。</li>
+<li><strong>多邮箱共享</strong>：每个邮箱隶属于零个或多个配额根。凡是共享同一个配额根的所有邮箱，共同消耗该配额根下的资源额度。</li>
+</ul>
+<p>RFC 2087 第 3 节列举了两类标准资源原子名称作为解释示例（服务端并不被强制必须实现这两类）：</p>
+<ol>
+<li><code>STORAGE</code>：所有邮件的 <code>RFC822.SIZE</code> 累计总和，以 <strong>1024 字节（1024 octets）</strong> 为基本度量单位。</li>
+<li><code>MESSAGE</code>：当前配额根覆盖范围内的消息数量，用于限制总消息数。</li>
+</ol>
+<h3 id="2-配额查询与响应指令">2. 配额查询与响应指令</h3>
+<p>客户端通常通过 <code>GETQUOTAROOT</code> 命令探测某个具体邮箱绑定的配额信息（RFC 2087 第 4.3 节与第 5 节）：</p>
+<pre class="astro-code astro-code-themes min-light night-owl" style="--shiki-light:#24292eff;--shiki-dark:#d6deeb;--shiki-light-bg:#ffffff;--shiki-dark-bg:#011627; overflow-x: auto;--file-name-offset: -0.75rem;" tabindex="0" data-language="text"><code><span class="line"><span>C: A401 GETQUOTAROOT "INBOX"</span></span>
+<span class="line"><span>S: * QUOTAROOT "INBOX" ""</span></span>
+<span class="line"><span>S: * QUOTA "" (STORAGE 20480 102400 MESSAGE 150 1000)</span></span>
+<span class="line"><span>S: A401 OK GETQUOTAROOT completed</span></span></code></pre>
+<p>在此交互过程中，服务端先返回未加标签的 <code>QUOTAROOT</code> 响应，指明 <code>INBOX</code> 关联的配额根名称（此示例假设服务端实现使用空字符串 <code>""</code> 命名共享个人配额根，并非标准强制的通用命名规则）；随后紧跟对应的 <code>QUOTA</code> 响应，给出该配额根下的各资源三元组：<code>(资源名称 当前用量 资源上限)</code>。</p>
+<p>在上述示例中，当前已使用 20480 单位（即 20480 × 1024 字节，整 20 MiB），上限为 102400 单位（整 100 MiB）。若某资源未在三元组列表中列出，则表示该配额根对该项资源<strong>不作限制</strong>（RFC 2087 第 5.1 节）。管理员权限用户还可以使用 <code>SETQUOTA</code> 动态重置限额；若指定配额根原先不存在，服务端实现可按需创建该根（RFC 2087 第 4.1 节）。</p>
+<hr>
+<h2 id="并发消息清理与异常边界">并发、消息清理与异常边界</h2>
+<p>邮件存储层必须在多客户端长连接、断网重连以及后台清理并发发生的场景下，维系状态一致性与稳定的异常边界。</p>
+<h3 id="1-消息永久移除与并发会话同步">1. 消息永久移除与并发会话同步</h3>
+<p>在 IMAP4rev1 中，删除邮件分两阶段完成：首先通过类似 <code>STORE 12 +FLAGS (\Deleted)</code> 为指定消息打上待删除标志，随后由客户端显式触发清理。</p>
+<p>从邮箱中永久移除（Permanent Removal）带有 <code>\Deleted</code> 标志的邮件存在两种方式，其在协议通知行为上有所区分（RFC 3501 第 6.4.2 节与第 6.4.3 节）：</p>
+<ol>
+<li><code>EXPUNGE</code> 命令：发起该命令的会话在收到最终的标记 <code>OK</code> 前，服务端<strong>必须</strong>针对每封被移除的邮件返回未加标签的 <code>* &#x3C;seq> EXPUNGE</code> 通知。需要注意的是，<strong><code>EXPUNGE</code> 会永久移除当前邮箱中所有带有 <code>\Deleted</code> 标志的消息</strong>，而不仅限于当前会话打上标志的邮件，这在多客户端并发操作时具有清理扩散风险。对于其他并发打开了该邮箱的会话，RFC 3501 第 7 节规定服务端应当（SHOULD）发送对应的更新通知，但受限于第 7.4.1 节的时序限制，服务端不得在无命令执行期间或响应 <code>FETCH</code>/<code>STORE</code>/<code>SEARCH</code> 等指令的中途随意插入 <code>EXPUNGE</code>，因此其他会话通常在自身发出后续命令时才会接收到序号重排通知。</li>
+<li><code>CLOSE</code> 命令：从当前邮箱中永久移除带有 <code>\Deleted</code> 标志的邮件，并使当前连接从已选中状态退回已认证状态。与 <code>EXPUNGE</code> 不同，<code>CLOSE</code> 不会（No untagged EXPUNGE responses are sent）向当前连接发送任何未加标签的 <code>EXPUNGE</code> 响应。因此，在需要清理大量消息时，<code>CLOSE</code> 能有效减少网络逐条通知开销。但协议仅定义了邮件在逻辑邮箱视图中的永久移除，并不保证底层分布式存储、快照或备份系统的物理磁盘块被即刻释放。</li>
+</ol>
+<div class="callout" data-callout="caution" data-collapsible="false"><div class="callout-title"><div class="callout-title-icon" aria-hidden="true"><svg xmlns="http://www.w3.org/2000/svg" width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg></div><div class="callout-title-text">Caution</div></div><div class="callout-content"><p>依据 RFC 3501 第 6.4.2 节规范，如果邮箱是通过 <code>EXAMINE</code> 指令打开（只读模式）或底层存储处于只读保护状态，执行 <code>CLOSE</code> <strong>绝对不会（No messages are removed）<strong>移除任何邮件，且服务端</strong>不会报错</strong>，直接返回 <code>OK</code> 并退回已认证状态。客户端若依赖 <code>CLOSE</code> 移除邮件，必须预先确认会话具备读写权限。</p></div></div>
+<h3 id="2-配额超额与写入失败边界">2. 配额超额与写入失败边界</h3>
+<p>当配额耗尽或存储空间不足时，邮件写入操作的失败模式需严格界定：</p>
+<ul>
+<li><strong>IMAP 追加与复制</strong>：当客户端通过 <code>APPEND</code> 向满额邮箱追加邮件，或执行跨邮箱 <code>COPY</code> 导致目标配额根溢出时，服务端必须返回标记 <code>NO</code>，并可在未加标签的诊断文本中向用户提示空间紧张（RFC 3501 第 7.1.2 节给出了 <code>* NO Disk is 98% full</code> 的告警示例）。</li>
+<li><strong>投递写入与责任边界推导</strong>：RFC 2087 仅约束 IMAP4 交互，并未定义底层投递传输时的返回状态。基于本系列前篇对 RFC 5321 投递协议的探讨进行工程推导：在服务端尚未发送最终确认响应（如 <code>250 OK</code>）之前，如果 MDA 预先判定或在写入时发现配额溢出，可通过适宜的 4xx（临时失败）或 5xx（永久失败，如 <code>552 Requested mail action aborted: exceeded storage allocation</code>）拒绝接收，此时投递责任仍在发信前一跳；若服务端已向发送方发送了最终成功确认（正式接受投递责任），之后因存储落盘崩溃且无法进入重试队列导致交付失败，接收方必须独立承担退信责任，此时若向原始反向路径生成失败通知，该通知自身的信封发件人必须为空（<code>MAIL FROM:&#x3C;></code>），且如果原始信件的反向路径本身为空，则严禁发送退信，以阻断无限循环弹跳。</li>
+</ul>
+<hr>
+<h2 id="参考文献">参考文献</h2>
+<ul>
+<li><a id="ref-rfc3501" href="https://www.rfc-editor.org/rfc/rfc3501" target="_blank" rel="noopener noreferrer">RFC 3501</a>: Crispin, M., “INTERNET MESSAGE ACCESS PROTOCOL - VERSION 4rev1”, Standards Track, March 2003.</li>
+<li><a id="ref-rfc2087" href="https://www.rfc-editor.org/rfc/rfc2087" target="_blank" rel="noopener noreferrer">RFC 2087</a>: Myers, J., “IMAP4 QUOTA extension”, Standards Track, January 1997.</li>
+<li><a id="ref-rfc6154" href="https://www.rfc-editor.org/rfc/rfc6154" target="_blank" rel="noopener noreferrer">RFC 6154</a>: Leiba, B. and J. Nicolson, “IMAP LIST Extension for Special-Use Mailboxes”, Standards Track, March 2011.</li>
+</ul>
+<!--/email_off--></article><hr class="my-8 border-dashed"><div id="btt-btn-container" class="fixed inset-e-4 bottom-8 z-50 md:sticky md:inset-e-auto md:float-end md:me-1 translate-y-14 opacity-0 transition duration-500"><button data-button="back-to-top" class="group bg-background relative px-2 py-1 size-14 rounded-full shadow-xl md:h-8 md:w-fit md:rounded-md md:shadow-none md:focus-visible:rounded-none md:bg-background/35 md:bg-clip-padding md:backdrop-blur-lg"><span id="progress-indicator" class="absolute inset-0 -z-10 block size-14 scale-110 rounded-full bg-transparent md:hidden md:h-8 md:rounded-md"></span><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="inline-block rotate-90 md:hidden" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M5 12h14M5 12l6 6M5 12l6-6" /></svg><span class="group-hover:text-accent sr-only text-sm md:not-sr-only"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="inline-block size-4" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M12 5v14M16 9l-4-4M8 9l4-4" /></svg> 回到顶部</span></button></div><script data-astro-rerun>
+  function backToTop() {
+    const rootElement = document.documentElement;
+    const btnContainer = document.querySelector("#btt-btn-container");
+    const backToTopBtn = document.querySelector("[data-button='back-to-top']");
+    const progressIndicator = document.querySelector("#progress-indicator");
+
+    if (!rootElement || !btnContainer || !backToTopBtn || !progressIndicator)
+      return;
+
+    backToTopBtn.addEventListener("click", () => {
+      document.body.scrollTop = 0;
+      document.documentElement.scrollTop = 0;
+    });
+
+    let lastVisible = null;
+    function handleScroll() {
+      const scrollTotal = rootElement.scrollHeight - rootElement.clientHeight;
+      const scrollTop = rootElement.scrollTop;
+      const scrollPercent = Math.floor((scrollTop / scrollTotal) * 100);
+
+      progressIndicator.style.setProperty(
+        "background-image",
+        `conic-gradient(var(--accent), var(--accent) ${scrollPercent}%, transparent ${scrollPercent}%)`
+      );
+
+      const isVisible = scrollTop / scrollTotal > 0.3;
+
+      if (isVisible !== lastVisible) {
+        btnContainer.classList.toggle("opacity-100", isVisible);
+        btnContainer.classList.toggle("translate-y-0", isVisible);
+        btnContainer.classList.toggle("opacity-0", !isVisible);
+        btnContainer.classList.toggle("translate-y-14", !isVisible);
+        lastVisible = isVisible;
+      }
+    }
+
+    let ticking = false;
+    document.addEventListener("scroll", () => {
+      if (!ticking) {
+        window.requestAnimationFrame(() => {
+          handleScroll();
+          ticking = false;
+        });
+        ticking = true;
+      }
+    });
+  }
+  backToTop();
+</script><ul class="mt-4 mb-8 flex flex-wrap gap-4 sm:my-8"><li><a data-astro-transition-scope="astro-bztu2lml-1" href="/tags/邮箱系统/" class="flex items-center gap-0.5 border-foreground border-b-2 border-dashed hover:border-accent hover:text-accent hover:-mt-0.5 focus-visible:text-accent focus-visible:border-none text-sm"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="opacity-80 size-4" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M5 9h14M5 15h14M11 4 7 20M17 4l-4 16" /></svg>邮箱系统</a></li><li><a data-astro-transition-scope="astro-bztu2lml-2" href="/tags/存储/" class="flex items-center gap-0.5 border-foreground border-b-2 border-dashed hover:border-accent hover:text-accent hover:-mt-0.5 focus-visible:text-accent focus-visible:border-none text-sm"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="opacity-80 size-4" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M5 9h14M5 15h14M11 4 7 20M17 4l-4 16" /></svg>存储</a></li><li><a data-astro-transition-scope="astro-bztu2lml-3" href="/tags/检索/" class="flex items-center gap-0.5 border-foreground border-b-2 border-dashed hover:border-accent hover:text-accent hover:-mt-0.5 focus-visible:text-accent focus-visible:border-none text-sm"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="opacity-80 size-4" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M5 9h14M5 15h14M11 4 7 20M17 4l-4 16" /></svg>检索</a></li><li><a data-astro-transition-scope="astro-bztu2lml-4" href="/tags/配额/" class="flex items-center gap-0.5 border-foreground border-b-2 border-dashed hover:border-accent hover:text-accent hover:-mt-0.5 focus-visible:text-accent focus-visible:border-none text-sm"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="opacity-80 size-4" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M5 9h14M5 15h14M11 4 7 20M17 4l-4 16" /></svg>配额</a></li><li><a data-astro-transition-scope="astro-bztu2lml-5" href="/tags/imap/" class="flex items-center gap-0.5 border-foreground border-b-2 border-dashed hover:border-accent hover:text-accent hover:-mt-0.5 focus-visible:text-accent focus-visible:border-none text-sm"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="opacity-80 size-4" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M5 9h14M5 15h14M11 4 7 20M17 4l-4 16" /></svg>IMAP</a></li><li><a data-astro-transition-scope="astro-bztu2lml-6" href="/tags/rfc-3501/" class="flex items-center gap-0.5 border-foreground border-b-2 border-dashed hover:border-accent hover:text-accent hover:-mt-0.5 focus-visible:text-accent focus-visible:border-none text-sm"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="opacity-80 size-4" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M5 9h14M5 15h14M11 4 7 20M17 4l-4 16" /></svg>RFC 3501</a></li><li><a data-astro-transition-scope="astro-bztu2lml-7" href="/tags/rfc-2087/" class="flex items-center gap-0.5 border-foreground border-b-2 border-dashed hover:border-accent hover:text-accent hover:-mt-0.5 focus-visible:text-accent focus-visible:border-none text-sm"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="opacity-80 size-4" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M5 9h14M5 15h14M11 4 7 20M17 4l-4 16" /></svg>RFC 2087</a></li><li><a data-astro-transition-scope="astro-bztu2lml-8" href="/tags/rfc-6154/" class="flex items-center gap-0.5 border-foreground border-b-2 border-dashed hover:border-accent hover:text-accent hover:-mt-0.5 focus-visible:text-accent focus-visible:border-none text-sm"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="opacity-80 size-4" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M5 9h14M5 15h14M11 4 7 20M17 4l-4 16" /></svg>RFC 6154</a></li></ul><hr class="my-8 border-dashed"><div data-pagefind-ignore class="my-8 grid grid-cols-1 gap-6 sm:grid-cols-2"><a href="/posts/mail-queue-retry-dsn/" class="flex w-full gap-1 hover:opacity-75"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="inline-block flex-none rtl:rotate-180" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M5 12h14M5 12l6 6M5 12l6-6" /></svg><div><span>上一篇</span><div class="text-accent/85 text-sm">邮件队列、重试与投递状态通知</div></div></a><a href="/posts/mail-domains-aliases-tenancy/" class="flex w-full justify-end gap-1 text-end hover:opacity-75 sm:col-start-2"><div><span>下一篇</span><div class="text-accent/85 text-sm">域、账号、别名与多租户隔离</div></div><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="inline-block flex-none rtl:rotate-180" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M5 12h14M13 18l6-6M13 6l6 6" /></svg></a></div></main><footer class="app-layout mt-auto"><div class="border-border flex flex-col items-center justify-between border-t py-6 sm:flex-row-reverse sm:py-4"><div class="flex flex-wrap items-center gap-1"><a href="https://github.com/SaromChars" title="Sarom Chars 的 GitHub" class="group inline-flex items-center gap-1 hover:text-accent p-2 hover:rotate-6 sm:p-1"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="inline-block size-6 scale-125 fill-transparent stroke-current stroke-2 opacity-90 group-hover:fill-transparent sm:scale-110" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M9 19c-4.3 1.4-4.3-2.5-6-3m12 5v-3.5c0-1 .1-1.4-.5-2 2.8-.3 5.5-1.4 5.5-6a4.6 4.6 0 0 0-1.3-3.2 4.2 4.2 0 0 0-.1-3.2s-1.1-.3-3.5 1.3a12.3 12.3 0 0 0-6.2 0C6.5 2.8 5.4 3.1 5.4 3.1a4.2 4.2 0 0 0-.1 3.2A4.6 4.6 0 0 0 4 9.5c0 4.6 2.7 5.7 5.5 6-.6.6-.6 1.2-.5 2V21" /></svg><span class="sr-only">Sarom Chars 的 GitHub</span></a></div><div class="my-2 flex flex-col items-center whitespace-nowrap sm:flex-row"><span>版权 &#169; 2026</span><span class="hidden sm:inline">&nbsp;|&nbsp;</span><span>保留所有权利。</span></div></div></footer><script type="module">var e=`theme`,t=`light`,n=`dark`;function r(){return localStorage.getItem(e)||(window.matchMedia(`(prefers-color-scheme: dark)`).matches?n:t)}var i=window.__theme?.value??r();function a(){localStorage.setItem(e,i),o()}function o(){let e=document.firstElementChild;e?.setAttribute(`data-theme`,i),e?.classList.toggle(`dark`,i===n),document.querySelector(`#theme-btn`)?.setAttribute(`aria-label`,i);let t=window.getComputedStyle(document.body).backgroundColor;document.querySelector(`meta[name='theme-color']`)?.setAttribute(`content`,t)}function s(){o(),document.querySelector(`#theme-btn`)?.addEventListener(`click`,()=>{i=i===t?n:t,a()})}s(),document.addEventListener(`astro:after-swap`,s),document.addEventListener(`astro:before-swap`,e=>{let t=document.querySelector(`meta[name='theme-color']`)?.getAttribute(`content`);t&&e.newDocument.querySelector(`meta[name='theme-color']`)?.setAttribute(`content`,t)}),window.matchMedia(`(prefers-color-scheme: dark)`).addEventListener(`change`,({matches:e})=>{i=e?n:t,a()});</script></body></html><script type="module">var e=document.querySelector(`#article`);if(e?.querySelector(`a[href^="#ref-"]`)){let t=null,n=!1,r=document.createElement(`button`);r.type=`button`,r.className=`citation-return`,r.textContent=`返回阅读位置`,r.setAttribute(`data-pagefind-ignore`,``),e.addEventListener(`click`,n=>{if(n.button!==0||n.metaKey||n.ctrlKey||n.shiftKey||n.altKey)return;let i=n.target instanceof Element?n.target.closest(`a[href^="#ref-"]`):null;if(!i||!e.contains(i))return;let a=i.hash,o=document.getElementById(decodeURIComponent(a.slice(1)));o&&e.contains(o)&&(t={source:i,url:window.location.href,top:window.scrollY,left:window.scrollX,targetHash:a},o.insertAdjacentElement(`afterend`,r))}),r.addEventListener(`click`,()=>{if(!t||n)return;let e=t,i=i=>{r.remove(),window.requestAnimationFrame(()=>{window.requestAnimationFrame(()=>{e.source.focus({preventScroll:!0}),window.scrollTo({top:e.top,left:e.left,behavior:`instant`}),t=null,n=!1,i?.()})})};window.location.href===e.url?i():(n=!0,window.addEventListener(`popstate`,()=>{let e=window.history.scrollRestoration;window.history.scrollRestoration=`manual`,window.setTimeout(()=>{i(()=>{window.history.scrollRestoration=e})},0)},{once:!0}),window.history.back())}),window.addEventListener(`hashchange`,()=>{!n&&t&&window.location.hash!==t.targetHash&&(r.remove(),t=null)})}</script><script data-astro-rerun>
+  function createProgressBar() {
+    const progressContainer = document.createElement("div");
+    progressContainer.className =
+      "progress-container fixed top-0 z-10 h-1 w-full bg-background";
+
+    const progressBar = document.createElement("div");
+    progressBar.className = "progress-bar h-1 w-0 bg-accent";
+    progressBar.id = "myBar";
+
+    progressContainer.appendChild(progressBar);
+    document.body.appendChild(progressContainer);
+  }
+  createProgressBar();
+
+  function updateScrollProgress() {
+    document.addEventListener("scroll", () => {
+      const winScroll =
+        document.body.scrollTop || document.documentElement.scrollTop;
+      const height =
+        document.documentElement.scrollHeight -
+        document.documentElement.clientHeight;
+      const scrolled = (winScroll / height) * 100;
+      if (document) {
+        const myBar = document.getElementById("myBar");
+        if (myBar) {
+          myBar.style.width = scrolled + "%";
+        }
+      }
+    });
+  }
+  updateScrollProgress();
+
+  function addHeadingLinks() {
+    const headings = Array.from(
+      document.querySelectorAll("h2, h3, h4, h5, h6")
+    );
+    for (const heading of headings) {
+      heading.classList.add("group");
+      const link = document.createElement("a");
+      link.className =
+        "heading-link ms-2 no-underline opacity-75 md:opacity-0 md:group-hover:opacity-100 md:focus:opacity-100";
+      link.href = "#" + heading.id;
+
+      const span = document.createElement("span");
+      span.ariaHidden = "true";
+      span.innerText = "#";
+      link.appendChild(span);
+      heading.appendChild(link);
+    }
+  }
+  addHeadingLinks();
+
+  function attachCopyButtons() {
+    const copyButtonLabel = "Copy";
+    const codeBlocks = Array.from(document.querySelectorAll("pre"));
+
+    for (const codeBlock of codeBlocks) {
+      const wrapper = document.createElement("div");
+      wrapper.style.position = "relative";
+
+      const computedStyle = getComputedStyle(codeBlock);
+      const hasFileNameOffset =
+        computedStyle.getPropertyValue("--file-name-offset").trim() !== "";
+
+      const topClass = hasFileNameOffset
+        ? "top-(--file-name-offset)"
+        : "-top-3";
+
+      const copyButton = document.createElement("button");
+      copyButton.className = `copy-code absolute end-3 ${topClass} rounded bg-muted border border-muted px-2 py-1 text-xs leading-4 text-foreground font-medium`;
+      copyButton.innerHTML = copyButtonLabel;
+      codeBlock.setAttribute("tabindex", "0");
+      codeBlock.appendChild(copyButton);
+
+      codeBlock?.parentNode?.insertBefore(wrapper, codeBlock);
+      wrapper.appendChild(codeBlock);
+
+      copyButton.addEventListener("click", async () => {
+        await copyCode(codeBlock, copyButton);
+      });
+    }
+
+    async function copyCode(block, button) {
+      const code = block.querySelector("code");
+      const text = code?.innerText;
+
+      await navigator.clipboard.writeText(text ?? "");
+
+      button.innerText = "Copied";
+
+      setTimeout(() => {
+        button.innerText = copyButtonLabel;
+      }, 700);
+    }
+  }
+  attachCopyButtons();
+
+  /** Accessible image lightbox for article images. */
+  function initLightbox() {
+    const article = document.getElementById("article");
+    if (!article) return;
+
+    const prefersReducedMotion = () =>
+      window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+    let overlay = null;
+    let lastFocused = null;
+    let removeDragListeners = null;
+
+    // Defer attribute mutations so they don't push the LCP timestamp.
+    // Event listeners below use delegation and don't need the attributes to exist yet.
+    requestAnimationFrame(() => {
+      const images = Array.from(article.querySelectorAll("img"));
+      for (const image of images) {
+        if (image.closest("a")) continue;
+        image.setAttribute("role", "button");
+        image.setAttribute("tabindex", "0");
+        image.setAttribute("aria-haspopup", "dialog");
+        image.setAttribute(
+          "aria-label",
+          image.alt ? `Zoom image: ${image.alt}` : "Zoom image"
+        );
+      }
+    });
+
+    function open(src, alt, trigger) {
+      if (overlay) return;
+      lastFocused = trigger ?? document.activeElement;
+
+      overlay = document.createElement("div");
+      overlay.setAttribute("role", "dialog");
+      overlay.setAttribute("aria-modal", "true");
+      overlay.setAttribute(
+        "aria-label",
+        alt ? `Image preview: ${alt}` : "Image preview"
+      );
+      overlay.className =
+        "fixed inset-0 z-50 flex cursor-zoom-out items-center justify-center bg-black/70 backdrop-blur-sm opacity-0 transition-opacity duration-200 motion-reduce:transition-none";
+
+      const closeButton = document.createElement("button");
+      closeButton.type = "button";
+      closeButton.setAttribute("aria-label", "Close image preview");
+      closeButton.className =
+        "absolute end-4 top-4 z-1 flex size-11 items-center justify-center rounded bg-black/50 text-3xl leading-none text-white";
+      closeButton.innerHTML = "&#10005;";
+      closeButton.addEventListener("click", close);
+
+      const image = document.createElement("img");
+      image.src = src;
+      image.alt = "";
+      image.className =
+        "max-h-[90dvh] max-w-[90dvw] cursor-default object-contain transition-transform duration-100 ease-out motion-reduce:transition-none data-[zoom=drag]:cursor-grabbing data-[zoom=drag]:transition-none data-[zoom=in]:cursor-grab";
+
+      overlay.append(closeButton, image);
+      overlay.addEventListener("click", e => {
+        if (e.target === overlay && currentScale <= 1) close();
+      });
+
+      let currentScale = 1;
+      let translateX = 0;
+      let translateY = 0;
+      let initialDist = 0;
+      let initialScale = 1;
+      let panStartX = 0;
+      let panStartY = 0;
+      let panStartTranslateX = 0;
+      let panStartTranslateY = 0;
+      let lastTapTime = 0;
+
+      function applyTransform() {
+        image.style.transform = `scale(${currentScale}) translate(${translateX}px, ${translateY}px)`;
+        // A backdrop click only closes at fit size, so drop the zoom-out cursor while zoomed.
+        overlay?.classList.toggle("cursor-zoom-out", currentScale <= 1);
+      }
+
+      function resetTransform() {
+        currentScale = 1;
+        translateX = 0;
+        translateY = 0;
+        image.style.transform = "";
+        image.removeAttribute("data-zoom");
+        overlay?.classList.add("cursor-zoom-out");
+      }
+
+      // Keep the zoomed image from being panned past its edges.
+      function clampTranslate() {
+        if (!overlay) return;
+        const maxX = Math.max(
+          0,
+          (image.clientWidth - overlay.clientWidth / currentScale) / 2
+        );
+        const maxY = Math.max(
+          0,
+          (image.clientHeight - overlay.clientHeight / currentScale) / 2
+        );
+        translateX = Math.min(maxX, Math.max(-maxX, translateX));
+        translateY = Math.min(maxY, Math.max(-maxY, translateY));
+      }
+
+      overlay.addEventListener(
+        "touchstart",
+        e => {
+          const t = e.touches;
+          if (t.length === 2) {
+            image.setAttribute("data-zoom", "drag");
+            initialDist = Math.hypot(
+              t[1].clientX - t[0].clientX,
+              t[1].clientY - t[0].clientY
+            );
+            initialScale = currentScale;
+          } else if (t.length === 1) {
+            const now = Date.now();
+            if (now - lastTapTime < 300) {
+              e.preventDefault();
+              if (currentScale > 1) {
+                resetTransform();
+              } else {
+                currentScale = 2;
+                translateX = 0;
+                translateY = 0;
+                applyTransform();
+                image.setAttribute("data-zoom", "in");
+              }
+              lastTapTime = 0;
+              panStartX = t[0].clientX;
+              panStartY = t[0].clientY;
+              panStartTranslateX = translateX;
+              panStartTranslateY = translateY;
+            } else {
+              lastTapTime = now;
+              if (currentScale > 1) {
+                image.setAttribute("data-zoom", "drag");
+                panStartX = t[0].clientX;
+                panStartY = t[0].clientY;
+                panStartTranslateX = translateX;
+                panStartTranslateY = translateY;
+              }
+            }
+          }
+        },
+        { passive: false }
+      );
+
+      overlay.addEventListener(
+        "touchmove",
+        e => {
+          const t = e.touches;
+          if (t.length === 2) {
+            e.preventDefault();
+            const dist = Math.hypot(
+              t[1].clientX - t[0].clientX,
+              t[1].clientY - t[0].clientY
+            );
+            const oldScale = currentScale;
+            currentScale = Math.min(
+              4,
+              Math.max(1, initialScale * (dist / initialDist))
+            );
+
+            // Zoom to the geometric center of the two fingers
+            const midX = (t[0].clientX + t[1].clientX) / 2;
+            const midY = (t[0].clientY + t[1].clientY) / 2;
+            const ox = overlay.clientWidth / 2;
+            const oy = overlay.clientHeight / 2;
+            translateX =
+              (midX - ox) * (1 / currentScale - 1 / oldScale) + translateX;
+            translateY =
+              (midY - oy) * (1 / currentScale - 1 / oldScale) + translateY;
+            clampTranslate();
+            applyTransform();
+          } else if (t.length === 1) {
+            if (currentScale > 1) {
+              e.preventDefault();
+              image.setAttribute("data-zoom", "drag");
+              translateX =
+                panStartTranslateX + (t[0].clientX - panStartX) / currentScale;
+              translateY =
+                panStartTranslateY + (t[0].clientY - panStartY) / currentScale;
+              clampTranslate();
+              applyTransform();
+            } else {
+              e.preventDefault();
+            }
+          }
+        },
+        { passive: false }
+      );
+
+      overlay.addEventListener("touchend", e => {
+        if (e.touches.length === 0) {
+          if (currentScale > 1) {
+            image.setAttribute("data-zoom", "in");
+          } else {
+            image.removeAttribute("data-zoom");
+          }
+          if (currentScale <= 1.05) resetTransform();
+        }
+      });
+
+      overlay.addEventListener("touchcancel", e => {
+        if (e.touches.length === 0) {
+          if (currentScale > 1) {
+            image.setAttribute("data-zoom", "in");
+          } else {
+            image.removeAttribute("data-zoom");
+          }
+          if (currentScale <= 1.05) resetTransform();
+        }
+      });
+
+      overlay.addEventListener(
+        "wheel",
+        e => {
+          e.preventDefault();
+          const oldScale = currentScale;
+          const delta = -e.deltaY * 0.001;
+          currentScale = Math.min(4, Math.max(1, currentScale * (1 + delta)));
+
+          if (currentScale <= 1.05) {
+            resetTransform();
+          } else {
+            image.setAttribute("data-zoom", "in");
+            // Zoom to cursor: adjust translate so the point under cursor stays fixed
+            const ox = overlay.clientWidth / 2;
+            const oy = overlay.clientHeight / 2;
+            translateX =
+              (e.clientX - ox) * (1 / currentScale - 1 / oldScale) + translateX;
+            translateY =
+              (e.clientY - oy) * (1 / currentScale - 1 / oldScale) + translateY;
+            clampTranslate();
+            applyTransform();
+          }
+        },
+        { passive: false }
+      );
+
+      let isMouseDown = false;
+      let mouseStartX = 0;
+      let mouseStartY = 0;
+
+      overlay.addEventListener("mousedown", e => {
+        if (e.button !== 0 || currentScale <= 1) return;
+        if (e.target.closest("button")) return;
+        isMouseDown = true;
+        mouseStartX = e.clientX;
+        mouseStartY = e.clientY;
+        panStartTranslateX = translateX;
+        panStartTranslateY = translateY;
+        image.setAttribute("data-zoom", "drag");
+        e.preventDefault();
+      });
+
+      function onMouseMove(e) {
+        if (!isMouseDown || !overlay) return;
+        translateX =
+          panStartTranslateX + (e.clientX - mouseStartX) / currentScale;
+        translateY =
+          panStartTranslateY + (e.clientY - mouseStartY) / currentScale;
+        clampTranslate();
+        applyTransform();
+      }
+
+      function onMouseUp() {
+        if (!isMouseDown) return;
+        isMouseDown = false;
+        if (currentScale > 1) {
+          image.setAttribute("data-zoom", "in");
+        } else {
+          image.removeAttribute("data-zoom");
+        }
+      }
+
+      document.addEventListener("mousemove", onMouseMove);
+      document.addEventListener("mouseup", onMouseUp);
+      removeDragListeners = () => {
+        document.removeEventListener("mousemove", onMouseMove);
+        document.removeEventListener("mouseup", onMouseUp);
+      };
+
+      document.body.appendChild(overlay);
+      document.documentElement.style.overflow = "hidden";
+      document.addEventListener("keydown", onKeyDown);
+      window.__closeLightbox = close;
+
+      requestAnimationFrame(() => overlay?.classList.add("opacity-100"));
+      closeButton.focus();
+    }
+
+    function close() {
+      if (!overlay) return;
+      const el = overlay;
+      overlay = null;
+      el.classList.add("pointer-events-none");
+      window.__closeLightbox = null;
+
+      document.removeEventListener("keydown", onKeyDown);
+      removeDragListeners?.();
+      removeDragListeners = null;
+      document.documentElement.style.overflow = "";
+      lastFocused?.focus();
+      lastFocused = null;
+
+      if (prefersReducedMotion()) {
+        el.remove();
+        return;
+      }
+      const remove = () => el.remove();
+      el.addEventListener("transitionend", remove, { once: true });
+      setTimeout(remove, 250); // fallback in case transitionend never fires
+      el.classList.remove("opacity-100");
+    }
+
+    function onKeyDown(e) {
+      if (e.key === "Escape") {
+        close();
+      } else if (e.key === "Tab") {
+        trapFocus(e);
+      }
+    }
+
+    // Keep keyboard focus inside the open dialog.
+    function trapFocus(e) {
+      if (!overlay) return;
+      const focusables = overlay.querySelectorAll(
+        'a[href], button, [tabindex]:not([tabindex="-1"])'
+      );
+      if (focusables.length === 0) return;
+      const first = focusables[0];
+      const last = focusables[focusables.length - 1];
+      if (e.shiftKey && document.activeElement === first) {
+        e.preventDefault();
+        last.focus();
+      } else if (!e.shiftKey && document.activeElement === last) {
+        e.preventDefault();
+        first.focus();
+      }
+    }
+
+    function triggerFromEvent(e) {
+      const image = e.target.closest("img");
+      if (!image || !article.contains(image) || image.closest("a")) return null;
+      return image;
+    }
+
+    function activate(image) {
+      open(image.currentSrc || image.src, image.alt, image);
+    }
+
+    article.addEventListener("click", e => {
+      const image = triggerFromEvent(e);
+      if (!image) return;
+      e.preventDefault();
+      activate(image);
+    });
+
+    article.addEventListener("keydown", e => {
+      if (e.key !== "Enter" && e.key !== " " && e.key !== "Spacebar") return;
+      const image = triggerFromEvent(e);
+      if (!image) return;
+      e.preventDefault();
+      activate(image);
+    });
+  }
+  initLightbox();
+
+  if (!window.__lightboxSwapBound) {
+    window.__lightboxSwapBound = true;
+    document.addEventListener("astro:before-swap", () =>
+      window.__closeLightbox?.()
+    );
+  }
+
+  document.addEventListener("astro:after-swap", () =>
+    window.scrollTo({ left: 0, top: 0, behavior: "instant" })
+  );
+</script>
