@@ -1,0 +1,993 @@
+<!DOCTYPE html><html dir="ltr" lang="zh-CN" class="overflow-y-scroll scroll-smooth"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1"><link rel="icon" type="image/png" href="/images/favicon-32x32-next.png"><link rel="icon" href="/favicon.ico"><link rel="canonical" href="https://www.saromchars.tech/posts/mail-headers-mime/"><meta name="generator" content="Astro v7.4.5"><!-- Primary meta --><title>邮件头、正文与 MIME 编码 | Sarom&#39;s Blog</title><meta name="title" content="邮件头、正文与 MIME 编码 | Sarom's Blog"><meta name="description" content="SMTP 信封决定投递目标，邮件头描述消息，MIME 则组织字符集、传输编码和多部件结构。本文用一封嵌套邮件示例说明它们如何配合。"><meta name="author" content="Sarom Chars"><link rel="sitemap" href="/sitemap-index.xml"><!-- Open Graph --><meta property="og:type" content="article"><meta property="og:site_name" content="Sarom's Blog"><meta property="og:title" content="邮件头、正文与 MIME 编码 | Sarom's Blog"><meta property="og:description" content="SMTP 信封决定投递目标，邮件头描述消息，MIME 则组织字符集、传输编码和多部件结构。本文用一封嵌套邮件示例说明它们如何配合。"><meta property="og:url" content="https://www.saromchars.tech/posts/mail-headers-mime/"><meta property="og:image" content="https://www.saromchars.tech/og.png"><!-- Twitter / X --><meta property="twitter:card" content="summary_large_image"><meta property="twitter:url" content="https://www.saromchars.tech/posts/mail-headers-mime/"><meta property="twitter:title" content="邮件头、正文与 MIME 编码 | Sarom's Blog"><meta property="twitter:description" content="SMTP 信封决定投递目标，邮件头描述消息，MIME 则组织字符集、传输编码和多部件结构。本文用一封嵌套邮件示例说明它们如何配合。"><meta property="twitter:image" content="https://www.saromchars.tech/og.png"><!-- RSS autodiscovery --><link rel="alternate" type="application/rss+xml" title="Sarom's Blog" href="https://www.saromchars.tech/rss.xml"><!-- Filled at runtime by theme.ts to match the current background colour --><meta name="theme-color" content=""><!-- Extra head content injected by child layouts (e.g. JSON-LD, article meta) --><meta property="article:published_time" content="2021-08-11T02:00:00.000Z"><script type="application/ld+json">{"@context":"https://schema.org","@type":"BlogPosting","headline":"邮件头、正文与 MIME 编码","mainEntityOfPage":"https://www.saromchars.tech/posts/mail-headers-mime/","datePublished":"2021-08-11T02:00:00.000Z","author":[{"@type":"Person","name":"Sarom Chars","url":"https://github.com/SaromChars"}]}</script><!--
+      Inline FOUC-prevention script: sets data-theme on <html> before
+      the browser paints. Runs synchronously, no defer/async.
+    --><script>
+      (function () {
+        const stored = localStorage.getItem("theme");
+        const prefersDark = window.matchMedia(
+          "(prefers-color-scheme: dark)"
+        ).matches;
+        const theme = stored ?? (prefersDark ? "dark" : "light");
+        const root = document.firstElementChild;
+        root?.setAttribute("data-theme", theme);
+        root?.classList.toggle("dark", theme === "dark");
+        // Expose value so theme.ts can skip re-detection.
+        window.__theme = { value: theme };
+      })();
+    </script><meta name="robots" content="index, follow"><script async src="https://www.googletagmanager.com/gtag/js?id=G-WJJJTJ4FWX"></script><script>(function(){const measurementId = "G-WJJJTJ4FWX";
+
+    window.dataLayer = window.dataLayer || [];
+    function gtag(){ window.dataLayer.push(arguments); }
+    gtag('js', new Date());
+    gtag('config', measurementId);
+  })();</script><style>@keyframes astroFadeInOut{0%{opacity:1}to{opacity:0}}@keyframes astroFadeIn{0%{opacity:0;mix-blend-mode:plus-lighter}to{opacity:1;mix-blend-mode:plus-lighter}}@keyframes astroFadeOut{0%{opacity:1;mix-blend-mode:plus-lighter}to{opacity:0;mix-blend-mode:plus-lighter}}@keyframes astroSlideFromRight{0%{transform:translate(100%)}}@keyframes astroSlideFromLeft{0%{transform:translate(-100%)}}@keyframes astroSlideToRight{to{transform:translate(100%)}}@keyframes astroSlideToLeft{to{transform:translate(-100%)}}@media (prefers-reduced-motion){::view-transition-group(*),::view-transition-old(*),::view-transition-new(*),[data-astro-transition-scope]{animation:none!important}}
+</style><link rel="stylesheet" href="/_astro/Footer.wlxowfqU.css"><style>[data-astro-transition-scope="astro-bztu2lml-1"] { view-transition-name: \90AE\7BB1\7CFB\7EDF; }@layer astro { ::view-transition-old(\90AE\7BB1\7CFB\7EDF) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }::view-transition-new(\90AE\7BB1\7CFB\7EDF) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }[data-astro-transition=back]::view-transition-old(\90AE\7BB1\7CFB\7EDF) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition=back]::view-transition-new(\90AE\7BB1\7CFB\7EDF) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; } }[data-astro-transition-fallback="old"] [data-astro-transition-scope="astro-bztu2lml-1"],
+			[data-astro-transition-fallback="old"][data-astro-transition-scope="astro-bztu2lml-1"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition-fallback="new"] [data-astro-transition-scope="astro-bztu2lml-1"],
+			[data-astro-transition-fallback="new"][data-astro-transition-scope="astro-bztu2lml-1"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }[data-astro-transition=back][data-astro-transition-fallback="old"] [data-astro-transition-scope="astro-bztu2lml-1"],
+			[data-astro-transition=back][data-astro-transition-fallback="old"][data-astro-transition-scope="astro-bztu2lml-1"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition=back][data-astro-transition-fallback="new"] [data-astro-transition-scope="astro-bztu2lml-1"],
+			[data-astro-transition=back][data-astro-transition-fallback="new"][data-astro-transition-scope="astro-bztu2lml-1"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }</style><style>[data-astro-transition-scope="astro-bztu2lml-2"] { view-transition-name: rfc-5322; }@layer astro { ::view-transition-old(rfc-5322) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }::view-transition-new(rfc-5322) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }[data-astro-transition=back]::view-transition-old(rfc-5322) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition=back]::view-transition-new(rfc-5322) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; } }[data-astro-transition-fallback="old"] [data-astro-transition-scope="astro-bztu2lml-2"],
+			[data-astro-transition-fallback="old"][data-astro-transition-scope="astro-bztu2lml-2"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition-fallback="new"] [data-astro-transition-scope="astro-bztu2lml-2"],
+			[data-astro-transition-fallback="new"][data-astro-transition-scope="astro-bztu2lml-2"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }[data-astro-transition=back][data-astro-transition-fallback="old"] [data-astro-transition-scope="astro-bztu2lml-2"],
+			[data-astro-transition=back][data-astro-transition-fallback="old"][data-astro-transition-scope="astro-bztu2lml-2"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition=back][data-astro-transition-fallback="new"] [data-astro-transition-scope="astro-bztu2lml-2"],
+			[data-astro-transition=back][data-astro-transition-fallback="new"][data-astro-transition-scope="astro-bztu2lml-2"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }</style><style>[data-astro-transition-scope="astro-bztu2lml-3"] { view-transition-name: mime; }@layer astro { ::view-transition-old(mime) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }::view-transition-new(mime) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }[data-astro-transition=back]::view-transition-old(mime) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition=back]::view-transition-new(mime) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; } }[data-astro-transition-fallback="old"] [data-astro-transition-scope="astro-bztu2lml-3"],
+			[data-astro-transition-fallback="old"][data-astro-transition-scope="astro-bztu2lml-3"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition-fallback="new"] [data-astro-transition-scope="astro-bztu2lml-3"],
+			[data-astro-transition-fallback="new"][data-astro-transition-scope="astro-bztu2lml-3"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }[data-astro-transition=back][data-astro-transition-fallback="old"] [data-astro-transition-scope="astro-bztu2lml-3"],
+			[data-astro-transition=back][data-astro-transition-fallback="old"][data-astro-transition-scope="astro-bztu2lml-3"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition=back][data-astro-transition-fallback="new"] [data-astro-transition-scope="astro-bztu2lml-3"],
+			[data-astro-transition=back][data-astro-transition-fallback="new"][data-astro-transition-scope="astro-bztu2lml-3"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }</style><style>[data-astro-transition-scope="astro-bztu2lml-4"] { view-transition-name: \90AE\4EF6\5934; }@layer astro { ::view-transition-old(\90AE\4EF6\5934) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }::view-transition-new(\90AE\4EF6\5934) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }[data-astro-transition=back]::view-transition-old(\90AE\4EF6\5934) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition=back]::view-transition-new(\90AE\4EF6\5934) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; } }[data-astro-transition-fallback="old"] [data-astro-transition-scope="astro-bztu2lml-4"],
+			[data-astro-transition-fallback="old"][data-astro-transition-scope="astro-bztu2lml-4"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition-fallback="new"] [data-astro-transition-scope="astro-bztu2lml-4"],
+			[data-astro-transition-fallback="new"][data-astro-transition-scope="astro-bztu2lml-4"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }[data-astro-transition=back][data-astro-transition-fallback="old"] [data-astro-transition-scope="astro-bztu2lml-4"],
+			[data-astro-transition=back][data-astro-transition-fallback="old"][data-astro-transition-scope="astro-bztu2lml-4"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition=back][data-astro-transition-fallback="new"] [data-astro-transition-scope="astro-bztu2lml-4"],
+			[data-astro-transition=back][data-astro-transition-fallback="new"][data-astro-transition-scope="astro-bztu2lml-4"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }</style><style>[data-astro-transition-scope="astro-bztu2lml-5"] { view-transition-name: \7F16\7801; }@layer astro { ::view-transition-old(\7F16\7801) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }::view-transition-new(\7F16\7801) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }[data-astro-transition=back]::view-transition-old(\7F16\7801) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition=back]::view-transition-new(\7F16\7801) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; } }[data-astro-transition-fallback="old"] [data-astro-transition-scope="astro-bztu2lml-5"],
+			[data-astro-transition-fallback="old"][data-astro-transition-scope="astro-bztu2lml-5"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition-fallback="new"] [data-astro-transition-scope="astro-bztu2lml-5"],
+			[data-astro-transition-fallback="new"][data-astro-transition-scope="astro-bztu2lml-5"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }[data-astro-transition=back][data-astro-transition-fallback="old"] [data-astro-transition-scope="astro-bztu2lml-5"],
+			[data-astro-transition=back][data-astro-transition-fallback="old"][data-astro-transition-scope="astro-bztu2lml-5"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition=back][data-astro-transition-fallback="new"] [data-astro-transition-scope="astro-bztu2lml-5"],
+			[data-astro-transition=back][data-astro-transition-fallback="new"][data-astro-transition-scope="astro-bztu2lml-5"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }</style></head><body class="bg-background font-app text-foreground selection:bg-accent/75 selection:text-accent-foreground flex min-h-svh flex-col"><a id="skip-to-content" href="#main-content" class="bg-background text-accent absolute inset-s-16 -top-full z-50 px-3 py-2 backdrop-blur-lg transition-all focus:top-4">跳到正文</a><header class="app-layout flex flex-col items-center justify-between sm:flex-row"><div class="border-border bg-background relative flex w-full items-baseline justify-between border-b py-4 sm:items-center sm:py-6"><a href="/" class="absolute py-1 text-xl leading-8 font-semibold whitespace-nowrap sm:static sm:my-auto sm:text-2xl sm:leading-none">Sarom&#39;s Blog</a><nav id="nav-menu" class="flex w-full flex-col items-center sm:ms-2 sm:flex-row sm:justify-end sm:space-x-4 sm:py-0"><button id="menu-btn" class="focus-outline self-end p-2 sm:hidden" aria-label="展开菜单" aria-expanded="false" aria-controls="menu-items" data-label-open="展开菜单" data-label-close="收起菜单"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="hidden" viewBox="0 0 24 24" id="close-icon"><path stroke="none" d="M0 0h24v24H0z" /><path d="M18 6 6 18M6 6l12 12" /></svg><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="icon icon-tabler icons-tabler-outline icon-tabler-menu-deep" viewBox="0 0 24 24" id="menu-icon"><path stroke="none" d="M0 0h24v24H0z" /><path d="M4 6h16M7 12h13M10 18h10" /></svg></button><ul id="menu-items" class="[&amp;&gt;li&gt;a]:hover:text-accent mt-4 hidden w-44 grid-cols-2 place-content-center gap-2 sm:mt-0 sm:flex sm:w-auto sm:gap-x-5 sm:gap-y-0 sm:[&amp;&gt;li]:h-8 [&amp;&gt;li&gt;a]:block [&amp;&gt;li&gt;a]:px-4 [&amp;&gt;li&gt;a]:py-3 [&amp;&gt;li&gt;a]:text-center [&amp;&gt;li&gt;a]:font-medium sm:[&amp;&gt;li&gt;a]:px-2 sm:[&amp;&gt;li&gt;a]:py-1"><li class="col-span-2"><a href="/posts/" class="active-nav">文章</a></li><li class="col-span-2"><a href="/tags/">标签</a></li><li class="col-span-2"><a href="/about/">关于</a></li><li class="col-span-2"><a href="/archives/" title="归档" aria-label="归档" class="group inline-flex items-center gap-1 hover:text-accent focus-outline flex size-full justify-center p-3 sm:relative sm:size-8 sm:p-0"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="hidden sm:absolute sm:top-1/2 sm:left-1/2 sm:block sm:size-6 sm:-translate-x-1/2 sm:-translate-y-1/2" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M3 6a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2 2 2 0 0 1-2 2H5a2 2 0 0 1-2-2M5 8v10a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8M10 12h4" /></svg><span class="sm:sr-only">归档</span></a></li><li class="col-span-1 flex items-center justify-center"><a href="/search/" title="搜索" aria-label="搜索" class="group inline-flex items-center gap-1 hover:text-accent focus-outline relative size-8"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="absolute top-1/2 left-1/2 size-6 -translate-x-1/2 -translate-y-1/2" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M3 10a7 7 0 1 0 14 0 7 7 0 1 0-14 0M21 21l-6-6" /></svg><span class="sr-only">搜索</span></a></li><li class="col-span-1 flex items-center justify-center"><button id="theme-btn" class="focus-outline hover:[&amp;&gt;svg]:stroke-accent relative size-12 p-4 sm:size-8" title="切换主题" aria-label="auto" aria-live="polite"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="absolute top-[50%] left-[50%] translate-[-50%] scale-100 rotate-0 transition-all dark:scale-0 dark:-rotate-90" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M12 3h.393a7.5 7.5 0 0 0 7.92 12.446A9 9 0 1 1 12 2.992z" /></svg><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="absolute top-[50%] left-[50%] translate-[-50%] scale-0 rotate-90 transition-all dark:scale-100 dark:rotate-0" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M14.828 14.828a4 4 0 1 0-5.656-5.656 4 4 0 0 0 5.656 5.656M6.343 17.657l-1.414 1.414M6.343 6.343 4.929 4.929M17.657 6.343l1.414-1.414M17.657 17.657l1.414 1.414M4 12H2M12 4V2M20 12h2M12 20v2" /></svg></button></li></ul></nav></div></header><script type="module">function e(){let e=document.querySelector(`#menu-btn`),t=document.querySelector(`#menu-items`),n=document.querySelector(`#menu-icon`),r=document.querySelector(`#close-icon`);if(!e||!t||!n||!r)return;let i=e.dataset.labelOpen??`Open menu`,a=e.dataset.labelClose??`Close menu`;e.addEventListener(`click`,()=>{let o=e.getAttribute(`aria-expanded`)===`true`;e.setAttribute(`aria-expanded`,o?`false`:`true`),e.setAttribute(`aria-label`,o?i:a),t.classList.toggle(`hidden`),t.classList.toggle(`grid`),n.classList.toggle(`hidden`),r.classList.toggle(`hidden`)})}function t(){let e=document.getElementById(`skip-to-content`);e&&e.addEventListener(`click`,e=>{if(e.defaultPrevented||e.metaKey||e.ctrlKey||e.shiftKey||e.button!==0)return;e.preventDefault();let t=document.getElementById(`main-content`);t&&(t.setAttribute(`tabindex`,`-1`),t.addEventListener(`blur`,()=>t.removeAttribute(`tabindex`),{once:!0}),t.focus(),t.scrollIntoView({behavior:`smooth`}))})}e(),document.addEventListener(`astro:after-swap`,e),t(),document.addEventListener(`astro:after-swap`,t);</script><div class="app-layout flex items-center justify-start"><a id="back-button" href="/" class="group inline-flex items-center gap-1 hover:text-accent focus-outline hover:text-foreground/75 -ms-2 mt-8 mb-2"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="inline-block size-6 rtl:rotate-180" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="m15 6-6 6 6 6" /></svg><span>返回</span></a></div><script type="module">function e(){let e=document.querySelector(`#back-button`),t=sessionStorage.getItem(`backUrl`);t&&e&&(e.href=t)}document.addEventListener(`astro:page-load`,e),e();</script><main id="main-content" class="app-layout" data-pagefind-body><h1 style="view-transition-name:mail-headers-mime" class="text-accent inline-block text-2xl font-bold sm:text-3xl">邮件头、正文与 MIME 编码</h1><div class="my-2 flex items-center gap-2"><div class="text-muted-foreground flex flex-wrap items-center gap-x-2 gap-y-1"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="inline-block size-6 min-w-5.5" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M4 7a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2zM16 3v4M8 3v4M4 11h16M7 14h.013M10.01 14h.005M13.01 14h.005M16.015 14h.005M13.015 17h.005M7.01 17h.005M10.01 17h.005" /></svg><time class="text-sm sm:text-base" datetime="2021-08-11T02:00:00.000Z">2021年8月11日</time></div><span aria-hidden="true" class="text-muted-foreground max-sm:hidden hidden">|</span></div><article id="article" class="mt-8 w-full app-prose max-w-app prose-pre:bg-(--shiki-light-bg) dark:prose-pre:bg-(--shiki-dark-bg)"><p>在简单邮件传输协议（Simple Mail Transfer Protocol，SMTP）的会话中，客户端通过 <code>DATA</code> 命令发送的数据块，在协议语义上被称为邮件内容（Content）。这块数据在进入具体传输通道之前，必须遵循严格的报文格式规范。</p>
+<p>定义纯文本邮件报文格式的基础标准是 <a href="#ref-rfc5322">RFC 5322</a>（互联网邮件格式，Internet Message Format，IMF）。为了使邮件支持多国语言字符集、非文本多媒体内容与复杂多部件结构，<a href="#ref-rfc2045">RFC 2045</a> 与 <a href="#ref-rfc2046">RFC 2046</a>（多用途互联网邮件扩展，Multipurpose Internet Mail Extensions，MIME）系列规范与 RFC 5322 报文格式配合使用，补充了内容描述与编码机制（MIME 规范最初针对 RFC 822 制定）。</p>
+<hr>
+<h2 id="信封地址与邮件头字段的语义分离">信封地址与邮件头字段的语义分离</h2>
+<p>邮件系统中存在两套职责不同的地址与元数据体系：<strong>信封元数据（Envelope Metadata）<strong>与</strong>邮件头字段（Header Fields）</strong>。</p>
+<ul>
+<li><strong>信封地址（Envelope Address）</strong>：由 SMTP 会话中的 <code>MAIL FROM</code>（反向路径，用于退信通知）与 <code>RCPT TO</code>（正向路径，用于路由与投递）命令显式声明。SMTP 事务的本次投递目标完全取自信封，显示地址不直接决定本事务的路由。</li>
+<li><strong>邮件头字段（Header Fields）</strong>：位于邮件内容的头部区域，以可打印字符构造，供邮件用户代理（Message User Agent，MUA）展示给用户阅读，或供过滤规则归档分类。</li>
+</ul>
+<p>RFC 5322 明确指出，它只规范邮件内容的格式，不规范信封。这种语义分离带来了关键工程机制：</p>
+<ol>
+<li><strong>密送（Blind Carbon Copy，Bcc）的实现</strong>：当发件人密送给某个收件人时，发信组件根据收件人列表构造信封并在发送前准备相应副本。在最终递送给其他公开收件人的邮件内容中，<code>Bcc:</code> 字段会被剥除，或者向密送收件人单独投递副本。</li>
+<li><strong>显示与路由分离</strong>：在 MUA 界面看到的 <code>From:</code> 是邮件头字段，它在协议上可以与 SMTP 传输中的信封 <code>MAIL FROM</code> 不一致。</li>
+</ol>
+<hr>
+<h2 id="rfc-5322-的头部结构与字段约束">RFC 5322 的头部结构与字段约束</h2>
+<p>根据 RFC 5322 第 2.1 节，一封合法的邮件由<strong>头部区域（Header Section）</strong>与可选的<strong>正文（Body）</strong>构成，两者之间严格以一个<strong>空行（即回车换行，Carriage Return and Line Feed，CRLF）</strong>分隔。</p>
+<pre class="astro-code astro-code-themes min-light night-owl" style="--shiki-light:#24292eff;--shiki-dark:#d6deeb;--shiki-light-bg:#ffffff;--shiki-dark-bg:#011627; overflow-x: auto;--file-name-offset: -0.75rem;" tabindex="0" data-language="text"><code><span class="line"><span>Field-Name: Field-Body&#x3C;CRLF></span></span>
+<span class="line"><span>Another-Field: Field-Body&#x3C;CRLF></span></span>
+<span class="line"><span>&#x3C;CRLF></span></span>
+<span class="line"><span>Here is the message body text...</span></span></code></pre>
+<h3 id="1-行长限制与头部折叠folding">1. 行长限制与头部折叠（Folding）</h3>
+<p>RFC 5322 第 2.1.1 节对邮件内容的每一行施加了两项长度约束：</p>
+<ul>
+<li><strong>强制硬性上限</strong>：每行字符数不得超过 <strong>998 个字符</strong>（不包含行尾 CRLF）。若单行超过 998 字符，该报文可能被某些传输代理拒收或无法被正确处理。</li>
+<li><strong>推荐行长</strong>：每行建议不超过 <strong>78 个字符</strong>（不包含 CRLF），以便在窄屏终端平整展示。</li>
+</ul>
+<p>为了在单行长度受限的前提下表达较长字段，RFC 5322 第 2.2.3 节定义了<strong>头部折叠（Folding）</strong>机制：
+在允许出现折叠空白符（Folding White Space，FWS）的语法位置，可以在空白符（空格 Space，SP 或水平制表符 Horizontal Tab，HTAB）之前插入一个 <code>&#x3C;CRLF></code>。</p>
+<p>接收端在解析头部字段时执行<strong>展开（Unfolding）</strong>程序：
+删除后面紧跟空格或制表符的 <code>&#x3C;CRLF></code>，保留这些空白字符；再按具体字段的语法进行解析。</p>
+<p>例如，一个长收件人字段在物理传输时被折叠为两行：</p>
+<pre class="astro-code astro-code-themes min-light night-owl" style="--shiki-light:#24292eff;--shiki-dark:#d6deeb;--shiki-light-bg:#ffffff;--shiki-dark-bg:#011627; overflow-x: auto;--file-name-offset: -0.75rem;" tabindex="0" data-language="text"><code><span class="line"><span>To: alice@example.com,</span></span>
+<span class="line"><span>    bob@example.net</span></span></code></pre>
+<p>解析端展开后，折行处的 CRLF 被移除，第二行开头的缩进空格保留，由地址解析器继续按逗号和空白切分。</p>
+<h3 id="2-核心头部字段与出现基数约束">2. 核心头部字段与出现基数约束</h3>
+<p>RFC 5322 第 3.6 节对各类字段的语义与出现次数作出了规定：</p>
+<div class="table-wrapper" tabindex="0">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<table><thead><tr><th align="left">头部字段</th><th align="left">语法基数要求</th><th align="left">语义定义与协议边界</th></tr></thead><tbody><tr><td align="left"><strong><code>Date:</code></strong></td><td align="left">必须且仅允许 1 个</td><td align="left">发件人完成邮件编写并交付外发系统的源起时间（RFC 5322 第 3.6.1 节），非网络传输时间。</td></tr><tr><td align="left"><strong><code>From:</code></strong></td><td align="left">必须且仅允许 1 个</td><td align="left">标明对邮件负有著作责任的作者邮箱（可为多个邮箱地址组成的列表）。</td></tr><tr><td align="left"><strong><code>Sender:</code></strong></td><td align="left">0 个或 1 个</td><td align="left">标明实际执行代理发信的邮箱（RFC 5322 第 3.6.2 节）。当 <code>From:</code> 包含多个邮箱地址时，<code>Sender:</code> <strong>必须（MUST）</strong>出现且只能有单个邮箱。</td></tr><tr><td align="left"><strong><code>Reply-To:</code></strong></td><td align="left">0 个或 1 个</td><td align="left">建议收件人回复时的目标地址列表。缺失时，MUA 默认回复给 <code>From:</code>。</td></tr><tr><td align="left"><strong><code>To:</code> / <code>Cc:</code></strong></td><td align="left">0 个或 1 个</td><td align="left"><code>To:</code> 为主要接收人；<code>Cc:</code> 为抄送接收人。二者语法允许包含多个邮箱地址。</td></tr><tr><td align="left"><strong><code>Message-ID:</code></strong></td><td align="left">0 个或 1 个（强烈推荐）</td><td align="left">机器可读的唯一报文标识符（RFC 5322 第 3.6.4 节），格式为 <code>&#x3C;id-left@id-right></code>。</td></tr><tr><td align="left"><strong><code>In-Reply-To:</code></strong></td><td align="left">0 个或 1 个</td><td align="left">标识当前回复所对应的一封或多封父报文的 <code>Message-ID</code>。</td></tr><tr><td align="left"><strong><code>References:</code></strong></td><td align="left">0 个或 1 个</td><td align="left">记录可用于构造会话关系的一组报文标识；通常继承父邮件的 <code>References</code> 并追加父 <code>Message-ID</code>，不保证历史完整。</td></tr><tr><td align="left"><strong><code>Subject:</code></strong></td><td align="left">0 个或 1 个</td><td align="left">非结构化短文本，指明邮件主题。</td></tr></tbody></table></div>
+<hr>
+<h2 id="mime-内容描述与-rfc-2045">MIME 内容描述与 RFC 2045</h2>
+<p>基础的 RFC 5322 格式使用美国信息交换标准代码（American Standard Code for Information Interchange，ASCII，本文特指 US-ASCII，字符值 1 至 127）。RFC 2045 定义了标准头部字段，使得邮件可以在保持 RFC 5322 报文格式兼容的前提下承载丰富内容。</p>
+<h3 id="1-mime-标识与默认继承">1. MIME 标识与默认继承</h3>
+<p>遵循 MIME 规范的报文在顶层头部包含版本声明（RFC 2045 第 4 节）：</p>
+<pre class="astro-code astro-code-themes min-light night-owl" style="--shiki-light:#24292eff;--shiki-dark:#d6deeb;--shiki-light-bg:#ffffff;--shiki-dark-bg:#011627; overflow-x: auto;--file-name-offset: -0.75rem;" tabindex="0" data-language="text"><code><span class="line"><span>MIME-Version: 1.0</span></span></code></pre>
+<p>在协议解析中，不同字段的缺省语义有所区别：</p>
+<ul>
+<li><strong>缺少 <code>Content-Type</code> 时</strong>：RFC 2045 第 5.2 节规定默认采用 <code>text/plain; charset=us-ascii</code>。</li>
+<li><strong>缺少 <code>MIME-Version</code> 时</strong>：RFC 2045 第 4 节明确指出不能确认该报文遵循 MIME 规范，接收端可能按本地约定解释正文，不能据此反推实际编码或字符集。</li>
+</ul>
+<h3 id="2-媒体类型与字符集参数">2. 媒体类型与字符集参数</h3>
+<p><code>Content-Type</code> 字段（RFC 2045 第 5 节）的语法形如 <code>type/subtype; parameter=value</code>：</p>
+<ul>
+<li><strong>主类型（Type）</strong>：定义数据的基本类别。RFC 2046 初始定义了五类离散类型（<code>text</code>、<code>image</code>、<code>audio</code>、<code>video</code>、<code>application</code>）与两类复合类型（<code>multipart</code>、<code>message</code>）。</li>
+<li><strong>字符集参数（charset）</strong>：针对 <code>text</code> 类型，<code>charset</code> 参数指明字节序列对应的字符编码（如 <code>utf-8</code> 或 <code>gb2312</code>）。</li>
+</ul>
+<hr>
+<h2 id="内容传输编码content-transfer-encoding">内容传输编码（Content-Transfer-Encoding）</h2>
+<p>由于早期 SMTP 传输通道主要为 7 位 US-ASCII 短行设计，若直接传输 8 位字节或任意二进制流，可能在老旧网关处遭遇高位被剥除或控制符被过滤的风险。RFC 2045 第 6 节为此定义了 <code>Content-Transfer-Encoding</code> 传输编码机制。</p>
+<p>规范定义了五类核心机制：</p>
+<ol>
+<li><strong><code>7bit</code></strong>：数据本身由不超过 998 字节的短行 US-ASCII 字符组成，编码前后字节不变，是协议的默认状态。</li>
+<li><strong><code>8bit</code></strong>：数据由短行构成但包含大于 127 的字节，编码前后字节不变，需传输通道支持 8 位传输。</li>
+<li><strong><code>binary</code></strong>：允许任意字节流，行长不受 CRLF 限制，编码前后字节不变。</li>
+<li><strong><code>quoted-printable</code></strong>：面向大部分为可打印 ASCII 字符、少量非 ASCII 字节的文本。</li>
+<li><strong><code>base64</code></strong>：面向任意二进制或非 ASCII 密集型数据。</li>
+</ol>
+<h3 id="quoted-printable-编码规则rfc-2045-第-67-节">Quoted-Printable 编码规则（RFC 2045 第 6.7 节）</h3>
+<p>Quoted-Printable（简称 QP）旨在保持文本的人类可读性，编码按如下顺序应用：</p>
+<ol>
+<li><strong>可打印字符与内部空白</strong>：ASCII 值 33 到 60 以及 62 到 126 的字符可直接保留（<code>=</code> 字符除外）；行内的空格（SP）与制表符（HTAB）也可直接保留。</li>
+<li><strong>特殊字节与非 ASCII 字节转义</strong>：等号 <code>=</code> 以及大于 126 的字节必须转义为 <code>=</code> 紧跟两位大写十六进制数（例如等号编码为 <code>=3D</code>）；其他控制字节也必须按 <code>=XX</code> 编码（例如换页符为 <code>=0C</code>）。</li>
+<li><strong>行末空白保护</strong>：行尾的空格与制表符必须转义（如 <code>=20</code>、<code>=09</code>），避免在传输中途被中继剔除。</li>
+<li><strong>文本真实换行</strong>：文本数据规范形式中的 CRLF 换行在 QP 编码中保留为 CRLF。</li>
+<li><strong>软换行（Soft Line Break）</strong>：编码后每行长度不得超过 76 个字符。若单行过长，在行末插入一个单独的等号 <code>=</code> 并换行（即 <code>=CRLF</code>），解码端还原时剥除该等号并将前后行拼接。</li>
+</ol>
+<h3 id="base64-编码规则rfc-2045-第-68-节">Base64 编码规则（RFC 2045 第 6.8 节）</h3>
+<p>Base64 将连续的字节流按每 3 个字节（24 位）为一组，转换为 4 个 6 位的索引，并映射到 64 个安全打印字符（<code>A-Z</code>, <code>a-z</code>, <code>0-9</code>, <code>+</code>, <code>/</code>）：</p>
+<ul>
+<li><strong>体积变化</strong>：不含 CRLF 时，输入 n 个字节会产生 4 × 向上取整(n ÷ 3) 个编码字符。短数据受填充影响明显；较长数据的字符数趋近于原字节数的 4/3（约增 33%）。每行编码字符不超过 76 个（不计行末 CRLF）。</li>
+<li><strong>尾部填充（Padding）</strong>：当输入字节数不能被 3 整除时，尾部用 0 补足 6 位组，并在输出末尾补充 <code>=</code>（余 1 字节输出 2 字符加 <code>==</code>；余 2 字节输出 3 字符加 <code>=</code>）。</li>
+</ul>
+<hr>
+<h2 id="复合实体与-multipart-边界rfc-2046">复合实体与 multipart 边界（RFC 2046）</h2>
+<p>当邮件需要同时承载排版正文、备用纯文本以及附件时，需使用复合媒体类型 <code>multipart</code>（RFC 2046 第 5.1 节）。</p>
+<h3 id="1-multipart-边界语法">1. multipart 边界语法</h3>
+<p><code>multipart</code> 类型必须在 <code>Content-Type</code> 声明中指定 <code>boundary</code> 参数：</p>
+<pre class="astro-code astro-code-themes min-light night-owl" style="--shiki-light:#24292eff;--shiki-dark:#d6deeb;--shiki-light-bg:#ffffff;--shiki-dark-bg:#011627; overflow-x: auto;--file-name-offset: -0.75rem;" tabindex="0" data-language="text"><code><span class="line"><span>Content-Type: multipart/mixed; boundary="simple-boundary-123"</span></span></code></pre>
+<p>其边界处理遵循以下规则：</p>
+<ul>
+<li><strong>边界分隔行</strong>：每个子实体部件（Body Part）开始前，独立成行插入 <code>--</code> 加上边界字符串，即 <code>--simple-boundary-123&#x3C;CRLF></code>。</li>
+<li><strong>结束分隔行</strong>：最后一个部件结束后，两端均带双连字符，即 <code>--simple-boundary-123--&#x3C;CRLF></code>。</li>
+<li><strong>位置与约束</strong>：边界字符串最长不超过 70 个字符（不计前导两个连字符）。子部件内部的数据不得在行首出现与边界分隔符冲突的行。分隔符行前的 CRLF 在语义上隶属于分隔符本身，不属于上一部件的正文数据。</li>
+<li><strong>前导语与后记（Preamble and Epilogue）</strong>：首个边界行之前与结束边界行之后的数据，MIME 解析器予以忽略。</li>
+</ul>
+<h3 id="2-常见-multipart-子类型的语义分工">2. 常见 Multipart 子类型的语义分工</h3>
+<div class="table-wrapper" tabindex="0">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<table><thead><tr><th align="left">复合子类型</th><th align="left">规范定位</th><th align="left">语义解析逻辑与部件顺序要求</th></tr></thead><tbody><tr><td align="left"><strong><code>multipart/mixed</code></strong></td><td align="left">RFC 2046 第 5.1.3 节</td><td align="left">各部件互相独立且按顺序捆绑。通常前部为主正文，后续为各类文件附件。</td></tr><tr><td align="left"><strong><code>multipart/alternative</code></strong></td><td align="left">RFC 2046 第 5.1.4 节</td><td align="left">各部件内容互为等价替代版本。<strong>发送端必须按保真度升序排列</strong>（从简单纯文本到丰富排版）。接收端通常优先选择最后一个自身能正常显示的部件，但也可由用户自行切换查看。</td></tr><tr><td align="left"><strong><code>multipart/digest</code></strong></td><td align="left">RFC 2046 第 5.1.5 节</td><td align="left">邮件摘要集合。与 mixed 语法相同，但子部件默认的 Content-Type 为 <code>message/rfc822</code>。</td></tr></tbody></table></div>
+<p>下面的结构图展示了 <code>multipart/mixed</code> 下嵌套 <code>multipart/alternative</code> 与独立附件的层级体系：</p>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 380 620" width="100%" style="height: auto; background-color: #fafafa; border: 1px solid #e5e7eb; border-radius: 6px; display: block; margin: 1.5rem auto;">
+<title>MIME 复合实体嵌套结构图</title>
+<desc>展示 multipart/mixed 容器下嵌套 alternative 文本与附件的竖向层级结构。</desc>
+<rect x="10" y="10" width="360" height="600" rx="6" fill="#ffffff" stroke="#374151" stroke-width="2"></rect>
+<text x="25" y="40" font-size="18" font-family="sans-serif" font-weight="bold" fill="#111827">顶级实体: multipart/mixed</text>
+<text x="25" y="68" font-size="18" font-family="sans-serif" fill="#4b5563">boundary="outer_bnd"</text>
+<rect x="25" y="85" width="330" height="295" rx="6" fill="#eff6ff" stroke="#2563eb" stroke-width="2"></rect>
+<text x="35" y="115" font-size="18" font-family="sans-serif" font-weight="bold" fill="#1e40af">第一部分: multipart/alternative</text>
+<text x="35" y="142" font-size="18" font-family="sans-serif" fill="#1e40af">boundary="inner_bnd"</text>
+<rect x="35" y="155" width="310" height="95" rx="4" fill="#ffffff" stroke="#93c5fd" stroke-width="1"></rect>
+<text x="45" y="185" font-size="18" font-family="sans-serif" fill="#1e3a8a">子部件 1: text/plain</text>
+<text x="45" y="212" font-size="18" font-family="sans-serif" fill="#1e3a8a">charset=utf-8</text>
+<text x="45" y="238" font-size="18" font-family="sans-serif" fill="#4b5563">传输编码: quoted-printable</text>
+<rect x="35" y="265" width="310" height="95" rx="4" fill="#ffffff" stroke="#93c5fd" stroke-width="1"></rect>
+<text x="45" y="295" font-size="18" font-family="sans-serif" fill="#1e3a8a">子部件 2: text/html</text>
+<text x="45" y="322" font-size="18" font-family="sans-serif" fill="#1e3a8a">charset=utf-8 (排版替代)</text>
+<text x="45" y="348" font-size="18" font-family="sans-serif" fill="#4b5563">传输编码: quoted-printable</text>
+<rect x="25" y="395" width="330" height="200" rx="6" fill="#f0fdf4" stroke="#16a34a" stroke-width="2"></rect>
+<text x="35" y="425" font-size="18" font-family="sans-serif" font-weight="bold" fill="#166534">第二部分: 独立数据附件</text>
+<text x="35" y="455" font-size="18" font-family="sans-serif" fill="#14532d">Content-Type:</text>
+<text x="35" y="482" font-size="18" font-family="sans-serif" fill="#14532d">application/octet-stream</text>
+<text x="35" y="512" font-size="18" font-family="sans-serif" fill="#4b5563">name="data.bin"</text>
+<text x="35" y="542" font-size="18" font-family="sans-serif" fill="#4b5563">传输编码: base64</text>
+<text x="35" y="572" font-size="18" font-family="sans-serif" fill="#4b5563">(结构层级示意)</text>
+</svg>
+<p>在图示结构中，外层 <code>multipart/mixed</code> 将邮件组织为“正文集合”与“文件附件”两大部分。其中第一部分是 <code>multipart/alternative</code> 复合实体，包含纯文本与超文本标记语言（Hypertext Markup Language，HTML）两种等价替代版本；第二部分则是二进制流附件。</p>
+<hr>
+<h2 id="报文结构示例与解析流程">报文结构示例与解析流程</h2>
+<p>下面是自编的 MIME 嵌套结构示例。假设报文各物理行均使用 CRLF 结束；它用于说明解析过程，不是生产邮件抓包：</p>
+<pre class="astro-code astro-code-themes min-light night-owl" style="--shiki-light:#24292eff;--shiki-dark:#d6deeb;--shiki-light-bg:#ffffff;--shiki-dark-bg:#011627; overflow-x: auto;--file-name-offset: -0.75rem;" tabindex="0" data-language="text"><code><span class="line"><span>Date: Wed, 11 Aug 2021 09:30:00 +0800</span></span>
+<span class="line"><span>From: Alice Author &#x3C;alice@example.com></span></span>
+<span class="line"><span>To: Bob Recipient &#x3C;bob@example.net></span></span>
+<span class="line"><span>Subject: Project Status and Document</span></span>
+<span class="line"><span>Message-ID: &#x3C;20210811013000.A1B2C3@mail.example.com></span></span>
+<span class="line"><span>MIME-Version: 1.0</span></span>
+<span class="line"><span>Content-Type: multipart/mixed; boundary="frontier_mixed_01"</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>This is a multi-part message in MIME format.</span></span>
+<span class="line"><span>--frontier_mixed_01</span></span>
+<span class="line"><span>Content-Type: multipart/alternative; boundary="frontier_alt_02"</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>--frontier_alt_02</span></span>
+<span class="line"><span>Content-Type: text/plain; charset=utf-8</span></span>
+<span class="line"><span>Content-Transfer-Encoding: quoted-printable</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>Hello Bob,</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>Please inspect the attached status report.</span></span>
+<span class="line"><span>--frontier_alt_02</span></span>
+<span class="line"><span>Content-Type: text/html; charset=utf-8</span></span>
+<span class="line"><span>Content-Transfer-Encoding: quoted-printable</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>&#x3C;p>Hello Bob,&#x3C;/p>&#x3C;p>Please inspect the &#x3C;b>attached status report&#x3C;/b>.&#x3C;/p></span></span>
+<span class="line"><span>--frontier_alt_02--</span></span>
+<span class="line"><span>--frontier_mixed_01</span></span>
+<span class="line"><span>Content-Type: application/octet-stream; name="data.bin"</span></span>
+<span class="line"><span>Content-Transfer-Encoding: base64</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>AQIDBAUGBwg=</span></span>
+<span class="line"><span>--frontier_mixed_01--</span></span></code></pre>
+<h3 id="本例的一种解析顺序">本例的一种解析顺序</h3>
+<p>当软件模块接收并处理该报文时，通常采用如下处理步骤：</p>
+<ol>
+<li><strong>切分头部与正文</strong>：按行扫描至首个出现的空行（CRLF），上方归为邮件头字段，下方进入正文解析。</li>
+<li><strong>顶层 MIME 识别</strong>：检查 <code>MIME-Version: 1.0</code>，解析 <code>Content-Type</code> 为 <code>multipart/mixed</code> 并提取外层边界 <code>frontier_mixed_01</code>。</li>
+<li><strong>外层边界拆分</strong>：忽略第一个 <code>--frontier_mixed_01</code> 之前的导语，提取各子部件数据，直至闭合边界 <code>--frontier_mixed_01--</code>。</li>
+<li><strong>递归下降解析</strong>：
+<ul>
+<li>第一部件识别为 <code>multipart/alternative</code>，依内层边界 <code>frontier_alt_02</code> 进一步拆分为 <code>text/plain</code> 与 <code>text/html</code>。假设本地显示策略选择 HTML，MUA 采纳排在最后的 HTML 部件，执行 Quoted-Printable 解码后送入渲染引擎排版。</li>
+<li>第二部件识别为 <code>application/octet-stream</code>，读取 <code>Content-Transfer-Encoding: base64</code> 声明，对数据 <code>AQIDBAUGBwg=</code>（8 字节输入编码为 12 字符，含一个 <code>=</code> 填充）执行 Base64 解码，恢复原始二进制字节（十进制数值 1 至 8）。</li>
+</ul>
+</li>
+</ol>
+<hr>
+<h2 id="协议约束下的工程实现边界">协议约束下的工程实现边界</h2>
+<p>在实现邮件生成与解析模块时，需注意以下协议约束与工程实现边界：</p>
+<ol>
+<li><strong>边界选取与前缀隔离</strong>：生成 <code>multipart</code> 的 <code>boundary</code> 时，必须确保其值不会在封装部件的行首作为边界分隔符出现，内层边界也不得与外层边界产生冲突。工程上通常采用随机字符串结合格式前缀的方式降低冲突概率，并在封装前核验正文行首特征。</li>
+<li><strong>换行符规范化（CRLF）</strong>：RFC 5322 规定报文行以 CRLF 结束。在采用单纯换行符 LF（<code>\n</code>）的操作系统中，发信模块在将数据交给传输层之前，应完成换行符的规范化转换，避免因网关兼容性差异引起解析异常。</li>
+<li><strong>头部非 ASCII 字符约束</strong>：在本文讨论的 RFC 5322 基础格式中，邮件头字段仅允许 US-ASCII 字符，不能直接填入未经转义的原始多字节字符。邮件头部的国际化与字符编码扩展遵循专门的头部扩展规范。</li>
+</ol>
+<hr>
+<h2 id="参考来源">参考来源</h2>
+<ul>
+<li><a id="ref-rfc5322" href="https://www.rfc-editor.org/rfc/rfc5322" target="_blank" rel="noopener noreferrer">RFC 5322: Internet Message Format (Standards Track, October 2008)</a></li>
+<li><a id="ref-rfc2045" href="https://www.rfc-editor.org/rfc/rfc2045" target="_blank" rel="noopener noreferrer">RFC 2045: Multipurpose Internet Mail Extensions (MIME) Part One: Format of Internet Message Bodies (Standards Track, November 1996)</a></li>
+<li><a id="ref-rfc2046" href="https://www.rfc-editor.org/rfc/rfc2046" target="_blank" rel="noopener noreferrer">RFC 2046: Multipurpose Internet Mail Extensions (MIME) Part Two: Media Types (Standards Track, November 1996)</a></li>
+</ul></article><hr class="my-8 border-dashed"><div id="btt-btn-container" class="fixed inset-e-4 bottom-8 z-50 md:sticky md:inset-e-auto md:float-end md:me-1 translate-y-14 opacity-0 transition duration-500"><button data-button="back-to-top" class="group bg-background relative px-2 py-1 size-14 rounded-full shadow-xl md:h-8 md:w-fit md:rounded-md md:shadow-none md:focus-visible:rounded-none md:bg-background/35 md:bg-clip-padding md:backdrop-blur-lg"><span id="progress-indicator" class="absolute inset-0 -z-10 block size-14 scale-110 rounded-full bg-transparent md:hidden md:h-8 md:rounded-md"></span><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="inline-block rotate-90 md:hidden" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M5 12h14M5 12l6 6M5 12l6-6" /></svg><span class="group-hover:text-accent sr-only text-sm md:not-sr-only"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="inline-block size-4" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M12 5v14M16 9l-4-4M8 9l4-4" /></svg> 回到顶部</span></button></div><script data-astro-rerun>
+  function backToTop() {
+    const rootElement = document.documentElement;
+    const btnContainer = document.querySelector("#btt-btn-container");
+    const backToTopBtn = document.querySelector("[data-button='back-to-top']");
+    const progressIndicator = document.querySelector("#progress-indicator");
+
+    if (!rootElement || !btnContainer || !backToTopBtn || !progressIndicator)
+      return;
+
+    backToTopBtn.addEventListener("click", () => {
+      document.body.scrollTop = 0;
+      document.documentElement.scrollTop = 0;
+    });
+
+    let lastVisible = null;
+    function handleScroll() {
+      const scrollTotal = rootElement.scrollHeight - rootElement.clientHeight;
+      const scrollTop = rootElement.scrollTop;
+      const scrollPercent = Math.floor((scrollTop / scrollTotal) * 100);
+
+      progressIndicator.style.setProperty(
+        "background-image",
+        `conic-gradient(var(--accent), var(--accent) ${scrollPercent}%, transparent ${scrollPercent}%)`
+      );
+
+      const isVisible = scrollTop / scrollTotal > 0.3;
+
+      if (isVisible !== lastVisible) {
+        btnContainer.classList.toggle("opacity-100", isVisible);
+        btnContainer.classList.toggle("translate-y-0", isVisible);
+        btnContainer.classList.toggle("opacity-0", !isVisible);
+        btnContainer.classList.toggle("translate-y-14", !isVisible);
+        lastVisible = isVisible;
+      }
+    }
+
+    let ticking = false;
+    document.addEventListener("scroll", () => {
+      if (!ticking) {
+        window.requestAnimationFrame(() => {
+          handleScroll();
+          ticking = false;
+        });
+        ticking = true;
+      }
+    });
+  }
+  backToTop();
+</script><ul class="mt-4 mb-8 flex flex-wrap gap-4 sm:my-8"><li><a data-astro-transition-scope="astro-bztu2lml-1" href="/tags/邮箱系统/" class="flex items-center gap-0.5 border-foreground border-b-2 border-dashed hover:border-accent hover:text-accent hover:-mt-0.5 focus-visible:text-accent focus-visible:border-none text-sm"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="opacity-80 size-4" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M5 9h14M5 15h14M11 4 7 20M17 4l-4 16" /></svg>邮箱系统</a></li><li><a data-astro-transition-scope="astro-bztu2lml-2" href="/tags/rfc-5322/" class="flex items-center gap-0.5 border-foreground border-b-2 border-dashed hover:border-accent hover:text-accent hover:-mt-0.5 focus-visible:text-accent focus-visible:border-none text-sm"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="opacity-80 size-4" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M5 9h14M5 15h14M11 4 7 20M17 4l-4 16" /></svg>RFC 5322</a></li><li><a data-astro-transition-scope="astro-bztu2lml-3" href="/tags/mime/" class="flex items-center gap-0.5 border-foreground border-b-2 border-dashed hover:border-accent hover:text-accent hover:-mt-0.5 focus-visible:text-accent focus-visible:border-none text-sm"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="opacity-80 size-4" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M5 9h14M5 15h14M11 4 7 20M17 4l-4 16" /></svg>MIME</a></li><li><a data-astro-transition-scope="astro-bztu2lml-4" href="/tags/邮件头/" class="flex items-center gap-0.5 border-foreground border-b-2 border-dashed hover:border-accent hover:text-accent hover:-mt-0.5 focus-visible:text-accent focus-visible:border-none text-sm"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="opacity-80 size-4" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M5 9h14M5 15h14M11 4 7 20M17 4l-4 16" /></svg>邮件头</a></li><li><a data-astro-transition-scope="astro-bztu2lml-5" href="/tags/编码/" class="flex items-center gap-0.5 border-foreground border-b-2 border-dashed hover:border-accent hover:text-accent hover:-mt-0.5 focus-visible:text-accent focus-visible:border-none text-sm"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="opacity-80 size-4" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M5 9h14M5 15h14M11 4 7 20M17 4l-4 16" /></svg>编码</a></li></ul><hr class="my-8 border-dashed"><div data-pagefind-ignore class="my-8 grid grid-cols-1 gap-6 sm:grid-cols-2"><a href="/posts/mail-smtp-envelope-bounces/" class="flex w-full gap-1 hover:opacity-75"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="inline-block flex-none rtl:rotate-180" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M5 12h14M5 12l6 6M5 12l6-6" /></svg><div><span>上一篇</span><div class="text-accent/85 text-sm">SMTP 会话、信封与退信</div></div></a><a href="/posts/transformer-attention-is-all-you-need/" class="flex w-full justify-end gap-1 text-end hover:opacity-75 sm:col-start-2"><div><span>下一篇</span><div class="text-accent/85 text-sm">Transformer为什么需要Attention？从《Attention Is All You Need》读起</div></div><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="inline-block flex-none rtl:rotate-180" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M5 12h14M13 18l6-6M13 6l6 6" /></svg></a></div></main><footer class="app-layout mt-auto"><div class="border-border flex flex-col items-center justify-between border-t py-6 sm:flex-row-reverse sm:py-4"><div class="flex flex-wrap items-center gap-1"><a href="https://github.com/SaromChars" title="Sarom Chars 的 GitHub" class="group inline-flex items-center gap-1 hover:text-accent p-2 hover:rotate-6 sm:p-1"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="inline-block size-6 scale-125 fill-transparent stroke-current stroke-2 opacity-90 group-hover:fill-transparent sm:scale-110" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M9 19c-4.3 1.4-4.3-2.5-6-3m12 5v-3.5c0-1 .1-1.4-.5-2 2.8-.3 5.5-1.4 5.5-6a4.6 4.6 0 0 0-1.3-3.2 4.2 4.2 0 0 0-.1-3.2s-1.1-.3-3.5 1.3a12.3 12.3 0 0 0-6.2 0C6.5 2.8 5.4 3.1 5.4 3.1a4.2 4.2 0 0 0-.1 3.2A4.6 4.6 0 0 0 4 9.5c0 4.6 2.7 5.7 5.5 6-.6.6-.6 1.2-.5 2V21" /></svg><span class="sr-only">Sarom Chars 的 GitHub</span></a></div><div class="my-2 flex flex-col items-center whitespace-nowrap sm:flex-row"><span>版权 &#169; 2026</span><span class="hidden sm:inline">&nbsp;|&nbsp;</span><span>保留所有权利。</span></div></div></footer><script type="module">var e=`theme`,t=`light`,n=`dark`;function r(){return localStorage.getItem(e)||(window.matchMedia(`(prefers-color-scheme: dark)`).matches?n:t)}var i=window.__theme?.value??r();function a(){localStorage.setItem(e,i),o()}function o(){let e=document.firstElementChild;e?.setAttribute(`data-theme`,i),e?.classList.toggle(`dark`,i===n),document.querySelector(`#theme-btn`)?.setAttribute(`aria-label`,i);let t=window.getComputedStyle(document.body).backgroundColor;document.querySelector(`meta[name='theme-color']`)?.setAttribute(`content`,t)}function s(){o(),document.querySelector(`#theme-btn`)?.addEventListener(`click`,()=>{i=i===t?n:t,a()})}s(),document.addEventListener(`astro:after-swap`,s),document.addEventListener(`astro:before-swap`,e=>{let t=document.querySelector(`meta[name='theme-color']`)?.getAttribute(`content`);t&&e.newDocument.querySelector(`meta[name='theme-color']`)?.setAttribute(`content`,t)}),window.matchMedia(`(prefers-color-scheme: dark)`).addEventListener(`change`,({matches:e})=>{i=e?n:t,a()});</script></body></html><script type="module">var e=document.querySelector(`#article`);if(e?.querySelector(`a[href^="#ref-"]`)){let t=null,n=!1,r=document.createElement(`button`);r.type=`button`,r.className=`citation-return`,r.textContent=`返回阅读位置`,r.setAttribute(`data-pagefind-ignore`,``),e.addEventListener(`click`,n=>{if(n.button!==0||n.metaKey||n.ctrlKey||n.shiftKey||n.altKey)return;let i=n.target instanceof Element?n.target.closest(`a[href^="#ref-"]`):null;if(!i||!e.contains(i))return;let a=i.hash,o=document.getElementById(decodeURIComponent(a.slice(1)));o&&e.contains(o)&&(t={source:i,url:window.location.href,top:window.scrollY,left:window.scrollX,targetHash:a},o.insertAdjacentElement(`afterend`,r))}),r.addEventListener(`click`,()=>{if(!t||n)return;let e=t,i=i=>{r.remove(),window.requestAnimationFrame(()=>{window.requestAnimationFrame(()=>{e.source.focus({preventScroll:!0}),window.scrollTo({top:e.top,left:e.left,behavior:`instant`}),t=null,n=!1,i?.()})})};window.location.href===e.url?i():(n=!0,window.addEventListener(`popstate`,()=>{let e=window.history.scrollRestoration;window.history.scrollRestoration=`manual`,window.setTimeout(()=>{i(()=>{window.history.scrollRestoration=e})},0)},{once:!0}),window.history.back())}),window.addEventListener(`hashchange`,()=>{!n&&t&&window.location.hash!==t.targetHash&&(r.remove(),t=null)})}</script><script data-astro-rerun>
+  function createProgressBar() {
+    const progressContainer = document.createElement("div");
+    progressContainer.className =
+      "progress-container fixed top-0 z-10 h-1 w-full bg-background";
+
+    const progressBar = document.createElement("div");
+    progressBar.className = "progress-bar h-1 w-0 bg-accent";
+    progressBar.id = "myBar";
+
+    progressContainer.appendChild(progressBar);
+    document.body.appendChild(progressContainer);
+  }
+  createProgressBar();
+
+  function updateScrollProgress() {
+    document.addEventListener("scroll", () => {
+      const winScroll =
+        document.body.scrollTop || document.documentElement.scrollTop;
+      const height =
+        document.documentElement.scrollHeight -
+        document.documentElement.clientHeight;
+      const scrolled = (winScroll / height) * 100;
+      if (document) {
+        const myBar = document.getElementById("myBar");
+        if (myBar) {
+          myBar.style.width = scrolled + "%";
+        }
+      }
+    });
+  }
+  updateScrollProgress();
+
+  function addHeadingLinks() {
+    const headings = Array.from(
+      document.querySelectorAll("h2, h3, h4, h5, h6")
+    );
+    for (const heading of headings) {
+      heading.classList.add("group");
+      const link = document.createElement("a");
+      link.className =
+        "heading-link ms-2 no-underline opacity-75 md:opacity-0 md:group-hover:opacity-100 md:focus:opacity-100";
+      link.href = "#" + heading.id;
+
+      const span = document.createElement("span");
+      span.ariaHidden = "true";
+      span.innerText = "#";
+      link.appendChild(span);
+      heading.appendChild(link);
+    }
+  }
+  addHeadingLinks();
+
+  function attachCopyButtons() {
+    const copyButtonLabel = "Copy";
+    const codeBlocks = Array.from(document.querySelectorAll("pre"));
+
+    for (const codeBlock of codeBlocks) {
+      const wrapper = document.createElement("div");
+      wrapper.style.position = "relative";
+
+      const computedStyle = getComputedStyle(codeBlock);
+      const hasFileNameOffset =
+        computedStyle.getPropertyValue("--file-name-offset").trim() !== "";
+
+      const topClass = hasFileNameOffset
+        ? "top-(--file-name-offset)"
+        : "-top-3";
+
+      const copyButton = document.createElement("button");
+      copyButton.className = `copy-code absolute end-3 ${topClass} rounded bg-muted border border-muted px-2 py-1 text-xs leading-4 text-foreground font-medium`;
+      copyButton.innerHTML = copyButtonLabel;
+      codeBlock.setAttribute("tabindex", "0");
+      codeBlock.appendChild(copyButton);
+
+      codeBlock?.parentNode?.insertBefore(wrapper, codeBlock);
+      wrapper.appendChild(codeBlock);
+
+      copyButton.addEventListener("click", async () => {
+        await copyCode(codeBlock, copyButton);
+      });
+    }
+
+    async function copyCode(block, button) {
+      const code = block.querySelector("code");
+      const text = code?.innerText;
+
+      await navigator.clipboard.writeText(text ?? "");
+
+      button.innerText = "Copied";
+
+      setTimeout(() => {
+        button.innerText = copyButtonLabel;
+      }, 700);
+    }
+  }
+  attachCopyButtons();
+
+  /** Accessible image lightbox for article images. */
+  function initLightbox() {
+    const article = document.getElementById("article");
+    if (!article) return;
+
+    const prefersReducedMotion = () =>
+      window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+    let overlay = null;
+    let lastFocused = null;
+    let removeDragListeners = null;
+
+    // Defer attribute mutations so they don't push the LCP timestamp.
+    // Event listeners below use delegation and don't need the attributes to exist yet.
+    requestAnimationFrame(() => {
+      const images = Array.from(article.querySelectorAll("img"));
+      for (const image of images) {
+        if (image.closest("a")) continue;
+        image.setAttribute("role", "button");
+        image.setAttribute("tabindex", "0");
+        image.setAttribute("aria-haspopup", "dialog");
+        image.setAttribute(
+          "aria-label",
+          image.alt ? `Zoom image: ${image.alt}` : "Zoom image"
+        );
+      }
+    });
+
+    function open(src, alt, trigger) {
+      if (overlay) return;
+      lastFocused = trigger ?? document.activeElement;
+
+      overlay = document.createElement("div");
+      overlay.setAttribute("role", "dialog");
+      overlay.setAttribute("aria-modal", "true");
+      overlay.setAttribute(
+        "aria-label",
+        alt ? `Image preview: ${alt}` : "Image preview"
+      );
+      overlay.className =
+        "fixed inset-0 z-50 flex cursor-zoom-out items-center justify-center bg-black/70 backdrop-blur-sm opacity-0 transition-opacity duration-200 motion-reduce:transition-none";
+
+      const closeButton = document.createElement("button");
+      closeButton.type = "button";
+      closeButton.setAttribute("aria-label", "Close image preview");
+      closeButton.className =
+        "absolute end-4 top-4 z-1 flex size-11 items-center justify-center rounded bg-black/50 text-3xl leading-none text-white";
+      closeButton.innerHTML = "&#10005;";
+      closeButton.addEventListener("click", close);
+
+      const image = document.createElement("img");
+      image.src = src;
+      image.alt = "";
+      image.className =
+        "max-h-[90dvh] max-w-[90dvw] cursor-default object-contain transition-transform duration-100 ease-out motion-reduce:transition-none data-[zoom=drag]:cursor-grabbing data-[zoom=drag]:transition-none data-[zoom=in]:cursor-grab";
+
+      overlay.append(closeButton, image);
+      overlay.addEventListener("click", e => {
+        if (e.target === overlay && currentScale <= 1) close();
+      });
+
+      let currentScale = 1;
+      let translateX = 0;
+      let translateY = 0;
+      let initialDist = 0;
+      let initialScale = 1;
+      let panStartX = 0;
+      let panStartY = 0;
+      let panStartTranslateX = 0;
+      let panStartTranslateY = 0;
+      let lastTapTime = 0;
+
+      function applyTransform() {
+        image.style.transform = `scale(${currentScale}) translate(${translateX}px, ${translateY}px)`;
+        // A backdrop click only closes at fit size, so drop the zoom-out cursor while zoomed.
+        overlay?.classList.toggle("cursor-zoom-out", currentScale <= 1);
+      }
+
+      function resetTransform() {
+        currentScale = 1;
+        translateX = 0;
+        translateY = 0;
+        image.style.transform = "";
+        image.removeAttribute("data-zoom");
+        overlay?.classList.add("cursor-zoom-out");
+      }
+
+      // Keep the zoomed image from being panned past its edges.
+      function clampTranslate() {
+        if (!overlay) return;
+        const maxX = Math.max(
+          0,
+          (image.clientWidth - overlay.clientWidth / currentScale) / 2
+        );
+        const maxY = Math.max(
+          0,
+          (image.clientHeight - overlay.clientHeight / currentScale) / 2
+        );
+        translateX = Math.min(maxX, Math.max(-maxX, translateX));
+        translateY = Math.min(maxY, Math.max(-maxY, translateY));
+      }
+
+      overlay.addEventListener(
+        "touchstart",
+        e => {
+          const t = e.touches;
+          if (t.length === 2) {
+            image.setAttribute("data-zoom", "drag");
+            initialDist = Math.hypot(
+              t[1].clientX - t[0].clientX,
+              t[1].clientY - t[0].clientY
+            );
+            initialScale = currentScale;
+          } else if (t.length === 1) {
+            const now = Date.now();
+            if (now - lastTapTime < 300) {
+              e.preventDefault();
+              if (currentScale > 1) {
+                resetTransform();
+              } else {
+                currentScale = 2;
+                translateX = 0;
+                translateY = 0;
+                applyTransform();
+                image.setAttribute("data-zoom", "in");
+              }
+              lastTapTime = 0;
+              panStartX = t[0].clientX;
+              panStartY = t[0].clientY;
+              panStartTranslateX = translateX;
+              panStartTranslateY = translateY;
+            } else {
+              lastTapTime = now;
+              if (currentScale > 1) {
+                image.setAttribute("data-zoom", "drag");
+                panStartX = t[0].clientX;
+                panStartY = t[0].clientY;
+                panStartTranslateX = translateX;
+                panStartTranslateY = translateY;
+              }
+            }
+          }
+        },
+        { passive: false }
+      );
+
+      overlay.addEventListener(
+        "touchmove",
+        e => {
+          const t = e.touches;
+          if (t.length === 2) {
+            e.preventDefault();
+            const dist = Math.hypot(
+              t[1].clientX - t[0].clientX,
+              t[1].clientY - t[0].clientY
+            );
+            const oldScale = currentScale;
+            currentScale = Math.min(
+              4,
+              Math.max(1, initialScale * (dist / initialDist))
+            );
+
+            // Zoom to the geometric center of the two fingers
+            const midX = (t[0].clientX + t[1].clientX) / 2;
+            const midY = (t[0].clientY + t[1].clientY) / 2;
+            const ox = overlay.clientWidth / 2;
+            const oy = overlay.clientHeight / 2;
+            translateX =
+              (midX - ox) * (1 / currentScale - 1 / oldScale) + translateX;
+            translateY =
+              (midY - oy) * (1 / currentScale - 1 / oldScale) + translateY;
+            clampTranslate();
+            applyTransform();
+          } else if (t.length === 1) {
+            if (currentScale > 1) {
+              e.preventDefault();
+              image.setAttribute("data-zoom", "drag");
+              translateX =
+                panStartTranslateX + (t[0].clientX - panStartX) / currentScale;
+              translateY =
+                panStartTranslateY + (t[0].clientY - panStartY) / currentScale;
+              clampTranslate();
+              applyTransform();
+            } else {
+              e.preventDefault();
+            }
+          }
+        },
+        { passive: false }
+      );
+
+      overlay.addEventListener("touchend", e => {
+        if (e.touches.length === 0) {
+          if (currentScale > 1) {
+            image.setAttribute("data-zoom", "in");
+          } else {
+            image.removeAttribute("data-zoom");
+          }
+          if (currentScale <= 1.05) resetTransform();
+        }
+      });
+
+      overlay.addEventListener("touchcancel", e => {
+        if (e.touches.length === 0) {
+          if (currentScale > 1) {
+            image.setAttribute("data-zoom", "in");
+          } else {
+            image.removeAttribute("data-zoom");
+          }
+          if (currentScale <= 1.05) resetTransform();
+        }
+      });
+
+      overlay.addEventListener(
+        "wheel",
+        e => {
+          e.preventDefault();
+          const oldScale = currentScale;
+          const delta = -e.deltaY * 0.001;
+          currentScale = Math.min(4, Math.max(1, currentScale * (1 + delta)));
+
+          if (currentScale <= 1.05) {
+            resetTransform();
+          } else {
+            image.setAttribute("data-zoom", "in");
+            // Zoom to cursor: adjust translate so the point under cursor stays fixed
+            const ox = overlay.clientWidth / 2;
+            const oy = overlay.clientHeight / 2;
+            translateX =
+              (e.clientX - ox) * (1 / currentScale - 1 / oldScale) + translateX;
+            translateY =
+              (e.clientY - oy) * (1 / currentScale - 1 / oldScale) + translateY;
+            clampTranslate();
+            applyTransform();
+          }
+        },
+        { passive: false }
+      );
+
+      let isMouseDown = false;
+      let mouseStartX = 0;
+      let mouseStartY = 0;
+
+      overlay.addEventListener("mousedown", e => {
+        if (e.button !== 0 || currentScale <= 1) return;
+        if (e.target.closest("button")) return;
+        isMouseDown = true;
+        mouseStartX = e.clientX;
+        mouseStartY = e.clientY;
+        panStartTranslateX = translateX;
+        panStartTranslateY = translateY;
+        image.setAttribute("data-zoom", "drag");
+        e.preventDefault();
+      });
+
+      function onMouseMove(e) {
+        if (!isMouseDown || !overlay) return;
+        translateX =
+          panStartTranslateX + (e.clientX - mouseStartX) / currentScale;
+        translateY =
+          panStartTranslateY + (e.clientY - mouseStartY) / currentScale;
+        clampTranslate();
+        applyTransform();
+      }
+
+      function onMouseUp() {
+        if (!isMouseDown) return;
+        isMouseDown = false;
+        if (currentScale > 1) {
+          image.setAttribute("data-zoom", "in");
+        } else {
+          image.removeAttribute("data-zoom");
+        }
+      }
+
+      document.addEventListener("mousemove", onMouseMove);
+      document.addEventListener("mouseup", onMouseUp);
+      removeDragListeners = () => {
+        document.removeEventListener("mousemove", onMouseMove);
+        document.removeEventListener("mouseup", onMouseUp);
+      };
+
+      document.body.appendChild(overlay);
+      document.documentElement.style.overflow = "hidden";
+      document.addEventListener("keydown", onKeyDown);
+      window.__closeLightbox = close;
+
+      requestAnimationFrame(() => overlay?.classList.add("opacity-100"));
+      closeButton.focus();
+    }
+
+    function close() {
+      if (!overlay) return;
+      const el = overlay;
+      overlay = null;
+      el.classList.add("pointer-events-none");
+      window.__closeLightbox = null;
+
+      document.removeEventListener("keydown", onKeyDown);
+      removeDragListeners?.();
+      removeDragListeners = null;
+      document.documentElement.style.overflow = "";
+      lastFocused?.focus();
+      lastFocused = null;
+
+      if (prefersReducedMotion()) {
+        el.remove();
+        return;
+      }
+      const remove = () => el.remove();
+      el.addEventListener("transitionend", remove, { once: true });
+      setTimeout(remove, 250); // fallback in case transitionend never fires
+      el.classList.remove("opacity-100");
+    }
+
+    function onKeyDown(e) {
+      if (e.key === "Escape") {
+        close();
+      } else if (e.key === "Tab") {
+        trapFocus(e);
+      }
+    }
+
+    // Keep keyboard focus inside the open dialog.
+    function trapFocus(e) {
+      if (!overlay) return;
+      const focusables = overlay.querySelectorAll(
+        'a[href], button, [tabindex]:not([tabindex="-1"])'
+      );
+      if (focusables.length === 0) return;
+      const first = focusables[0];
+      const last = focusables[focusables.length - 1];
+      if (e.shiftKey && document.activeElement === first) {
+        e.preventDefault();
+        last.focus();
+      } else if (!e.shiftKey && document.activeElement === last) {
+        e.preventDefault();
+        first.focus();
+      }
+    }
+
+    function triggerFromEvent(e) {
+      const image = e.target.closest("img");
+      if (!image || !article.contains(image) || image.closest("a")) return null;
+      return image;
+    }
+
+    function activate(image) {
+      open(image.currentSrc || image.src, image.alt, image);
+    }
+
+    article.addEventListener("click", e => {
+      const image = triggerFromEvent(e);
+      if (!image) return;
+      e.preventDefault();
+      activate(image);
+    });
+
+    article.addEventListener("keydown", e => {
+      if (e.key !== "Enter" && e.key !== " " && e.key !== "Spacebar") return;
+      const image = triggerFromEvent(e);
+      if (!image) return;
+      e.preventDefault();
+      activate(image);
+    });
+  }
+  initLightbox();
+
+  if (!window.__lightboxSwapBound) {
+    window.__lightboxSwapBound = true;
+    document.addEventListener("astro:before-swap", () =>
+      window.__closeLightbox?.()
+    );
+  }
+
+  document.addEventListener("astro:after-swap", () =>
+    window.scrollTo({ left: 0, top: 0, behavior: "instant" })
+  );
+</script>
