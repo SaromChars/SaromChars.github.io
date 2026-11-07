@@ -1,0 +1,936 @@
+<!DOCTYPE html><html dir="ltr" lang="zh-CN" class="overflow-y-scroll scroll-smooth"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1"><link rel="icon" type="image/png" href="/images/favicon-32x32-next.png"><link rel="icon" href="/favicon.ico"><link rel="canonical" href="https://www.saromchars.tech/posts/llm-knowledge-distillation/"><meta name="generator" content="Astro v7.4.5"><!-- Primary meta --><title>知识蒸馏与 DistilBERT | Sarom&#39;s Blog</title><meta name="title" content="知识蒸馏与 DistilBERT | Sarom's Blog"><meta name="description" content="从预训练语言表征模型的推理与部署开销出发，分析知识蒸馏如何利用教师模型的软目标概率与温度调节，结合掩码语言建模及隐藏状态余弦对齐的三元损失，在减半层数的同时保留双向编码器的下游任务表现，并明确其结构假设与能力保留边界。"><meta name="author" content="Sarom Chars"><link rel="sitemap" href="/sitemap-index.xml"><!-- Open Graph --><meta property="og:type" content="article"><meta property="og:site_name" content="Sarom's Blog"><meta property="og:title" content="知识蒸馏与 DistilBERT | Sarom's Blog"><meta property="og:description" content="从预训练语言表征模型的推理与部署开销出发，分析知识蒸馏如何利用教师模型的软目标概率与温度调节，结合掩码语言建模及隐藏状态余弦对齐的三元损失，在减半层数的同时保留双向编码器的下游任务表现，并明确其结构假设与能力保留边界。"><meta property="og:url" content="https://www.saromchars.tech/posts/llm-knowledge-distillation/"><meta property="og:image" content="https://www.saromchars.tech/og.png"><!-- Twitter / X --><meta property="twitter:card" content="summary_large_image"><meta property="twitter:url" content="https://www.saromchars.tech/posts/llm-knowledge-distillation/"><meta property="twitter:title" content="知识蒸馏与 DistilBERT | Sarom's Blog"><meta property="twitter:description" content="从预训练语言表征模型的推理与部署开销出发，分析知识蒸馏如何利用教师模型的软目标概率与温度调节，结合掩码语言建模及隐藏状态余弦对齐的三元损失，在减半层数的同时保留双向编码器的下游任务表现，并明确其结构假设与能力保留边界。"><meta property="twitter:image" content="https://www.saromchars.tech/og.png"><!-- RSS autodiscovery --><link rel="alternate" type="application/rss+xml" title="Sarom's Blog" href="https://www.saromchars.tech/rss.xml"><!-- Filled at runtime by theme.ts to match the current background colour --><meta name="theme-color" content=""><!-- Extra head content injected by child layouts (e.g. JSON-LD, article meta) --><meta property="article:published_time" content="2022-04-25T02:00:00.000Z"><script type="application/ld+json">{"@context":"https://schema.org","@type":"BlogPosting","headline":"知识蒸馏与 DistilBERT","mainEntityOfPage":"https://www.saromchars.tech/posts/llm-knowledge-distillation/","datePublished":"2022-04-25T02:00:00.000Z","author":[{"@type":"Person","name":"Sarom Chars","url":"https://github.com/SaromChars"}]}</script><!--
+      Inline FOUC-prevention script: sets data-theme on <html> before
+      the browser paints. Runs synchronously, no defer/async.
+    --><script>
+      (function () {
+        const stored = localStorage.getItem("theme");
+        const prefersDark = window.matchMedia(
+          "(prefers-color-scheme: dark)"
+        ).matches;
+        const theme = stored ?? (prefersDark ? "dark" : "light");
+        const root = document.firstElementChild;
+        root?.setAttribute("data-theme", theme);
+        root?.classList.toggle("dark", theme === "dark");
+        // Expose value so theme.ts can skip re-detection.
+        window.__theme = { value: theme };
+      })();
+    </script><meta name="robots" content="index, follow"><script async src="https://www.googletagmanager.com/gtag/js?id=G-WJJJTJ4FWX"></script><script>(function(){const measurementId = "G-WJJJTJ4FWX";
+
+    window.dataLayer = window.dataLayer || [];
+    function gtag(){ window.dataLayer.push(arguments); }
+    gtag('js', new Date());
+    gtag('config', measurementId);
+  })();</script><style>@keyframes astroFadeInOut{0%{opacity:1}to{opacity:0}}@keyframes astroFadeIn{0%{opacity:0;mix-blend-mode:plus-lighter}to{opacity:1;mix-blend-mode:plus-lighter}}@keyframes astroFadeOut{0%{opacity:1;mix-blend-mode:plus-lighter}to{opacity:0;mix-blend-mode:plus-lighter}}@keyframes astroSlideFromRight{0%{transform:translate(100%)}}@keyframes astroSlideFromLeft{0%{transform:translate(-100%)}}@keyframes astroSlideToRight{to{transform:translate(100%)}}@keyframes astroSlideToLeft{to{transform:translate(-100%)}}@media (prefers-reduced-motion){::view-transition-group(*),::view-transition-old(*),::view-transition-new(*),[data-astro-transition-scope]{animation:none!important}}
+</style><link rel="stylesheet" href="/_astro/Footer.DC6qDsIp.css"><style>[data-astro-transition-scope="astro-bztu2lml-1"] { view-transition-name: ai; }@layer astro { ::view-transition-old(ai) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }::view-transition-new(ai) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }[data-astro-transition=back]::view-transition-old(ai) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition=back]::view-transition-new(ai) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; } }[data-astro-transition-fallback="old"] [data-astro-transition-scope="astro-bztu2lml-1"],
+			[data-astro-transition-fallback="old"][data-astro-transition-scope="astro-bztu2lml-1"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition-fallback="new"] [data-astro-transition-scope="astro-bztu2lml-1"],
+			[data-astro-transition-fallback="new"][data-astro-transition-scope="astro-bztu2lml-1"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }[data-astro-transition=back][data-astro-transition-fallback="old"] [data-astro-transition-scope="astro-bztu2lml-1"],
+			[data-astro-transition=back][data-astro-transition-fallback="old"][data-astro-transition-scope="astro-bztu2lml-1"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition=back][data-astro-transition-fallback="new"] [data-astro-transition-scope="astro-bztu2lml-1"],
+			[data-astro-transition=back][data-astro-transition-fallback="new"][data-astro-transition-scope="astro-bztu2lml-1"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }</style><style>[data-astro-transition-scope="astro-bztu2lml-2"] { view-transition-name: llm; }@layer astro { ::view-transition-old(llm) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }::view-transition-new(llm) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }[data-astro-transition=back]::view-transition-old(llm) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition=back]::view-transition-new(llm) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; } }[data-astro-transition-fallback="old"] [data-astro-transition-scope="astro-bztu2lml-2"],
+			[data-astro-transition-fallback="old"][data-astro-transition-scope="astro-bztu2lml-2"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition-fallback="new"] [data-astro-transition-scope="astro-bztu2lml-2"],
+			[data-astro-transition-fallback="new"][data-astro-transition-scope="astro-bztu2lml-2"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }[data-astro-transition=back][data-astro-transition-fallback="old"] [data-astro-transition-scope="astro-bztu2lml-2"],
+			[data-astro-transition=back][data-astro-transition-fallback="old"][data-astro-transition-scope="astro-bztu2lml-2"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition=back][data-astro-transition-fallback="new"] [data-astro-transition-scope="astro-bztu2lml-2"],
+			[data-astro-transition=back][data-astro-transition-fallback="new"][data-astro-transition-scope="astro-bztu2lml-2"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }</style><style>[data-astro-transition-scope="astro-bztu2lml-3"] { view-transition-name: knowledgedistillation; }@layer astro { ::view-transition-old(knowledgedistillation) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }::view-transition-new(knowledgedistillation) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }[data-astro-transition=back]::view-transition-old(knowledgedistillation) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition=back]::view-transition-new(knowledgedistillation) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; } }[data-astro-transition-fallback="old"] [data-astro-transition-scope="astro-bztu2lml-3"],
+			[data-astro-transition-fallback="old"][data-astro-transition-scope="astro-bztu2lml-3"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition-fallback="new"] [data-astro-transition-scope="astro-bztu2lml-3"],
+			[data-astro-transition-fallback="new"][data-astro-transition-scope="astro-bztu2lml-3"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }[data-astro-transition=back][data-astro-transition-fallback="old"] [data-astro-transition-scope="astro-bztu2lml-3"],
+			[data-astro-transition=back][data-astro-transition-fallback="old"][data-astro-transition-scope="astro-bztu2lml-3"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition=back][data-astro-transition-fallback="new"] [data-astro-transition-scope="astro-bztu2lml-3"],
+			[data-astro-transition=back][data-astro-transition-fallback="new"][data-astro-transition-scope="astro-bztu2lml-3"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }</style><style>[data-astro-transition-scope="astro-bztu2lml-4"] { view-transition-name: modelcompression; }@layer astro { ::view-transition-old(modelcompression) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }::view-transition-new(modelcompression) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }[data-astro-transition=back]::view-transition-old(modelcompression) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition=back]::view-transition-new(modelcompression) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; } }[data-astro-transition-fallback="old"] [data-astro-transition-scope="astro-bztu2lml-4"],
+			[data-astro-transition-fallback="old"][data-astro-transition-scope="astro-bztu2lml-4"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition-fallback="new"] [data-astro-transition-scope="astro-bztu2lml-4"],
+			[data-astro-transition-fallback="new"][data-astro-transition-scope="astro-bztu2lml-4"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }[data-astro-transition=back][data-astro-transition-fallback="old"] [data-astro-transition-scope="astro-bztu2lml-4"],
+			[data-astro-transition=back][data-astro-transition-fallback="old"][data-astro-transition-scope="astro-bztu2lml-4"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition=back][data-astro-transition-fallback="new"] [data-astro-transition-scope="astro-bztu2lml-4"],
+			[data-astro-transition=back][data-astro-transition-fallback="new"][data-astro-transition-scope="astro-bztu2lml-4"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }</style></head><body class="bg-background font-app text-foreground selection:bg-accent/75 selection:text-accent-foreground flex min-h-svh flex-col"><a id="skip-to-content" href="#main-content" class="bg-background text-accent absolute inset-s-16 -top-full z-50 px-3 py-2 backdrop-blur-lg transition-all focus:top-4">跳到正文</a><header class="app-layout flex flex-col items-center justify-between sm:flex-row"><div class="border-border bg-background relative flex w-full items-baseline justify-between border-b py-4 sm:items-center sm:py-6"><a href="/" class="absolute py-1 text-xl leading-8 font-semibold whitespace-nowrap sm:static sm:my-auto sm:text-2xl sm:leading-none">Sarom&#39;s Blog</a><nav id="nav-menu" class="flex w-full flex-col items-center sm:ms-2 sm:flex-row sm:justify-end sm:space-x-4 sm:py-0"><button id="menu-btn" class="focus-outline self-end p-2 sm:hidden" aria-label="展开菜单" aria-expanded="false" aria-controls="menu-items" data-label-open="展开菜单" data-label-close="收起菜单"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="hidden" viewBox="0 0 24 24" id="close-icon"><path stroke="none" d="M0 0h24v24H0z" /><path d="M18 6 6 18M6 6l12 12" /></svg><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="icon icon-tabler icons-tabler-outline icon-tabler-menu-deep" viewBox="0 0 24 24" id="menu-icon"><path stroke="none" d="M0 0h24v24H0z" /><path d="M4 6h16M7 12h13M10 18h10" /></svg></button><ul id="menu-items" class="[&amp;&gt;li&gt;a]:hover:text-accent mt-4 hidden w-44 grid-cols-2 place-content-center gap-2 sm:mt-0 sm:flex sm:w-auto sm:gap-x-5 sm:gap-y-0 sm:[&amp;&gt;li]:h-8 [&amp;&gt;li&gt;a]:block [&amp;&gt;li&gt;a]:px-4 [&amp;&gt;li&gt;a]:py-3 [&amp;&gt;li&gt;a]:text-center [&amp;&gt;li&gt;a]:font-medium sm:[&amp;&gt;li&gt;a]:px-2 sm:[&amp;&gt;li&gt;a]:py-1"><li class="col-span-2"><a href="/posts/" class="active-nav">文章</a></li><li class="col-span-2"><a href="/tags/">标签</a></li><li class="col-span-2"><a href="/about/">关于</a></li><li class="col-span-2"><a href="/archives/" title="归档" aria-label="归档" class="group inline-flex items-center gap-1 hover:text-accent focus-outline flex size-full justify-center p-3 sm:relative sm:size-8 sm:p-0"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="hidden sm:absolute sm:top-1/2 sm:left-1/2 sm:block sm:size-6 sm:-translate-x-1/2 sm:-translate-y-1/2" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M3 6a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2 2 2 0 0 1-2 2H5a2 2 0 0 1-2-2M5 8v10a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8M10 12h4" /></svg><span class="sm:sr-only">归档</span></a></li><li class="col-span-1 flex items-center justify-center"><a href="/search/" title="搜索" aria-label="搜索" class="group inline-flex items-center gap-1 hover:text-accent focus-outline relative size-8"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="absolute top-1/2 left-1/2 size-6 -translate-x-1/2 -translate-y-1/2" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M3 10a7 7 0 1 0 14 0 7 7 0 1 0-14 0M21 21l-6-6" /></svg><span class="sr-only">搜索</span></a></li><li class="col-span-1 flex items-center justify-center"><button id="theme-btn" class="focus-outline hover:[&amp;&gt;svg]:stroke-accent relative size-12 p-4 sm:size-8" title="切换主题" aria-label="auto" aria-live="polite"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="absolute top-[50%] left-[50%] translate-[-50%] scale-100 rotate-0 transition-all dark:scale-0 dark:-rotate-90" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M12 3h.393a7.5 7.5 0 0 0 7.92 12.446A9 9 0 1 1 12 2.992z" /></svg><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="absolute top-[50%] left-[50%] translate-[-50%] scale-0 rotate-90 transition-all dark:scale-100 dark:rotate-0" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M14.828 14.828a4 4 0 1 0-5.656-5.656 4 4 0 0 0 5.656 5.656M6.343 17.657l-1.414 1.414M6.343 6.343 4.929 4.929M17.657 6.343l1.414-1.414M17.657 17.657l1.414 1.414M4 12H2M12 4V2M20 12h2M12 20v2" /></svg></button></li></ul></nav></div></header><script type="module">function e(){let e=document.querySelector(`#menu-btn`),t=document.querySelector(`#menu-items`),n=document.querySelector(`#menu-icon`),r=document.querySelector(`#close-icon`);if(!e||!t||!n||!r)return;let i=e.dataset.labelOpen??`Open menu`,a=e.dataset.labelClose??`Close menu`;e.addEventListener(`click`,()=>{let o=e.getAttribute(`aria-expanded`)===`true`;e.setAttribute(`aria-expanded`,o?`false`:`true`),e.setAttribute(`aria-label`,o?i:a),t.classList.toggle(`hidden`),t.classList.toggle(`grid`),n.classList.toggle(`hidden`),r.classList.toggle(`hidden`)})}function t(){let e=document.getElementById(`skip-to-content`);e&&e.addEventListener(`click`,e=>{if(e.defaultPrevented||e.metaKey||e.ctrlKey||e.shiftKey||e.button!==0)return;e.preventDefault();let t=document.getElementById(`main-content`);t&&(t.setAttribute(`tabindex`,`-1`),t.addEventListener(`blur`,()=>t.removeAttribute(`tabindex`),{once:!0}),t.focus(),t.scrollIntoView({behavior:`smooth`}))})}e(),document.addEventListener(`astro:after-swap`,e),t(),document.addEventListener(`astro:after-swap`,t);</script><div class="app-layout flex items-center justify-start"><a id="back-button" href="/" class="group inline-flex items-center gap-1 hover:text-accent focus-outline hover:text-foreground/75 -ms-2 mt-8 mb-2"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="inline-block size-6 rtl:rotate-180" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="m15 6-6 6 6 6" /></svg><span>返回</span></a></div><script type="module">function e(){let e=document.querySelector(`#back-button`),t=sessionStorage.getItem(`backUrl`);t&&e&&(e.href=t)}document.addEventListener(`astro:page-load`,e),e();</script><main id="main-content" class="app-layout" data-pagefind-body><h1 style="view-transition-name:llm-knowledge-distillation" class="text-accent inline-block text-2xl font-bold sm:text-3xl">知识蒸馏与 DistilBERT</h1><div class="my-2 flex items-center gap-2"><div class="text-muted-foreground flex items-center gap-x-2"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="inline-block size-6 min-w-5.5" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M4 7a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2zM16 3v4M8 3v4M4 11h16M7 14h.013M10.01 14h.005M13.01 14h.005M16.015 14h.005M13.015 17h.005M7.01 17h.005M10.01 17h.005" /></svg><time class="text-sm sm:text-base" datetime="2022-04-25T02:00:00.000Z">2022年4月25日</time></div><span aria-hidden="true" class="text-muted-foreground max-sm:hidden hidden">|</span></div><article id="article" class="mt-8 w-full app-prose max-w-app prose-pre:bg-(--shiki-light-bg) dark:prose-pre:bg-(--shiki-dark-bg)"><p>在预训练语言模型的应用中，低秩适配（low-rank adaptation，LoRA）通过旁路分解减少了下游微调（fine-tuning）阶段的待训练参数量，但它并未改变基础模型的层数与计算拓扑。在模型部署与前向推理（inference）阶段，边缘设备（如智能手机）依然需要承载完整模型的静态权重与串行前向计算开销。</p>
+<p>当应用场景对内存占用和端侧延迟有严格限制时，仅优化微调参数量无法满足部署需求，必须直接缩减部署模型本身的物理规模。</p>
+<p>为了在压缩模型体积的同时保留通用语言理解能力，Sanh et al. (2019) 提出了针对通用预训练模型的压缩方案 DistilBERT<a href="#ref-sanh-2019"><span id="citation-sanh-abs">1 (Abstract, §1)</span></a>。</p>
+<p>需要说明的是，这里研究的是以双向 Transformer 编码器执行掩码语言建模（masked language modeling，MLM）的表征模型，其评测收益限于分类与抽取式问答等自然语言处理（natural language processing，NLP）理解任务，不能直接推广为生成式大语言模型（large language model，LLM）的自回归文本生成或对话表现。</p>
+<p>该方案利用知识蒸馏（knowledge distillation，KD）技术，在部分性能折衷的前提下，将庞大教师模型（teacher model）学到的表征监督迁移至轻量级学生模型（student model）<a href="#ref-sanh-2019"><span id="citation-sanh-sec1">1 (§1)</span></a>。</p>
+<hr>
+<h2 id="1-传统微调蒸馏与通用预训练蒸馏的区别">1. 传统微调蒸馏与通用预训练蒸馏的区别</h2>
+<p>在深度学习领域，知识蒸馏最初由 Bucila et al. (2006) 和 Hinton et al. (2015) 形式化提出：通过训练一个轻量级的小模型（学生模型）来重现庞大复杂模型（教师模型）或模型集成的预测分布<a href="#ref-sanh-2019"><span id="citation-sanh-sec2">1 (§2)</span></a>。</p>
+<p>但在自然语言处理领域，早期关于 Transformer 架构的蒸馏研究大多局限于特定下游任务蒸馏（task-specific distillation）<a href="#ref-sanh-2019"><span id="citation-sanh-sec5">1 (§5)</span></a>：开发者先在特定任务上对庞大的预训练模型进行有监督微调，随后将微调后的模型作为教师，指导小型网络学习该特定任务的预测输出<a href="#ref-sanh-2019"><span id="citation-sanh-sec5-2">1 (§5)</span></a>。这种任务级蒸馏产出的小模型无法直接迁移到其他下游任务上。</p>
+<p>Sanh et al. (2019) 探索的则是通用预训练阶段的知识蒸馏（general-purpose pre-training distillation）<a href="#ref-sanh-2019"><span id="citation-sanh-sec1-3">1 (§1)</span></a>。其核心设计是在大规模预训练（pretraining）阶段直接引入教师模型作为自监督信号，让紧凑学生模型在初始表征构建阶段就吸收教师的归纳偏置（inductive bias）。预训练蒸馏完成后，该底座可以像标准 BERT 一样直接在下游广泛任务上微调<a href="#ref-sanh-2019"><span id="citation-sanh-abs-2">1 (Abstract, §3)</span></a>。</p>
+<hr>
+<h2 id="2-软目标与温度平滑">2. 软目标与温度平滑</h2>
+<p>在标准有监督分类与自监督语言建模中，模型通常以真实标签的单热分布（one-hot distribution）作为硬目标（hard target），通过最小化交叉熵（cross-entropy）进行优化<a href="#ref-sanh-2019"><span id="citation-sanh-sec2-2">1 (§2)</span></a>。</p>
+<h3 id="21-硬目标的局限与软目标的暗知识">2.1 硬目标的局限与软目标的暗知识</h3>
+<p>硬目标的分布形式是绝对的：真实类别概率为 1，其余所有类别概率严格为 0。</p>
+<p>但在真实的自然语言理解中，候选 token（token，模型处理的序列单位）之间的语义关联并非非黑即白。论文作者给出了掩码语言建模中的预测示例<a href="#ref-sanh-2019"><span id="citation-sanh-sec2-fn3">1 (§2, Footnote 3)</span></a>：</p>
+<ul>
+<li>给定输入序列：<code>"I think this is the beginning of a beautiful [MASK]"</code>；</li>
+<li>真实语料中的标准答案对应单一 token（硬目标为 1）；</li>
+<li>教师模型 BERT-base 输出的完整概率分布中，不仅 <code>day</code> 和 <code>life</code> 会获得较高概率，在长尾分布中，语义上同样合理的 <code>future</code>、<code>story</code>、<code>world</code> 等候选也会获得相对非零的有效概率。</li>
+</ul>
+<p>这些蕴含在非目标类别的相对概率结构被称为暗知识（dark knowledge）<a href="#ref-sanh-2019"><span id="citation-sanh-sec2-3">1 (§2)</span></a>。它反映了词汇之间的语义近邻关系与上下文兼容度。软目标（soft target）通过向学生模型传递这一完整概率分布，提供了比单热硬标签更为丰富的监督信号。</p>
+<h3 id="22-温度超参数-t-的平滑机理">2.2 温度超参数 T 的平滑机理</h3>
+<p>当未归一化分数（logits）差距较大时，标准 softmax 输出分布会向最高项集中。为了调节分布的平滑程度并显式呈现长尾结构，知识蒸馏引入了温度超参数（temperature，T）<a href="#ref-sanh-2019"><span id="citation-sanh-sec2-4">1 (§2)</span></a>：</p>
+<pre class="astro-code astro-code-themes min-light night-owl" style="--shiki-light:#24292eff;--shiki-dark:#d6deeb;--shiki-light-bg:#ffffff;--shiki-dark-bg:#011627; overflow-x: auto;--file-name-offset: -0.75rem;" tabindex="0" data-language="text"><code><span class="line"><span>p_i = exp(z_i / T) / sum_j exp(z_j / T)</span></span></code></pre>
+<p>其中：</p>
+<ul>
+<li><code>z_i</code> 是模型对词表第 <code>i</code> 个 token 计算出的未归一化对数分数；</li>
+<li><code>T</code> 是温度缩放因子（<code>T > 0</code>）。</li>
+</ul>
+<p>当 <code>T = 1</code> 时，公式等价于标准 softmax；当 <code>T > 1</code> 时，各类别的分数差异被压缩，输出概率分布变得更加平缓柔和，长尾类别之间的相对差值得以显现。在蒸馏训练期间，教师模型与学生模型使用相同的温度 <code>T</code> 计算概率分布；在完成训练后的线上推理阶段，温度恢复为 <code>T = 1</code>，回到标准 softmax 状态<a href="#ref-sanh-2019"><span id="citation-sanh-sec2-5">1 (§2)</span></a>。</p>
+<hr>
+<h2 id="3-distilbert-的三元损失与网络架构设计">3. DistilBERT 的三元损失与网络架构设计</h2>
+<p>为了将 BERT-base 的语言表征能力迁移至紧凑网络中，Sanh et al. (2019) 设计了组合优化的三元损失函数，并结合 Transformer 的硬件计算特征重构了网络拓扑<a href="#ref-sanh-2019"><span id="citation-sanh-sec2-6">1 (§2)</span>, <span id="citation-sanh-sec3">1 (§3)</span></a>。</p>
+<h3 id="31-三元损失函数的构造">3.1 三元损失函数的构造</h3>
+<p>DistilBERT 的总训练目标由三项相互补充的损失函数线性组合而成<a href="#ref-sanh-2019"><span id="citation-sanh-sec2-7">1 (§2)</span></a>：</p>
+<pre class="astro-code astro-code-themes min-light night-owl" style="--shiki-light:#24292eff;--shiki-dark:#d6deeb;--shiki-light-bg:#ffffff;--shiki-dark-bg:#011627; overflow-x: auto;--file-name-offset: -0.75rem;" tabindex="0" data-language="text"><code><span class="line"><span>L_triple = alpha * L_ce + beta * L_mlm + gamma * L_cos</span></span></code></pre>
+<p>其中 <code>alpha</code>、<code>beta</code>、<code>gamma</code> 为线性组合系数（原论文明确总损失为三项的线性组合，但未给出具体固定数值）：</p>
+<ol>
+<li><strong>蒸馏交叉熵损失（distillation cross-entropy loss，<code>L_ce</code>）</strong>：
+衡量学生模型在平滑温度 <code>T</code> 下输出概率分布与教师模型软目标之间的交叉熵：
+<pre class="astro-code astro-code-themes min-light night-owl" style="--shiki-light:#24292eff;--shiki-dark:#d6deeb;--shiki-light-bg:#ffffff;--shiki-dark-bg:#011627; overflow-x: auto;--file-name-offset: -0.75rem;" tabindex="0" data-language="text"><code><span class="line"><span>L_ce = - sum_i t_i * log(s_i)</span></span></code></pre>
+其中 <code>t_i</code> 与 <code>s_i</code> 分别为教师与学生在温度 <code>T</code> 下估算出的概率。固定教师分布 <code>t</code> 时，<code>KL(t || s) = CE(t, s) - H(t)</code>，<code>H(t)</code> 对学生参数为常量，因此两者对学生参数更新具有相同梯度；</li>
+<li><strong>掩码语言建模损失（masked language modeling loss，<code>L_mlm</code>）</strong>：
+针对训练语料中原始被掩码 token 的监督损失，直接基于文本中的真实硬标签计算交叉熵，使学生模型保持对语料词汇分布的直接拟合；</li>
+<li><strong>余弦嵌入损失（cosine embedding loss，<code>L_cos</code>）</strong>：
+衡量学生模型隐藏状态向量与教师模型对应隐藏状态向量之间的方向一致性：
+<pre class="astro-code astro-code-themes min-light night-owl" style="--shiki-light:#24292eff;--shiki-dark:#d6deeb;--shiki-light-bg:#ffffff;--shiki-dark-bg:#011627; overflow-x: auto;--file-name-offset: -0.75rem;" tabindex="0" data-language="text"><code><span class="line"><span>L_cos = 1 - cos(h_s, h_t) = 1 - (h_s · h_t) / (||h_s||_2 * ||h_t||_2)</span></span></code></pre>
+其中 <code>h_s</code> 与 <code>h_t</code> 为对应隐藏状态（hidden state）向量。该项通过向量几何约束引导学生模型内部表征方向与教师保持对齐。</li>
+</ol>
+<h3 id="32-层数与隐藏维度的选择">3.2 层数与隐藏维度的选择</h3>
+<p>在压缩 Transformer 结构时，参数削减通常可在网络深度（层数）或宽度（隐藏维度）之间权衡。</p>
+<p>Sanh et al. (2019) 在固定参数预算的前提下调查了不同因子的影响，观察到在现代线性代数库与计算实现中，改变张量最后一维（隐藏维度）对计算效率的影响小于改变网络层数<a href="#ref-sanh-2019"><span id="citation-sanh-sec3-2">1 (§3)</span></a>。</p>
+<p>因此，DistilBERT 选择保留与 BERT-base 完全一致的隐藏维度（同宽），而将 Transformer 编码器层数从 12 层精简为 6 层（层数减少 50%），同时移除了表示输入片段类别的 token 类型嵌入（token-type embeddings）与池化层（pooler）<a href="#ref-sanh-2019"><span id="citation-sanh-sec3-3">1 (§3)</span></a>。</p>
+<p>在参数初始化上，方案利用学生与教师网络相同的隐藏维度，采用隔层抽取策略（one layer out of two）：从教师模型的 12 层编码器中每两层抽取一层（例如选择第 0、2、4、6、8、10 层作为抽取示意）初始化学生模型的对应 6 层，为蒸馏训练提供起始权重<a href="#ref-sanh-2019"><span id="citation-sanh-sec3-4">1 (§3)</span></a>。</p>
+<h3 id="33-预训练蒸馏结构示意">3.3 预训练蒸馏结构示意</h3>
+<p>下图展示了 DistilBERT 预训练蒸馏的数据流与三元损失对齐拓扑：</p>
+<svg viewBox="0 0 420 340" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="DistilBERT 预训练蒸馏与三元损失数据流架构图">
+  <title>DistilBERT 预训练蒸馏结构示意</title>
+  <desc>展示输入文本同时进入双向编码器教师模型与减半层数的学生模型，并在输出端分别计算软目标交叉熵、余弦隐藏层对齐以及掩码硬标签损失的训练流程</desc>
+  <style>
+    .node-box { fill: #f8fafc; stroke: #334155; stroke-width: 2; rx: 6; }
+    .teacher-box { fill: #f1f5f9; stroke: #64748b; stroke-width: 2; stroke-dasharray: 4 4; rx: 6; }
+    .student-box { fill: #eff6ff; stroke: #2563eb; stroke-width: 2; rx: 6; }
+    .loss-box { fill: #fef08a; stroke: #ca8a04; stroke-width: 2; rx: 6; }
+    .title-text { font-family: system-ui, -apple-system, sans-serif; font-size: 19px; font-weight: bold; fill: #0f172a; text-anchor: middle; }
+    .desc-text { font-family: system-ui, -apple-system, sans-serif; font-size: 18px; fill: #334155; text-anchor: middle; }
+    .loss-text { font-family: monospace; font-size: 18px; fill: #854d0e; font-weight: bold; text-anchor: middle; }
+    .line-teacher { stroke: #475569; stroke-width: 2; marker-end: url(#arrow-gray); fill: none; }
+    .line-student { stroke: #2563eb; stroke-width: 2; marker-end: url(#arrow-blue); fill: none; }
+    .line-input { stroke: #0f172a; stroke-width: 2; marker-end: url(#arrow-dark); fill: none; }
+  </style>
+  <defs>
+    <marker id="arrow-dark" viewBox="0 0 10 10" refX="6" refY="5" markerWidth="6" markerHeight="6" orient="auto-reverse">
+      <path d="M 0 1 L 8 5 L 0 9 z" fill="#0f172a"></path>
+    </marker>
+    <marker id="arrow-gray" viewBox="0 0 10 10" refX="6" refY="5" markerWidth="6" markerHeight="6" orient="auto-reverse">
+      <path d="M 0 1 L 8 5 L 0 9 z" fill="#475569"></path>
+    </marker>
+    <marker id="arrow-blue" viewBox="0 0 10 10" refX="6" refY="5" markerWidth="6" markerHeight="6" orient="auto-reverse">
+      <path d="M 0 1 L 8 5 L 0 9 z" fill="#2563eb"></path>
+    </marker>
+  </defs>
+  <!-- 输入节点 -->
+  <rect x="110" y="275" width="200" height="42" class="node-box"></rect>
+  <text x="210" y="302" class="title-text">输入文本 (含 [MASK])</text>
+  <!-- 左侧：教师模型 -->
+  <rect x="25" y="150" width="165" height="65" class="teacher-box"></rect>
+  <text x="107" y="177" class="title-text">教师 BERT-base</text>
+  <text x="107" y="202" class="desc-text">(12 层, 冻结输出)</text>
+  <!-- 右侧：学生模型 -->
+  <rect x="230" y="150" width="165" height="65" class="student-box"></rect>
+  <text x="312" y="177" class="title-text">学生 DistilBERT</text>
+  <text x="312" y="202" class="desc-text">(6 层, 可训练参数)</text>
+  <!-- 顶部三项损失 -->
+  <!-- 损失 1：软目标交叉熵 -->
+  <rect x="16" y="25" width="118" height="52" class="loss-box"></rect>
+  <text x="75" y="47" class="loss-text">L_ce</text>
+  <text x="75" y="68" class="desc-text">软目标交叉熵</text>
+  <!-- 损失 2：余弦嵌入对齐 -->
+  <rect x="151" y="25" width="118" height="52" class="loss-box"></rect>
+  <text x="210" y="47" class="loss-text">L_cos</text>
+  <text x="210" y="68" class="desc-text">余弦嵌入对齐</text>
+  <!-- 损失 3：掩码硬标签 -->
+  <rect x="286" y="25" width="118" height="52" class="loss-box"></rect>
+  <text x="345" y="47" class="loss-text">L_mlm</text>
+  <text x="345" y="68" class="desc-text">掩码硬标签</text>
+  <!-- 连线部分 -->
+  <!-- 输入流向教师与学生 -->
+  <path d="M 170 275 L 107 215" class="line-input"></path>
+  <path d="M 250 275 L 312 215" class="line-input"></path>
+  <!-- 教师输出分支 (灰色路径) -->
+  <!-- 教师输出到 L_ce (直线上行) -->
+  <path d="M 75 150 L 75 77" class="line-teacher"></path>
+  <!-- 教师隐藏状态到 L_cos (正交步进，y=100 转折) -->
+  <path d="M 140 150 L 140 134 M 140 110 L 140 100 L 195 100 L 195 77" class="line-teacher"></path>
+  <!-- 学生输出分支 (蓝色路径) -->
+  <!-- 学生输出到 L_mlm (直线上行) -->
+  <path d="M 345 150 L 345 77" class="line-student"></path>
+  <!-- 学生隐藏状态到 L_cos (上行汇入) -->
+  <path d="M 280 150 L 225 77" class="line-student"></path>
+  <!-- 学生软概率到 L_ce (正交分层步进，y=122 转折；在 (140, 122) 处设置弧形跨线桥避免汇合误认) -->
+  <path d="M 250 150 L 250 122 L 146 122 A 6 6 0 0 1 134 122 L 95 122 L 95 77" class="line-student"></path>
+</svg>
+<p>上图展示了 DistilBERT 预训练阶段的蒸馏监督关系教学示意（已省略底层张量与具体算子实现）。学生模型在掩码语言建模任务上接收真实文本标签的硬目标监督（<code>L_mlm</code>），同时通过软目标交叉熵损失（<code>L_ce</code>）吸收教师输出分布中的暗知识，并通过余弦嵌入损失（<code>L_cos</code>）对齐两者的隐藏状态向量方向。</p>
+<hr>
+<h2 id="4-实验结果与消融">4. 实验结果与消融</h2>
+<p>论文在 GLUE 基准、下游任务及移动端对模型规模、耗时与保留能力进行了对比测试。</p>
+<h3 id="41-综合表现与推理耗时">4.1 综合表现与推理耗时</h3>
+<p>下面分别对模型规模、耗时与下游表现进行结构化对照<a href="#ref-sanh-2019"><span id="citation-sanh-sec4">1 (§4, Table 1, Table 2, Table 3)</span></a>：</p>
+<div class="table-wrapper" tabindex="0">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<table><thead><tr><th align="left">模型版本</th><th align="left">参数量</th><th align="left">推理耗时与任务得分</th></tr></thead><tbody><tr><td align="left">ELMo (基线)</td><td align="left">180M</td><td align="left">895 秒 / GLUE 宏平均 68.7 分</td></tr><tr><td align="left">BERT-base (教师)</td><td align="left">110M</td><td align="left">668 秒 / GLUE 宏平均 77.6 分</td></tr><tr><td align="left">DistilBERT (学生)</td><td align="left">66M</td><td align="left">410 秒 / GLUE 宏平均 76.8 分</td></tr></tbody></table></div>
+<p>上表中的推理耗时来自原论文在 Intel Xeon E5-2690 v3 Haswell @2.9GHz CPU 上、以 batch size 1 完整运行一遍 STS-B 开发集（dev set）的总耗时（非单次 batch 延迟）。在该评测环境下，DistilBERT 相比 BERT-base 耗时从 668 秒下降至 410 秒（速度约提升 63%，论文概括为约 60% faster）。</p>
+<p>模型参数量减少约 40%（从 110M 降至 66M）。在 GLUE 9 项任务的开发集宏平均得分上，DistilBERT 取得 76.8 分，相比 BERT-base 的 77.6 分相差 0.8 分（原论文摘要概括为保留了 97% 的语言理解能力，该比例为论文整体表述，非由两宏分直接相除得出）。</p>
+<div class="table-wrapper" tabindex="0">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<table><thead><tr><th align="left">模型与微调策略</th><th align="left">IMDb 测试集准确率</th><th align="left">SQuAD 1.1 开发集 (EM / F1)</th></tr></thead><tbody><tr><td align="left">BERT-base (微调基准)</td><td align="left">93.46%</td><td align="left">81.2% / 88.5%</td></tr><tr><td align="left">DistilBERT (单阶段微调)</td><td align="left">92.82%</td><td align="left">77.7% / 85.8%</td></tr><tr><td align="left">DistilBERT (微调两阶段蒸馏)</td><td align="left">—</td><td align="left">79.1% / 86.9%</td></tr></tbody></table></div>
+<p>在特定下游任务上，DistilBERT 在 IMDb 情感分类测试集上达到 92.82% 准确率，与完整模型差距仅 0.64 个百分点；在抽取式阅读理解任务 SQuAD 1.1 开发集上，单阶段预训练蒸馏后常规微调的 F1 为 85.8%，若在微调阶段引入以微调后 BERT 为教师的第二轮知识蒸馏，F1 得分进一步提升至 86.9%（距完整模型 1.6 个百分点）<a href="#ref-sanh-2019"><span id="citation-sanh-sec41">1 (§4.1, Table 2)</span></a>。</p>
+<p>此外，原论文在 iPhone 7 Plus 上将该问答模型进行端侧评测，排除分词耗时后，论文报告 DistilBERT 的运行速度比 BERT-base 快 71%，磁盘模型文件大小约为 207 MB<a href="#ref-sanh-2019"><span id="citation-sanh-sec41-phone">1 (§4.1)</span></a>。</p>
+<h3 id="42-关键机制消融">4.2 关键机制消融</h3>
+<p>为了分析各项组件对最终表现的相对影响，Sanh et al. (2019) 针对损失项和初始化进行了消融实验（ablation study）<a href="#ref-sanh-2019"><span id="citation-sanh-sec42">1 (§4.2, Table 4)</span></a>：</p>
+<div class="table-wrapper" tabindex="0">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<table><thead><tr><th align="left">消融实验配置</th><th align="left">GLUE 宏平均变化</th><th align="left">机制作用与消融表现</th></tr></thead><tbody><tr><td align="left">移除蒸馏损失 (无 L_ce)</td><td align="left">-5.06 分</td><td align="left">软目标监督缺失导致性能明显下降</td></tr><tr><td align="left">随机权重初始化 (无隔层拷贝)</td><td align="left">-4.83 分</td><td align="left">随机初始化时宏平均得分下降</td></tr><tr><td align="left">移除余弦对齐 (无 L_cos)</td><td align="left">-4.07 分</td><td align="left">隐藏层向量方向引导缺失导致表现下降</td></tr><tr><td align="left">移除掩码硬标签 (无 L_mlm)</td><td align="left">-1.90 分</td><td align="left">软目标与余弦引导下轻度下降</td></tr></tbody></table></div>
+<p>消融实验表明，在论文给出的三元损失与隔层初始化设置下，移除蒸馏交叉熵损失 <code>L_ce</code>、隔层权重初始化或余弦嵌入损失 <code>L_cos</code> 均会导致 GLUE 宏平均得分发生较大幅度下降（分别下降 5.06、4.83 与 4.07 分），说明各组件在该方案中对维持模型下游表现均有贡献；而掩码语言建模硬标签损失 <code>L_mlm</code> 移除后降幅相对较小（1.90 分），表明在软目标与隐藏层对齐监督下模型仍能维持较多表征能力。</p>
+<hr>
+<h2 id="5-知识蒸馏的物理边界与适用局限">5. 知识蒸馏的物理边界与适用局限</h2>
+<p>知识蒸馏在算力受限部署场景中表现良好，但具有明确的机制边界与适用条件：</p>
+<ol>
+<li><strong>训练资源与成本前提</strong>：
+知识蒸馏使紧凑学生模型的预训练更为轻量（论文中 DistilBERT 使用 8 块 16GB V100 训练约 90 小时），但这一过程必须依赖一个已预训练完成的高性能教师模型<a href="#ref-sanh-2019"><span id="citation-sanh-sec3-train">1 (§3)</span></a>。知识蒸馏并未免除教师模型本身的预训练计算开销；总体算力成本是否降低，取决于教师模型是否能够被多个下游或端侧压缩任务充分摊销。</li>
+<li><strong>模型容量折衷依任务而异</strong>：
+将 Transformer 编码器层数减半降低了网络的参数容量与深度表征能力。能力保留程度在不同任务间存在差异：在 GLUE 的文本蕴涵任务 RTE 上，DistilBERT 相比 BERT-base 得分从 71.3 分下降至 62.9 分（下降 8.4 个百分点）<a href="#ref-sanh-2019"><span id="citation-sanh-sec4-tab1">1 (§4, Table 1)</span></a>，说明本实验中各任务的表现保留程度不同。</li>
+<li><strong>架构与同宽假设的约束</strong>：
+DistilBERT 的隔层初始化与直接向量余弦嵌入损失高度依赖学生与教师共享相同的隐藏层维度（同宽）与 Transformer 结构。若在不同隐藏层宽度或异构网络之间进行压缩，无法直接执行逐向量余弦对齐或层间权重复制，必须调整特征对齐策略或仅依赖输出端概率分布进行迁移。</li>
+</ol>
+<hr>
+<p>通过软目标概率分布传递暗知识、利用余弦损失约束隐藏向量方向，并结合隔层权重初始化，DistilBERT 验证了在预训练阶段直接进行知识蒸馏的可行性。它在减少约 40% 参数量和显著缩减前向计算延迟的同时，保留了双向表征模型的大部分下游评测能力，为计算资源受限环境下的模型轻量化提供了清晰的工程范例。</p>
+<hr>
+<h2 id="参考资料">参考资料</h2>
+<ol>
+  <li>
+    Sanh, V., Debut, L., Chaumond, J., &#x26; Wolf, T. (2019). <i>DistilBERT, a distilled version of BERT: smaller, faster, cheaper and lighter</i>. arXiv:1910.01108v1 [cs.CL].
+    <br>
+    首次提交日期：2019-10-02；本篇依据版本：2019-10-02 (arXiv:1910.01108v1).
+    <br>
+    原文链接：<a id="ref-sanh-2019" href="https://arxiv.org/abs/1910.01108v1" target="_blank" rel="noopener noreferrer">https://arxiv.org/abs/1910.01108v1</a>
+  </li>
+</ol></article><hr class="my-8 border-dashed"><div id="btt-btn-container" class="fixed inset-e-4 bottom-8 z-50 md:sticky md:inset-e-auto md:float-end md:me-1 translate-y-14 opacity-0 transition duration-500"><button data-button="back-to-top" class="group bg-background relative px-2 py-1 size-14 rounded-full shadow-xl md:h-8 md:w-fit md:rounded-md md:shadow-none md:focus-visible:rounded-none md:bg-background/35 md:bg-clip-padding md:backdrop-blur-lg"><span id="progress-indicator" class="absolute inset-0 -z-10 block size-14 scale-110 rounded-full bg-transparent md:hidden md:h-8 md:rounded-md"></span><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="inline-block rotate-90 md:hidden" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M5 12h14M5 12l6 6M5 12l6-6" /></svg><span class="group-hover:text-accent sr-only text-sm md:not-sr-only"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="inline-block size-4" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M12 5v14M16 9l-4-4M8 9l4-4" /></svg> 回到顶部</span></button></div><script data-astro-rerun>
+  function backToTop() {
+    const rootElement = document.documentElement;
+    const btnContainer = document.querySelector("#btt-btn-container");
+    const backToTopBtn = document.querySelector("[data-button='back-to-top']");
+    const progressIndicator = document.querySelector("#progress-indicator");
+
+    if (!rootElement || !btnContainer || !backToTopBtn || !progressIndicator)
+      return;
+
+    backToTopBtn.addEventListener("click", () => {
+      document.body.scrollTop = 0;
+      document.documentElement.scrollTop = 0;
+    });
+
+    let lastVisible = null;
+    function handleScroll() {
+      const scrollTotal = rootElement.scrollHeight - rootElement.clientHeight;
+      const scrollTop = rootElement.scrollTop;
+      const scrollPercent = Math.floor((scrollTop / scrollTotal) * 100);
+
+      progressIndicator.style.setProperty(
+        "background-image",
+        `conic-gradient(var(--accent), var(--accent) ${scrollPercent}%, transparent ${scrollPercent}%)`
+      );
+
+      const isVisible = scrollTop / scrollTotal > 0.3;
+
+      if (isVisible !== lastVisible) {
+        btnContainer.classList.toggle("opacity-100", isVisible);
+        btnContainer.classList.toggle("translate-y-0", isVisible);
+        btnContainer.classList.toggle("opacity-0", !isVisible);
+        btnContainer.classList.toggle("translate-y-14", !isVisible);
+        lastVisible = isVisible;
+      }
+    }
+
+    let ticking = false;
+    document.addEventListener("scroll", () => {
+      if (!ticking) {
+        window.requestAnimationFrame(() => {
+          handleScroll();
+          ticking = false;
+        });
+        ticking = true;
+      }
+    });
+  }
+  backToTop();
+</script><ul class="mt-4 mb-8 flex flex-wrap gap-4 sm:my-8"><li><a data-astro-transition-scope="astro-bztu2lml-1" href="/tags/ai/" class="flex items-center gap-0.5 border-foreground border-b-2 border-dashed hover:border-accent hover:text-accent hover:-mt-0.5 focus-visible:text-accent focus-visible:border-none text-sm"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="opacity-80 size-4" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M5 9h14M5 15h14M11 4 7 20M17 4l-4 16" /></svg>AI</a></li><li><a data-astro-transition-scope="astro-bztu2lml-2" href="/tags/llm/" class="flex items-center gap-0.5 border-foreground border-b-2 border-dashed hover:border-accent hover:text-accent hover:-mt-0.5 focus-visible:text-accent focus-visible:border-none text-sm"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="opacity-80 size-4" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M5 9h14M5 15h14M11 4 7 20M17 4l-4 16" /></svg>LLM</a></li><li><a data-astro-transition-scope="astro-bztu2lml-3" href="/tags/knowledgedistillation/" class="flex items-center gap-0.5 border-foreground border-b-2 border-dashed hover:border-accent hover:text-accent hover:-mt-0.5 focus-visible:text-accent focus-visible:border-none text-sm"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="opacity-80 size-4" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M5 9h14M5 15h14M11 4 7 20M17 4l-4 16" /></svg>KnowledgeDistillation</a></li><li><a data-astro-transition-scope="astro-bztu2lml-4" href="/tags/modelcompression/" class="flex items-center gap-0.5 border-foreground border-b-2 border-dashed hover:border-accent hover:text-accent hover:-mt-0.5 focus-visible:text-accent focus-visible:border-none text-sm"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="opacity-80 size-4" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M5 9h14M5 15h14M11 4 7 20M17 4l-4 16" /></svg>ModelCompression</a></li></ul><hr class="my-8 border-dashed"><div data-pagefind-ignore class="my-8 grid grid-cols-1 gap-6 sm:grid-cols-2"><a href="/posts/llm-lora-adaptation/" class="flex w-full gap-1 hover:opacity-75"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="inline-block flex-none rtl:rotate-180" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M5 12h14M5 12l6 6M5 12l6-6" /></svg><div><span>上一篇</span><div class="text-accent/85 text-sm">LoRA 的低秩适配</div></div></a><a href="/posts/llm-quantization-boundaries/" class="flex w-full justify-end gap-1 text-end hover:opacity-75 sm:col-start-2"><div><span>下一篇</span><div class="text-accent/85 text-sm">低精度表示与模型部署</div></div><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="inline-block flex-none rtl:rotate-180" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M5 12h14M13 18l6-6M13 6l6 6" /></svg></a></div></main><footer class="app-layout mt-auto"><div class="border-border flex flex-col items-center justify-between border-t py-6 sm:flex-row-reverse sm:py-4"><div class="flex flex-wrap items-center gap-1"><a href="https://github.com/SaromChars" title="Sarom Chars 的 GitHub" class="group inline-flex items-center gap-1 hover:text-accent p-2 hover:rotate-6 sm:p-1"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="inline-block size-6 scale-125 fill-transparent stroke-current stroke-2 opacity-90 group-hover:fill-transparent sm:scale-110" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M9 19c-4.3 1.4-4.3-2.5-6-3m12 5v-3.5c0-1 .1-1.4-.5-2 2.8-.3 5.5-1.4 5.5-6a4.6 4.6 0 0 0-1.3-3.2 4.2 4.2 0 0 0-.1-3.2s-1.1-.3-3.5 1.3a12.3 12.3 0 0 0-6.2 0C6.5 2.8 5.4 3.1 5.4 3.1a4.2 4.2 0 0 0-.1 3.2A4.6 4.6 0 0 0 4 9.5c0 4.6 2.7 5.7 5.5 6-.6.6-.6 1.2-.5 2V21" /></svg><span class="sr-only">Sarom Chars 的 GitHub</span></a></div><div class="my-2 flex flex-col items-center whitespace-nowrap sm:flex-row"><span>版权 &#169; 2026</span><span class="hidden sm:inline">&nbsp;|&nbsp;</span><span>保留所有权利。</span></div></div></footer><script type="module">var e=`theme`,t=`light`,n=`dark`;function r(){return localStorage.getItem(e)||(window.matchMedia(`(prefers-color-scheme: dark)`).matches?n:t)}var i=window.__theme?.value??r();function a(){localStorage.setItem(e,i),o()}function o(){let e=document.firstElementChild;e?.setAttribute(`data-theme`,i),e?.classList.toggle(`dark`,i===n),document.querySelector(`#theme-btn`)?.setAttribute(`aria-label`,i);let t=window.getComputedStyle(document.body).backgroundColor;document.querySelector(`meta[name='theme-color']`)?.setAttribute(`content`,t)}function s(){o(),document.querySelector(`#theme-btn`)?.addEventListener(`click`,()=>{i=i===t?n:t,a()})}s(),document.addEventListener(`astro:after-swap`,s),document.addEventListener(`astro:before-swap`,e=>{let t=document.querySelector(`meta[name='theme-color']`)?.getAttribute(`content`);t&&e.newDocument.querySelector(`meta[name='theme-color']`)?.setAttribute(`content`,t)}),window.matchMedia(`(prefers-color-scheme: dark)`).addEventListener(`change`,({matches:e})=>{i=e?n:t,a()});</script></body></html><script type="module">var e=document.querySelector(`#article`);if(e?.querySelector(`a[href^="#ref-"]`)){let t=null,n=!1,r=document.createElement(`button`);r.type=`button`,r.className=`citation-return`,r.textContent=`返回阅读位置`,r.setAttribute(`data-pagefind-ignore`,``),e.addEventListener(`click`,n=>{if(n.button!==0||n.metaKey||n.ctrlKey||n.shiftKey||n.altKey)return;let i=n.target instanceof Element?n.target.closest(`a[href^="#ref-"]`):null;if(!i||!e.contains(i))return;let a=i.hash,o=document.getElementById(decodeURIComponent(a.slice(1)));o&&e.contains(o)&&(t={source:i,url:window.location.href,top:window.scrollY,left:window.scrollX,targetHash:a},o.insertAdjacentElement(`afterend`,r))}),r.addEventListener(`click`,()=>{if(!t||n)return;let e=t,i=i=>{r.remove(),window.requestAnimationFrame(()=>{window.requestAnimationFrame(()=>{e.source.focus({preventScroll:!0}),window.scrollTo({top:e.top,left:e.left,behavior:`instant`}),t=null,n=!1,i?.()})})};window.location.href===e.url?i():(n=!0,window.addEventListener(`popstate`,()=>{let e=window.history.scrollRestoration;window.history.scrollRestoration=`manual`,window.setTimeout(()=>{i(()=>{window.history.scrollRestoration=e})},0)},{once:!0}),window.history.back())}),window.addEventListener(`hashchange`,()=>{!n&&t&&window.location.hash!==t.targetHash&&(r.remove(),t=null)})}</script><script data-astro-rerun>
+  function createProgressBar() {
+    const progressContainer = document.createElement("div");
+    progressContainer.className =
+      "progress-container fixed top-0 z-10 h-1 w-full bg-background";
+
+    const progressBar = document.createElement("div");
+    progressBar.className = "progress-bar h-1 w-0 bg-accent";
+    progressBar.id = "myBar";
+
+    progressContainer.appendChild(progressBar);
+    document.body.appendChild(progressContainer);
+  }
+  createProgressBar();
+
+  function updateScrollProgress() {
+    document.addEventListener("scroll", () => {
+      const winScroll =
+        document.body.scrollTop || document.documentElement.scrollTop;
+      const height =
+        document.documentElement.scrollHeight -
+        document.documentElement.clientHeight;
+      const scrolled = (winScroll / height) * 100;
+      if (document) {
+        const myBar = document.getElementById("myBar");
+        if (myBar) {
+          myBar.style.width = scrolled + "%";
+        }
+      }
+    });
+  }
+  updateScrollProgress();
+
+  function addHeadingLinks() {
+    const headings = Array.from(
+      document.querySelectorAll("h2, h3, h4, h5, h6")
+    );
+    for (const heading of headings) {
+      heading.classList.add("group");
+      const link = document.createElement("a");
+      link.className =
+        "heading-link ms-2 no-underline opacity-75 md:opacity-0 md:group-hover:opacity-100 md:focus:opacity-100";
+      link.href = "#" + heading.id;
+
+      const span = document.createElement("span");
+      span.ariaHidden = "true";
+      span.innerText = "#";
+      link.appendChild(span);
+      heading.appendChild(link);
+    }
+  }
+  addHeadingLinks();
+
+  function attachCopyButtons() {
+    const copyButtonLabel = "Copy";
+    const codeBlocks = Array.from(document.querySelectorAll("pre"));
+
+    for (const codeBlock of codeBlocks) {
+      const wrapper = document.createElement("div");
+      wrapper.style.position = "relative";
+
+      const computedStyle = getComputedStyle(codeBlock);
+      const hasFileNameOffset =
+        computedStyle.getPropertyValue("--file-name-offset").trim() !== "";
+
+      const topClass = hasFileNameOffset
+        ? "top-(--file-name-offset)"
+        : "-top-3";
+
+      const copyButton = document.createElement("button");
+      copyButton.className = `copy-code absolute end-3 ${topClass} rounded bg-muted border border-muted px-2 py-1 text-xs leading-4 text-foreground font-medium`;
+      copyButton.innerHTML = copyButtonLabel;
+      codeBlock.setAttribute("tabindex", "0");
+      codeBlock.appendChild(copyButton);
+
+      codeBlock?.parentNode?.insertBefore(wrapper, codeBlock);
+      wrapper.appendChild(codeBlock);
+
+      copyButton.addEventListener("click", async () => {
+        await copyCode(codeBlock, copyButton);
+      });
+    }
+
+    async function copyCode(block, button) {
+      const code = block.querySelector("code");
+      const text = code?.innerText;
+
+      await navigator.clipboard.writeText(text ?? "");
+
+      button.innerText = "Copied";
+
+      setTimeout(() => {
+        button.innerText = copyButtonLabel;
+      }, 700);
+    }
+  }
+  attachCopyButtons();
+
+  /** Accessible image lightbox for article images. */
+  function initLightbox() {
+    const article = document.getElementById("article");
+    if (!article) return;
+
+    const prefersReducedMotion = () =>
+      window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+    let overlay = null;
+    let lastFocused = null;
+    let removeDragListeners = null;
+
+    // Defer attribute mutations so they don't push the LCP timestamp.
+    // Event listeners below use delegation and don't need the attributes to exist yet.
+    requestAnimationFrame(() => {
+      const images = Array.from(article.querySelectorAll("img"));
+      for (const image of images) {
+        if (image.closest("a")) continue;
+        image.setAttribute("role", "button");
+        image.setAttribute("tabindex", "0");
+        image.setAttribute("aria-haspopup", "dialog");
+        image.setAttribute(
+          "aria-label",
+          image.alt ? `Zoom image: ${image.alt}` : "Zoom image"
+        );
+      }
+    });
+
+    function open(src, alt, trigger) {
+      if (overlay) return;
+      lastFocused = trigger ?? document.activeElement;
+
+      overlay = document.createElement("div");
+      overlay.setAttribute("role", "dialog");
+      overlay.setAttribute("aria-modal", "true");
+      overlay.setAttribute(
+        "aria-label",
+        alt ? `Image preview: ${alt}` : "Image preview"
+      );
+      overlay.className =
+        "fixed inset-0 z-50 flex cursor-zoom-out items-center justify-center bg-black/70 backdrop-blur-sm opacity-0 transition-opacity duration-200 motion-reduce:transition-none";
+
+      const closeButton = document.createElement("button");
+      closeButton.type = "button";
+      closeButton.setAttribute("aria-label", "Close image preview");
+      closeButton.className =
+        "absolute end-4 top-4 z-1 flex size-11 items-center justify-center rounded bg-black/50 text-3xl leading-none text-white";
+      closeButton.innerHTML = "&#10005;";
+      closeButton.addEventListener("click", close);
+
+      const image = document.createElement("img");
+      image.src = src;
+      image.alt = "";
+      image.className =
+        "max-h-[90dvh] max-w-[90dvw] cursor-default object-contain transition-transform duration-100 ease-out motion-reduce:transition-none data-[zoom=drag]:cursor-grabbing data-[zoom=drag]:transition-none data-[zoom=in]:cursor-grab";
+
+      overlay.append(closeButton, image);
+      overlay.addEventListener("click", e => {
+        if (e.target === overlay && currentScale <= 1) close();
+      });
+
+      let currentScale = 1;
+      let translateX = 0;
+      let translateY = 0;
+      let initialDist = 0;
+      let initialScale = 1;
+      let panStartX = 0;
+      let panStartY = 0;
+      let panStartTranslateX = 0;
+      let panStartTranslateY = 0;
+      let lastTapTime = 0;
+
+      function applyTransform() {
+        image.style.transform = `scale(${currentScale}) translate(${translateX}px, ${translateY}px)`;
+        // A backdrop click only closes at fit size, so drop the zoom-out cursor while zoomed.
+        overlay?.classList.toggle("cursor-zoom-out", currentScale <= 1);
+      }
+
+      function resetTransform() {
+        currentScale = 1;
+        translateX = 0;
+        translateY = 0;
+        image.style.transform = "";
+        image.removeAttribute("data-zoom");
+        overlay?.classList.add("cursor-zoom-out");
+      }
+
+      // Keep the zoomed image from being panned past its edges.
+      function clampTranslate() {
+        if (!overlay) return;
+        const maxX = Math.max(
+          0,
+          (image.clientWidth - overlay.clientWidth / currentScale) / 2
+        );
+        const maxY = Math.max(
+          0,
+          (image.clientHeight - overlay.clientHeight / currentScale) / 2
+        );
+        translateX = Math.min(maxX, Math.max(-maxX, translateX));
+        translateY = Math.min(maxY, Math.max(-maxY, translateY));
+      }
+
+      overlay.addEventListener(
+        "touchstart",
+        e => {
+          const t = e.touches;
+          if (t.length === 2) {
+            image.setAttribute("data-zoom", "drag");
+            initialDist = Math.hypot(
+              t[1].clientX - t[0].clientX,
+              t[1].clientY - t[0].clientY
+            );
+            initialScale = currentScale;
+          } else if (t.length === 1) {
+            const now = Date.now();
+            if (now - lastTapTime < 300) {
+              e.preventDefault();
+              if (currentScale > 1) {
+                resetTransform();
+              } else {
+                currentScale = 2;
+                translateX = 0;
+                translateY = 0;
+                applyTransform();
+                image.setAttribute("data-zoom", "in");
+              }
+              lastTapTime = 0;
+              panStartX = t[0].clientX;
+              panStartY = t[0].clientY;
+              panStartTranslateX = translateX;
+              panStartTranslateY = translateY;
+            } else {
+              lastTapTime = now;
+              if (currentScale > 1) {
+                image.setAttribute("data-zoom", "drag");
+                panStartX = t[0].clientX;
+                panStartY = t[0].clientY;
+                panStartTranslateX = translateX;
+                panStartTranslateY = translateY;
+              }
+            }
+          }
+        },
+        { passive: false }
+      );
+
+      overlay.addEventListener(
+        "touchmove",
+        e => {
+          const t = e.touches;
+          if (t.length === 2) {
+            e.preventDefault();
+            const dist = Math.hypot(
+              t[1].clientX - t[0].clientX,
+              t[1].clientY - t[0].clientY
+            );
+            const oldScale = currentScale;
+            currentScale = Math.min(
+              4,
+              Math.max(1, initialScale * (dist / initialDist))
+            );
+
+            // Zoom to the geometric center of the two fingers
+            const midX = (t[0].clientX + t[1].clientX) / 2;
+            const midY = (t[0].clientY + t[1].clientY) / 2;
+            const ox = overlay.clientWidth / 2;
+            const oy = overlay.clientHeight / 2;
+            translateX =
+              (midX - ox) * (1 / currentScale - 1 / oldScale) + translateX;
+            translateY =
+              (midY - oy) * (1 / currentScale - 1 / oldScale) + translateY;
+            clampTranslate();
+            applyTransform();
+          } else if (t.length === 1) {
+            if (currentScale > 1) {
+              e.preventDefault();
+              image.setAttribute("data-zoom", "drag");
+              translateX =
+                panStartTranslateX + (t[0].clientX - panStartX) / currentScale;
+              translateY =
+                panStartTranslateY + (t[0].clientY - panStartY) / currentScale;
+              clampTranslate();
+              applyTransform();
+            } else {
+              e.preventDefault();
+            }
+          }
+        },
+        { passive: false }
+      );
+
+      overlay.addEventListener("touchend", e => {
+        if (e.touches.length === 0) {
+          if (currentScale > 1) {
+            image.setAttribute("data-zoom", "in");
+          } else {
+            image.removeAttribute("data-zoom");
+          }
+          if (currentScale <= 1.05) resetTransform();
+        }
+      });
+
+      overlay.addEventListener("touchcancel", e => {
+        if (e.touches.length === 0) {
+          if (currentScale > 1) {
+            image.setAttribute("data-zoom", "in");
+          } else {
+            image.removeAttribute("data-zoom");
+          }
+          if (currentScale <= 1.05) resetTransform();
+        }
+      });
+
+      overlay.addEventListener(
+        "wheel",
+        e => {
+          e.preventDefault();
+          const oldScale = currentScale;
+          const delta = -e.deltaY * 0.001;
+          currentScale = Math.min(4, Math.max(1, currentScale * (1 + delta)));
+
+          if (currentScale <= 1.05) {
+            resetTransform();
+          } else {
+            image.setAttribute("data-zoom", "in");
+            // Zoom to cursor: adjust translate so the point under cursor stays fixed
+            const ox = overlay.clientWidth / 2;
+            const oy = overlay.clientHeight / 2;
+            translateX =
+              (e.clientX - ox) * (1 / currentScale - 1 / oldScale) + translateX;
+            translateY =
+              (e.clientY - oy) * (1 / currentScale - 1 / oldScale) + translateY;
+            clampTranslate();
+            applyTransform();
+          }
+        },
+        { passive: false }
+      );
+
+      let isMouseDown = false;
+      let mouseStartX = 0;
+      let mouseStartY = 0;
+
+      overlay.addEventListener("mousedown", e => {
+        if (e.button !== 0 || currentScale <= 1) return;
+        if (e.target.closest("button")) return;
+        isMouseDown = true;
+        mouseStartX = e.clientX;
+        mouseStartY = e.clientY;
+        panStartTranslateX = translateX;
+        panStartTranslateY = translateY;
+        image.setAttribute("data-zoom", "drag");
+        e.preventDefault();
+      });
+
+      function onMouseMove(e) {
+        if (!isMouseDown || !overlay) return;
+        translateX =
+          panStartTranslateX + (e.clientX - mouseStartX) / currentScale;
+        translateY =
+          panStartTranslateY + (e.clientY - mouseStartY) / currentScale;
+        clampTranslate();
+        applyTransform();
+      }
+
+      function onMouseUp() {
+        if (!isMouseDown) return;
+        isMouseDown = false;
+        if (currentScale > 1) {
+          image.setAttribute("data-zoom", "in");
+        } else {
+          image.removeAttribute("data-zoom");
+        }
+      }
+
+      document.addEventListener("mousemove", onMouseMove);
+      document.addEventListener("mouseup", onMouseUp);
+      removeDragListeners = () => {
+        document.removeEventListener("mousemove", onMouseMove);
+        document.removeEventListener("mouseup", onMouseUp);
+      };
+
+      document.body.appendChild(overlay);
+      document.documentElement.style.overflow = "hidden";
+      document.addEventListener("keydown", onKeyDown);
+      window.__closeLightbox = close;
+
+      requestAnimationFrame(() => overlay?.classList.add("opacity-100"));
+      closeButton.focus();
+    }
+
+    function close() {
+      if (!overlay) return;
+      const el = overlay;
+      overlay = null;
+      el.classList.add("pointer-events-none");
+      window.__closeLightbox = null;
+
+      document.removeEventListener("keydown", onKeyDown);
+      removeDragListeners?.();
+      removeDragListeners = null;
+      document.documentElement.style.overflow = "";
+      lastFocused?.focus();
+      lastFocused = null;
+
+      if (prefersReducedMotion()) {
+        el.remove();
+        return;
+      }
+      const remove = () => el.remove();
+      el.addEventListener("transitionend", remove, { once: true });
+      setTimeout(remove, 250); // fallback in case transitionend never fires
+      el.classList.remove("opacity-100");
+    }
+
+    function onKeyDown(e) {
+      if (e.key === "Escape") {
+        close();
+      } else if (e.key === "Tab") {
+        trapFocus(e);
+      }
+    }
+
+    // Keep keyboard focus inside the open dialog.
+    function trapFocus(e) {
+      if (!overlay) return;
+      const focusables = overlay.querySelectorAll(
+        'a[href], button, [tabindex]:not([tabindex="-1"])'
+      );
+      if (focusables.length === 0) return;
+      const first = focusables[0];
+      const last = focusables[focusables.length - 1];
+      if (e.shiftKey && document.activeElement === first) {
+        e.preventDefault();
+        last.focus();
+      } else if (!e.shiftKey && document.activeElement === last) {
+        e.preventDefault();
+        first.focus();
+      }
+    }
+
+    function triggerFromEvent(e) {
+      const image = e.target.closest("img");
+      if (!image || !article.contains(image) || image.closest("a")) return null;
+      return image;
+    }
+
+    function activate(image) {
+      open(image.currentSrc || image.src, image.alt, image);
+    }
+
+    article.addEventListener("click", e => {
+      const image = triggerFromEvent(e);
+      if (!image) return;
+      e.preventDefault();
+      activate(image);
+    });
+
+    article.addEventListener("keydown", e => {
+      if (e.key !== "Enter" && e.key !== " " && e.key !== "Spacebar") return;
+      const image = triggerFromEvent(e);
+      if (!image) return;
+      e.preventDefault();
+      activate(image);
+    });
+  }
+  initLightbox();
+
+  if (!window.__lightboxSwapBound) {
+    window.__lightboxSwapBound = true;
+    document.addEventListener("astro:before-swap", () =>
+      window.__closeLightbox?.()
+    );
+  }
+
+  document.addEventListener("astro:after-swap", () =>
+    window.scrollTo({ left: 0, top: 0, behavior: "instant" })
+  );
+</script>
