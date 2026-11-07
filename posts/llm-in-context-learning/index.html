@@ -1,0 +1,883 @@
+<!DOCTYPE html><html dir="ltr" lang="zh-CN" class="overflow-y-scroll scroll-smooth"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1"><link rel="icon" type="image/png" href="/images/favicon-32x32-next.png"><link rel="icon" href="/favicon.ico"><link rel="canonical" href="https://www.saromchars.tech/posts/llm-in-context-learning/"><meta name="generator" content="Astro v7.4.5"><!-- Primary meta --><title>提示与少样本为何能改变输出：上下文学习与参数更新的区别 | Sarom&#39;s Blog</title><meta name="title" content="提示与少样本为何能改变输出：上下文学习与参数更新的区别 | Sarom's Blog"><meta name="description" content="从模型参数保持固定的直觉反差出发，系统解析大语言模型（large language model，LLM）的上下文学习（in-context learning，ICL）机制：零样本、单样本与少样本的任务设定谱系，前向传播中自注意力与隐藏状态的条件响应，规模扩展下的上下文利用趋势，以及任务识别假说与当前推理边界。"><meta name="author" content="Sarom Chars"><link rel="sitemap" href="/sitemap-index.xml"><!-- Open Graph --><meta property="og:type" content="article"><meta property="og:site_name" content="Sarom's Blog"><meta property="og:title" content="提示与少样本为何能改变输出：上下文学习与参数更新的区别 | Sarom's Blog"><meta property="og:description" content="从模型参数保持固定的直觉反差出发，系统解析大语言模型（large language model，LLM）的上下文学习（in-context learning，ICL）机制：零样本、单样本与少样本的任务设定谱系，前向传播中自注意力与隐藏状态的条件响应，规模扩展下的上下文利用趋势，以及任务识别假说与当前推理边界。"><meta property="og:url" content="https://www.saromchars.tech/posts/llm-in-context-learning/"><meta property="og:image" content="https://www.saromchars.tech/og.png"><!-- Twitter / X --><meta property="twitter:card" content="summary_large_image"><meta property="twitter:url" content="https://www.saromchars.tech/posts/llm-in-context-learning/"><meta property="twitter:title" content="提示与少样本为何能改变输出：上下文学习与参数更新的区别 | Sarom's Blog"><meta property="twitter:description" content="从模型参数保持固定的直觉反差出发，系统解析大语言模型（large language model，LLM）的上下文学习（in-context learning，ICL）机制：零样本、单样本与少样本的任务设定谱系，前向传播中自注意力与隐藏状态的条件响应，规模扩展下的上下文利用趋势，以及任务识别假说与当前推理边界。"><meta property="twitter:image" content="https://www.saromchars.tech/og.png"><!-- RSS autodiscovery --><link rel="alternate" type="application/rss+xml" title="Sarom's Blog" href="https://www.saromchars.tech/rss.xml"><!-- Filled at runtime by theme.ts to match the current background colour --><meta name="theme-color" content=""><!-- Extra head content injected by child layouts (e.g. JSON-LD, article meta) --><meta property="article:published_time" content="2022-03-21T02:00:00.000Z"><script type="application/ld+json">{"@context":"https://schema.org","@type":"BlogPosting","headline":"提示与少样本为何能改变输出：上下文学习与参数更新的区别","mainEntityOfPage":"https://www.saromchars.tech/posts/llm-in-context-learning/","datePublished":"2022-03-21T02:00:00.000Z","author":[{"@type":"Person","name":"Sarom Chars","url":"https://github.com/SaromChars"}]}</script><!--
+      Inline FOUC-prevention script: sets data-theme on <html> before
+      the browser paints. Runs synchronously, no defer/async.
+    --><script>
+      (function () {
+        const stored = localStorage.getItem("theme");
+        const prefersDark = window.matchMedia(
+          "(prefers-color-scheme: dark)"
+        ).matches;
+        const theme = stored ?? (prefersDark ? "dark" : "light");
+        const root = document.firstElementChild;
+        root?.setAttribute("data-theme", theme);
+        root?.classList.toggle("dark", theme === "dark");
+        // Expose value so theme.ts can skip re-detection.
+        window.__theme = { value: theme };
+      })();
+    </script><meta name="robots" content="index, follow"><script async src="https://www.googletagmanager.com/gtag/js?id=G-WJJJTJ4FWX"></script><script>(function(){const measurementId = "G-WJJJTJ4FWX";
+
+    window.dataLayer = window.dataLayer || [];
+    function gtag(){ window.dataLayer.push(arguments); }
+    gtag('js', new Date());
+    gtag('config', measurementId);
+  })();</script><style>@keyframes astroFadeInOut{0%{opacity:1}to{opacity:0}}@keyframes astroFadeIn{0%{opacity:0;mix-blend-mode:plus-lighter}to{opacity:1;mix-blend-mode:plus-lighter}}@keyframes astroFadeOut{0%{opacity:1;mix-blend-mode:plus-lighter}to{opacity:0;mix-blend-mode:plus-lighter}}@keyframes astroSlideFromRight{0%{transform:translate(100%)}}@keyframes astroSlideFromLeft{0%{transform:translate(-100%)}}@keyframes astroSlideToRight{to{transform:translate(100%)}}@keyframes astroSlideToLeft{to{transform:translate(-100%)}}@media (prefers-reduced-motion){::view-transition-group(*),::view-transition-old(*),::view-transition-new(*),[data-astro-transition-scope]{animation:none!important}}
+</style><link rel="stylesheet" href="/_astro/Footer.DC6qDsIp.css"><style>[data-astro-transition-scope="astro-bztu2lml-1"] { view-transition-name: ai; }@layer astro { ::view-transition-old(ai) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }::view-transition-new(ai) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }[data-astro-transition=back]::view-transition-old(ai) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition=back]::view-transition-new(ai) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; } }[data-astro-transition-fallback="old"] [data-astro-transition-scope="astro-bztu2lml-1"],
+			[data-astro-transition-fallback="old"][data-astro-transition-scope="astro-bztu2lml-1"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition-fallback="new"] [data-astro-transition-scope="astro-bztu2lml-1"],
+			[data-astro-transition-fallback="new"][data-astro-transition-scope="astro-bztu2lml-1"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }[data-astro-transition=back][data-astro-transition-fallback="old"] [data-astro-transition-scope="astro-bztu2lml-1"],
+			[data-astro-transition=back][data-astro-transition-fallback="old"][data-astro-transition-scope="astro-bztu2lml-1"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition=back][data-astro-transition-fallback="new"] [data-astro-transition-scope="astro-bztu2lml-1"],
+			[data-astro-transition=back][data-astro-transition-fallback="new"][data-astro-transition-scope="astro-bztu2lml-1"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }</style><style>[data-astro-transition-scope="astro-bztu2lml-2"] { view-transition-name: llm; }@layer astro { ::view-transition-old(llm) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }::view-transition-new(llm) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }[data-astro-transition=back]::view-transition-old(llm) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition=back]::view-transition-new(llm) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; } }[data-astro-transition-fallback="old"] [data-astro-transition-scope="astro-bztu2lml-2"],
+			[data-astro-transition-fallback="old"][data-astro-transition-scope="astro-bztu2lml-2"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition-fallback="new"] [data-astro-transition-scope="astro-bztu2lml-2"],
+			[data-astro-transition-fallback="new"][data-astro-transition-scope="astro-bztu2lml-2"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }[data-astro-transition=back][data-astro-transition-fallback="old"] [data-astro-transition-scope="astro-bztu2lml-2"],
+			[data-astro-transition=back][data-astro-transition-fallback="old"][data-astro-transition-scope="astro-bztu2lml-2"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition=back][data-astro-transition-fallback="new"] [data-astro-transition-scope="astro-bztu2lml-2"],
+			[data-astro-transition=back][data-astro-transition-fallback="new"][data-astro-transition-scope="astro-bztu2lml-2"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }</style><style>[data-astro-transition-scope="astro-bztu2lml-3"] { view-transition-name: in-context-learning; }@layer astro { ::view-transition-old(in-context-learning) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }::view-transition-new(in-context-learning) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }[data-astro-transition=back]::view-transition-old(in-context-learning) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition=back]::view-transition-new(in-context-learning) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; } }[data-astro-transition-fallback="old"] [data-astro-transition-scope="astro-bztu2lml-3"],
+			[data-astro-transition-fallback="old"][data-astro-transition-scope="astro-bztu2lml-3"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition-fallback="new"] [data-astro-transition-scope="astro-bztu2lml-3"],
+			[data-astro-transition-fallback="new"][data-astro-transition-scope="astro-bztu2lml-3"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }[data-astro-transition=back][data-astro-transition-fallback="old"] [data-astro-transition-scope="astro-bztu2lml-3"],
+			[data-astro-transition=back][data-astro-transition-fallback="old"][data-astro-transition-scope="astro-bztu2lml-3"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition=back][data-astro-transition-fallback="new"] [data-astro-transition-scope="astro-bztu2lml-3"],
+			[data-astro-transition=back][data-astro-transition-fallback="new"][data-astro-transition-scope="astro-bztu2lml-3"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }</style><style>[data-astro-transition-scope="astro-bztu2lml-4"] { view-transition-name: few-shot; }@layer astro { ::view-transition-old(few-shot) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }::view-transition-new(few-shot) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }[data-astro-transition=back]::view-transition-old(few-shot) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition=back]::view-transition-new(few-shot) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; } }[data-astro-transition-fallback="old"] [data-astro-transition-scope="astro-bztu2lml-4"],
+			[data-astro-transition-fallback="old"][data-astro-transition-scope="astro-bztu2lml-4"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition-fallback="new"] [data-astro-transition-scope="astro-bztu2lml-4"],
+			[data-astro-transition-fallback="new"][data-astro-transition-scope="astro-bztu2lml-4"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }[data-astro-transition=back][data-astro-transition-fallback="old"] [data-astro-transition-scope="astro-bztu2lml-4"],
+			[data-astro-transition=back][data-astro-transition-fallback="old"][data-astro-transition-scope="astro-bztu2lml-4"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition=back][data-astro-transition-fallback="new"] [data-astro-transition-scope="astro-bztu2lml-4"],
+			[data-astro-transition=back][data-astro-transition-fallback="new"][data-astro-transition-scope="astro-bztu2lml-4"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }</style><style>[data-astro-transition-scope="astro-bztu2lml-5"] { view-transition-name: prompting; }@layer astro { ::view-transition-old(prompting) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }::view-transition-new(prompting) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }[data-astro-transition=back]::view-transition-old(prompting) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition=back]::view-transition-new(prompting) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; } }[data-astro-transition-fallback="old"] [data-astro-transition-scope="astro-bztu2lml-5"],
+			[data-astro-transition-fallback="old"][data-astro-transition-scope="astro-bztu2lml-5"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition-fallback="new"] [data-astro-transition-scope="astro-bztu2lml-5"],
+			[data-astro-transition-fallback="new"][data-astro-transition-scope="astro-bztu2lml-5"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }[data-astro-transition=back][data-astro-transition-fallback="old"] [data-astro-transition-scope="astro-bztu2lml-5"],
+			[data-astro-transition=back][data-astro-transition-fallback="old"][data-astro-transition-scope="astro-bztu2lml-5"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition=back][data-astro-transition-fallback="new"] [data-astro-transition-scope="astro-bztu2lml-5"],
+			[data-astro-transition=back][data-astro-transition-fallback="new"][data-astro-transition-scope="astro-bztu2lml-5"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }</style></head><body class="bg-background font-app text-foreground selection:bg-accent/75 selection:text-accent-foreground flex min-h-svh flex-col"><a id="skip-to-content" href="#main-content" class="bg-background text-accent absolute inset-s-16 -top-full z-50 px-3 py-2 backdrop-blur-lg transition-all focus:top-4">跳到正文</a><header class="app-layout flex flex-col items-center justify-between sm:flex-row"><div class="border-border bg-background relative flex w-full items-baseline justify-between border-b py-4 sm:items-center sm:py-6"><a href="/" class="absolute py-1 text-xl leading-8 font-semibold whitespace-nowrap sm:static sm:my-auto sm:text-2xl sm:leading-none">Sarom&#39;s Blog</a><nav id="nav-menu" class="flex w-full flex-col items-center sm:ms-2 sm:flex-row sm:justify-end sm:space-x-4 sm:py-0"><button id="menu-btn" class="focus-outline self-end p-2 sm:hidden" aria-label="展开菜单" aria-expanded="false" aria-controls="menu-items" data-label-open="展开菜单" data-label-close="收起菜单"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="hidden" viewBox="0 0 24 24" id="close-icon"><path stroke="none" d="M0 0h24v24H0z" /><path d="M18 6 6 18M6 6l12 12" /></svg><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="icon icon-tabler icons-tabler-outline icon-tabler-menu-deep" viewBox="0 0 24 24" id="menu-icon"><path stroke="none" d="M0 0h24v24H0z" /><path d="M4 6h16M7 12h13M10 18h10" /></svg></button><ul id="menu-items" class="[&amp;&gt;li&gt;a]:hover:text-accent mt-4 hidden w-44 grid-cols-2 place-content-center gap-2 sm:mt-0 sm:flex sm:w-auto sm:gap-x-5 sm:gap-y-0 sm:[&amp;&gt;li]:h-8 [&amp;&gt;li&gt;a]:block [&amp;&gt;li&gt;a]:px-4 [&amp;&gt;li&gt;a]:py-3 [&amp;&gt;li&gt;a]:text-center [&amp;&gt;li&gt;a]:font-medium sm:[&amp;&gt;li&gt;a]:px-2 sm:[&amp;&gt;li&gt;a]:py-1"><li class="col-span-2"><a href="/posts/" class="active-nav">文章</a></li><li class="col-span-2"><a href="/tags/">标签</a></li><li class="col-span-2"><a href="/about/">关于</a></li><li class="col-span-2"><a href="/archives/" title="归档" aria-label="归档" class="group inline-flex items-center gap-1 hover:text-accent focus-outline flex size-full justify-center p-3 sm:relative sm:size-8 sm:p-0"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="hidden sm:absolute sm:top-1/2 sm:left-1/2 sm:block sm:size-6 sm:-translate-x-1/2 sm:-translate-y-1/2" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M3 6a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2 2 2 0 0 1-2 2H5a2 2 0 0 1-2-2M5 8v10a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8M10 12h4" /></svg><span class="sm:sr-only">归档</span></a></li><li class="col-span-1 flex items-center justify-center"><a href="/search/" title="搜索" aria-label="搜索" class="group inline-flex items-center gap-1 hover:text-accent focus-outline relative size-8"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="absolute top-1/2 left-1/2 size-6 -translate-x-1/2 -translate-y-1/2" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M3 10a7 7 0 1 0 14 0 7 7 0 1 0-14 0M21 21l-6-6" /></svg><span class="sr-only">搜索</span></a></li><li class="col-span-1 flex items-center justify-center"><button id="theme-btn" class="focus-outline hover:[&amp;&gt;svg]:stroke-accent relative size-12 p-4 sm:size-8" title="切换主题" aria-label="auto" aria-live="polite"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="absolute top-[50%] left-[50%] translate-[-50%] scale-100 rotate-0 transition-all dark:scale-0 dark:-rotate-90" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M12 3h.393a7.5 7.5 0 0 0 7.92 12.446A9 9 0 1 1 12 2.992z" /></svg><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="absolute top-[50%] left-[50%] translate-[-50%] scale-0 rotate-90 transition-all dark:scale-100 dark:rotate-0" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M14.828 14.828a4 4 0 1 0-5.656-5.656 4 4 0 0 0 5.656 5.656M6.343 17.657l-1.414 1.414M6.343 6.343 4.929 4.929M17.657 6.343l1.414-1.414M17.657 17.657l1.414 1.414M4 12H2M12 4V2M20 12h2M12 20v2" /></svg></button></li></ul></nav></div></header><script type="module">function e(){let e=document.querySelector(`#menu-btn`),t=document.querySelector(`#menu-items`),n=document.querySelector(`#menu-icon`),r=document.querySelector(`#close-icon`);if(!e||!t||!n||!r)return;let i=e.dataset.labelOpen??`Open menu`,a=e.dataset.labelClose??`Close menu`;e.addEventListener(`click`,()=>{let o=e.getAttribute(`aria-expanded`)===`true`;e.setAttribute(`aria-expanded`,o?`false`:`true`),e.setAttribute(`aria-label`,o?i:a),t.classList.toggle(`hidden`),t.classList.toggle(`grid`),n.classList.toggle(`hidden`),r.classList.toggle(`hidden`)})}function t(){let e=document.getElementById(`skip-to-content`);e&&e.addEventListener(`click`,e=>{if(e.defaultPrevented||e.metaKey||e.ctrlKey||e.shiftKey||e.button!==0)return;e.preventDefault();let t=document.getElementById(`main-content`);t&&(t.setAttribute(`tabindex`,`-1`),t.addEventListener(`blur`,()=>t.removeAttribute(`tabindex`),{once:!0}),t.focus(),t.scrollIntoView({behavior:`smooth`}))})}e(),document.addEventListener(`astro:after-swap`,e),t(),document.addEventListener(`astro:after-swap`,t);</script><div class="app-layout flex items-center justify-start"><a id="back-button" href="/" class="group inline-flex items-center gap-1 hover:text-accent focus-outline hover:text-foreground/75 -ms-2 mt-8 mb-2"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="inline-block size-6 rtl:rotate-180" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="m15 6-6 6 6 6" /></svg><span>返回</span></a></div><script type="module">function e(){let e=document.querySelector(`#back-button`),t=sessionStorage.getItem(`backUrl`);t&&e&&(e.href=t)}document.addEventListener(`astro:page-load`,e),e();</script><main id="main-content" class="app-layout" data-pagefind-body><h1 style="view-transition-name:llm-in-context-learning" class="text-accent inline-block text-2xl font-bold sm:text-3xl">提示与少样本为何能改变输出：上下文学习与参数更新的区别</h1><div class="my-2 flex items-center gap-2"><div class="text-muted-foreground flex items-center gap-x-2"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="inline-block size-6 min-w-5.5" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M4 7a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2zM16 3v4M8 3v4M4 11h16M7 14h.013M10.01 14h.005M13.01 14h.005M16.015 14h.005M13.015 17h.005M7.01 17h.005M10.01 17h.005" /></svg><time class="text-sm sm:text-base" datetime="2022-03-21T02:00:00.000Z">2022年3月21日</time></div><span aria-hidden="true" class="text-muted-foreground max-sm:hidden hidden">|</span></div><article id="article" class="mt-8 w-full app-prose max-w-app prose-pre:bg-(--shiki-light-bg) dark:prose-pre:bg-(--shiki-dark-bg)"><p>在传统的深度学习与自然语言处理管线中，让模型“掌握一项新任务”通常对应于明确的参数优化过程：采集该任务的标注数据集，定义目标损失函数，通过反向传播（backpropagation）计算梯度（gradient），并在优化器的驱动下对神经网络内部的权重矩阵进行物理修改。无论是全量预训练（pretraining）还是下游微调（fine-tuning），参数更新始终是模型获取特定任务行为特征的主流手段。</p>
+<p>然而，以 GPT-3 为代表的大语言模型（large language model，LLM）展现了一种截然不同的评测行为：</p>
+<ul>
+<li>在测试推理（inference）时，模型权重保持完全固定，不进行梯度计算与参数更新（在当前推理中增量参数变化 <code>Δθ = 0</code>）；</li>
+<li>无需为新任务训练专用权重切片，仅在提示（prompt）中提供任务说明，或者附带若干输入输出示范；</li>
+<li>模型在前向传播（forward pass）过程中展现出对提示上下文的高度敏感性，在许多下游任务中能够顺应示范给出的输入输出范式，在英法翻译、简单加法、语法修饰以及生造词造句等任务上产生与上下文相关的生成结果。</li>
+</ul>
+<p>这种在推理时固定模型权重、仅凭输入上下文中的提示与示范便改变输出分布的行为，被称为<strong>上下文学习（In-Context Learning，ICL）</strong>。</p>
+<p>模型参数分毫未动，不同提示究竟如何改变输出？提示中的少量示例在前向传播中引发了怎样的条件分布重塑？这种能力究竟是模型在推理时现场习得了新机制，还是识别并唤醒了预训练阶段内化的语言模式？本文以 OpenAI 在 GPT-3 论文（Brown et al., 2020）<a href="#ref-brown-2020"><span id="citation-brown-intro">1</span></a> 中披露的分析框架与实验数据为基准，系统探讨上下文学习的作用形式、规模关联与技术边界。</p>
+<hr>
+<h2 id="1-范式谱系从微调到少样本单样本与零样本">1. 范式谱系：从微调到少样本、单样本与零样本</h2>
+<p>要理解提示与示范为何能够改变模型输出，首先需要明确上下文学习在整个模型评测与应用技术谱系中的坐标。Brown et al. (2020) 在论文第 2 节系统对比了语言模型执行下游任务的四种典型设定：</p>
+<pre class="astro-code astro-code-themes min-light night-owl" style="--shiki-light:#24292eff;--shiki-dark:#d6deeb;--shiki-light-bg:#ffffff;--shiki-dark-bg:#011627; overflow-x: auto;--file-name-offset: -0.75rem;" tabindex="0" data-language="text"><code><span class="line"><span>传统微调范式：参数更新 (Weight Updates)</span></span>
+<span class="line"><span>┌────────────────────────────────────────────────────────┐</span></span>
+<span class="line"><span>│                   微调 (Fine-Tuning)                    │</span></span>
+<span class="line"><span>│  - 依赖数千至数十万条特定任务标注数据                      │</span></span>
+<span class="line"><span>│  - 计算反向传播梯度，直接修改预训练模型权重                  │</span></span>
+<span class="line"><span>│  - 优势：特定基准指标通常较强                             │</span></span>
+<span class="line"><span>│  - 代价：任务间权重隔离、长尾样本获取昂贵、容易过拟合窄分布 │</span></span>
+<span class="line"><span>└────────────────────────────────────────────────────────┘</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>上下文学习评测设定：参数固定 (Weights Frozen, Forward-Pass Only, Δθ = 0)</span></span>
+<span class="line"><span>┌────────────────────────────────────────────────────────┐</span></span>
+<span class="line"><span>│                   少样本 (Few-Shot)                     │</span></span>
+<span class="line"><span>│  - 在上下文窗口中提供 K 个示范 (通常 10 &#x3C;= K &#x3C;= 100)      │</span></span>
+<span class="line"><span>│  - 仅执行前向计算，不计算梯度，不更新权重                  │</span></span>
+<span class="line"><span>├────────────────────────────────────────────────────────┤</span></span>
+<span class="line"><span>│                   单样本 (One-Shot)                     │</span></span>
+<span class="line"><span>│  - 仅提供 1 个示范并辅以自然语言任务说明                  │</span></span>
+<span class="line"><span>│  - 贴近人类日常沟通与工作指引（如示例说明）                │</span></span>
+<span class="line"><span>├────────────────────────────────────────────────────────┤</span></span>
+<span class="line"><span>│                   零样本 (Zero-Shot)                    │</span></span>
+<span class="line"><span>│  - 不提供示范，仅提供自然语言任务描述                      │</span></span>
+<span class="line"><span>│  - 使用最便捷，但易受任务格式与说明文字歧义影响            │</span></span>
+<span class="line"><span>└────────────────────────────────────────────────────────┘</span></span></code></pre>
+<h3 id="11-微调fine-tuning的优势与代价">1.1 微调（Fine-Tuning）的优势与代价</h3>
+<p>在微调设定下，模型权重通过反向传播针对特定任务目标进行调整。虽然针对特定评测集能带来优异表现，但这一范式伴随着不可忽视的局限：</p>
+<ol>
+<li><strong>数据收集成本高昂</strong>：针对每一个现实长尾任务构建包含成千上万样本的高质量标注集往往不具可行性；</li>
+<li><strong>分布外泛化受限</strong>：高容量模型在狭窄任务分布上微调时，容易拟合训练数据中的虚假相关性（spurious correlations），在真实跨域场景中表现可能下滑 <a href="#ref-brown-2020"><span id="citation-brown-approach">1 (§1, §2)</span></a>；</li>
+<li><strong>部署维护复杂度</strong>：为每个下游任务维护一套独立的权重文件，在工程上极具管理负担。</li>
+</ol>
+<p>需要指出的是，虽然上下文学习评测中保持模型权重完全冻结，但这属于评测与推理设定，并不意味着模型架构本身在物理上永久排斥微调——正如论文所指出的，超大模型与微调的结合依然是未来极具潜力的方向。</p>
+<h3 id="12-上下文学习的三种无梯度设定">1.2 上下文学习的三种无梯度设定</h3>
+<p>在上下文学习设定下，模型参数在推理时保持恒定（<code>Δθ = 0</code>），任务形式主要由输入文本引导：</p>
+<ul>
+<li><strong>少样本（Few-Shot）</strong>：模型在其上下文窗口（context window，GPT-3 架构统一为 2048 个 token；token 是模型处理的离散序列单位，亦称词元）内，接收若干个（通常在 10 到 100 个之间）由“输入上下文 + 期望补全”构成的示范，紧接着输入测试用例。少样本示范降低了针对狭窄微调集直接更新参数带来的过拟合风险，但输出依然受到预训练语料分布与具体示例选择的制约，示范并不能提供绝对的正确性或格式保证。</li>
+<li><strong>单样本（One-Shot）</strong>：仅允许提供 1 个示范并附带任务说明。这种形式高度契合人类在众包标注或日常协作中接收指令的直觉模式。</li>
+<li><strong>零样本（Zero-Shot）</strong>：完全不给示范，仅提供自然语言指令。这种设定对输入表述与任务格式的完备性要求极高，容易因人类提示词措辞歧义而面临评测上的困难。</li>
+</ul>
+<hr>
+<h2 id="2-内部机理自注意力与动态激活态的条件响应">2. 内部机理：自注意力与动态激活态的条件响应</h2>
+<p>在参数未发生物理更新的前提下，提示中的示范文本究竟如何在深层网络中改变后续 token 的输出概率？这需要从 Transformer 的因果自注意力（Causal Self-Attention）前向计算中进行审视。</p>
+<h3 id="21-从静态参数到动态激活态">2.1 从静态参数到动态激活态</h3>
+<p>自回归语言模型生成下一个 token 的本质是在固定参数 <code>θ</code> 下计算条件概率分布：</p>
+<pre class="astro-code astro-code-themes min-light night-owl" style="--shiki-light:#24292eff;--shiki-dark:#d6deeb;--shiki-light-bg:#ffffff;--shiki-dark-bg:#011627; overflow-x: auto;--file-name-offset: -0.75rem;" tabindex="0" data-language="text"><code><span class="line"><span>P(y | x_test, D_demo) = P_θ(y | [x_1, y_1, x_2, y_2, ..., x_K, y_K, x_test])</span></span></code></pre>
+<p>其中 <code>D_demo = {(x_1, y_1), ..., (x_K, y_K)}</code> 为输入提示中拼接的 K 组示范。</p>
+<p>从前向传播的信息流动来看：</p>
+<ol>
+<li><strong>离散序列嵌入</strong>：输入的示范文本与待求解问题被分词器（tokenizer）按特定规则切分为离散的 token 序列（可基于子词、字符或字节等单位表示，并不等同于自然语言中的完整词），每个 token 映射为高维稠密嵌入（embedding）；</li>
+<li><strong>因果自注意力聚合</strong>：在多头自注意力（multi-head self-attention）层中，每个 token 映射为查询（Query，<code>Q</code>）、键（Key，<code>K</code>）和值（Value，<code>V</code>）向量。因果注意力掩码确保靠后的 token 只能单向感知其前方所有位置；</li>
+<li><strong>示范对后续隐藏态的调制</strong>：当网络计算到待测输入 <code>x_test</code> 及其生成位置时，该处的 <code>Q</code> 向量不仅与自身输入 token 计算注意力点积，还会直接与前方所有示范 token 产生的 <code>K</code> 向量进行加权交互，将对应的 <code>V</code> 向量信息流聚合至当前层及后续多层残差连接中。</li>
+</ol>
+<p>为便于理解，这里可把上下文影响隐藏状态比喻成临时工作空间；这不是 Brown 已证实的机制。固定参数时，不同输入可以改变隐藏状态及输出条件分布，变化幅度与任务和提示有关。示范中的输入输出对为模型提供了前向计算的局部条件线索，使生成分布向贴合示范格式与任务要求的方向倾斜。</p>
+<h3 id="22-评估模式下的候选似然归一化">2.2 评估模式下的候选似然归一化</h3>
+<p>对于多项选择（Multiple Choice）与分类任务，上下文学习的评测既可以通过自由生成完成，也可以通过对比不同候选补全在语言模型下的条件似然概率来实现 <a href="#ref-brown-2020"><span id="citation-brown-eval">1 (§2.4)</span></a>。</p>
+<p>在 GPT-3 的评测实现中，研究人员在提示末尾依次拼接各个候选选项，计算模型在每个选项上的对数似然。为了减轻候选词因长度差异产生的先验偏差，通常计算逐 token 的平均似然；而在 ARC、OpenBookQA 和 RACE 等任务上，论文进一步采用了无条件概率除法归一化：</p>
+<pre class="astro-code astro-code-themes min-light night-owl" style="--shiki-light:#24292eff;--shiki-dark:#d6deeb;--shiki-light-bg:#ffffff;--shiki-dark-bg:#011627; overflow-x: auto;--file-name-offset: -0.75rem;" tabindex="0" data-language="text"><code><span class="line"><span>Score(completion | context) = P(completion | context) / P(completion | answer_context)</span></span></code></pre>
+<p>其中 <code>answer_context</code> 是通用的问答前缀短语（例如 <code>"Answer: "</code> 或 <code>"A: "</code>）。需要强调的是，这一公式属于<strong>评测层面的启发式评分校正手段</strong>，旨在抵消某些通用词汇在无条件分布中的天然高频偏置，而非证明模型内部具备专门提取证据的认知单元。</p>
+<hr>
+<h2 id="3-元学习假说先验模式识别与现场适应的未决光谱">3. 元学习假说：先验模式识别与现场适应的未决光谱</h2>
+<p>为什么纯粹以预测下一个 token 为目标的预训练过程，能够使模型在推理时展现出利用提示完成任务的能力？Brown et al. (2020) 在引言中引入了<strong>元学习（Meta-Learning）</strong>的视角予以探讨。</p>
+<h3 id="31-外循环预训练与内循环上下文">3.1 外循环预训练与内循环上下文</h3>
+<p>论文将自回归预训练与推理交互类比为双层循环：</p>
+<ul>
+<li><strong>外循环（Outer Loop）</strong>：在海量异构文本语料上进行无监督预训练。语料本身包含了大量天然具备结构化模式的段落（如英法双语对照词条、带答案的习题、格式统一的问答交流等）。为了最小化交叉熵损失，参数优化迫使模型发展出广泛的模式识别倾向；</li>
+<li><strong>内循环（Inner Loop）</strong>：在推理阶段的单一序列上下文内发生。模型参数冻结，依靠输入序列中的提示与示范，在前向隐藏激活态中快速聚焦于特定子任务的生成轨迹。</li>
+</ul>
+<h3 id="32-现场从头学习还是先验模式识别">3.2 现场从头学习还是先验模式识别？</h3>
+<p>模型在面对少样本示范时，究竟是在推理时“现场从头学习新任务”（learn de novo），还是仅仅在“识别并激活预训练中已经内化的模式”（task recognition）？</p>
+<p>Brown et al. (2020) 在论文第 5 节明确指出：<strong>这一问题在理论上仍存在未解的模糊性（ambiguity），无法简单给出一锤定音的定论</strong>。实际上，不同任务在这一光谱上表现各异：</p>
+<ol>
+<li><strong>先验识别主导的任务</strong>：对于常见的机器翻译或事实问答，模型显然不可能仅凭上下文中的几个示例从头构建一门语言的语法体系或世界知识库。此时示范主要起到格式收拢与任务识别的作用，促使模型调用预训练阶段沉淀的表征能力；</li>
+<li><strong>依赖局部规则的质性合成任务</strong>：
+<ul>
+<li><strong>生造词运用（Novel Words）</strong>：在论文第 3.9.5 节与 Table 3.16 中，研究人员给模型提供虚构词汇的定义（如生造名词 <code>Gigamuru</code>、生造动词 <code>farduddle</code>、<code>screeg</code> 等）。任务先提供 1 至 5 个其他词汇定义的示范（广义任务维度为 few-shot），但针对当前目标词仅提供一次定义说明（特定词汇维度为 one-shot）。表 3.16 展示六例，其中首例用句由人编写作为条件，后续用句由 GPT-3 生成；作者认为这些输出正确或至少看似合理，其中 <code>screeghed</code> 用法略显生硬。需要注意，这些案例属于小样本定性展示，不能视作通用语法严谨性的绝对保证；</li>
+<li><strong>符号与字符乱序任务（Word Scrambling）</strong>：在第 3.9.2 节的字符操作实验中，不同子任务表现出现剧烈分化。在随机插入多余字符的清理任务（Symbol Insertion）中，增加少样本示范确实显著改善了指标；但在单词倒序还原任务（Reversed Words）中，GPT-3 175B 的少样本准确率仅有 <strong>0.44%</strong>。该结果表明，在论文的倒序还原设定下，增加示例仍未使模型可靠完成任务；它不证明模型具备通用符号操作能力。</li>
+</ul>
+</li>
+</ol>
+<hr>
+<h2 id="4-规模趋势与评测实证">4. 规模趋势与评测实证</h2>
+<p>上下文利用能力并非所有尺寸语言模型的天然均质特性，而是与参数容量规模呈现出强烈的正向关联。</p>
+<h3 id="41-模型容量对上下文利用效率的影响">4.1 模型容量对上下文利用效率的影响</h3>
+<p>Brown et al. (2020) 构建了从 1.25 亿（125M）至 1750 亿（175B）共 8 种参数尺度的模型序列（Table 2.1）。在跨越数十项任务的评估中，呈现出以下客观特征：</p>
+<ol>
+<li><strong>大容量模型通常更能有效利用示范信息</strong>：图 1.3 中，较大模型的 few-shot 相对 zero-shot 增益通常更大。图 1.2 的字符清理任务显示，较大模型能更有效利用增加的上下文示例；较小模型（如 125M、350M）即使在上下文填入大量示范，指标提升依然较为有限；</li>
+<li><strong>K 值的非单调性</strong>：论文在第 2.4 节指出，在上下文窗口允许范围内，增大示范数量 K 通常能带来改善，但<strong>并非在所有任务上都单调递增</strong>。最佳的 K 值往往需要根据具体任务在验证集上进行超参数搜索确定；</li>
+<li><strong>性能差距的分化</strong>：在参数规模较小时，Zero-Shot、One-Shot 与 Few-Shot 之间的表现差距往往相对较窄；而在超大模型上，Few-Shot 相比 Zero-Shot 经常拉开显著的性能增益。</li>
+</ol>
+<h3 id="42-典型基准数据设定与局限">4.2 典型基准数据设定与局限</h3>
+<p>在 GPT-3 评估的部分任务中，少样本上下文学习展现了逼近甚至匹配部分有监督微调系统的水平：</p>
+<ul>
+<li><strong>闭卷问答（Closed Book QA）</strong>：在无外部知识检索支持的 TriviaQA 评测中，GPT-3 175B 在 Wikipedia split 的官方测试服务器（test server）上取得了 <strong>71.2%</strong> 的少样本准确率，达到了当时同类闭卷（closed-book）设定下微调系统的水准（需注意此表现限定于相同闭卷条件，且论文仅少数数据集提交了测试服务器，多数基准基于开发集评估）<a href="#ref-brown-2020"><span id="citation-brown-qa">1 (§3.2)</span></a>；</li>
+<li><strong>阅读理解</strong>：在 CoQA 开发集上，GPT-3 175B 的少样本评估达到 <strong>85.0 F1</strong>（Zero-Shot 81.5，One-Shot 84.0）<a href="#ref-brown-2020"><span id="citation-brown-coqa">1 (§3.6)</span></a>；</li>
+<li><strong>基础算术</strong>：在三位数加减法（3-digit addition / subtraction）的少样本评测中，175B 模型准确率可达 80% 以上，而较小规模的模型在该项上的表现明显疲软 <a href="#ref-brown-2020"><span id="citation-brown-arith">1 (§3.9.1 Table 3.9)</span></a>。</li>
+</ul>
+<h3 id="43-数据污染data-contamination分析的现实审视">4.3 数据污染（Data Contamination）分析的现实审视</h3>
+<p>针对超大无监督语料可能包含评测集文本的顾虑，论文第 4 节与 Appendix C 开展了针对各任务选定长度的 N-gram 重叠过滤分析，并构建了移除潜在重叠样本的“干净子集”（Clean Subset）。</p>
+<p>客观审视其排查结果，必须指出：</p>
+<ol>
+<li><strong>重叠分析不能彻底排除死记硬背</strong>：虽然对 QuAC、SQuAD2 和 DROP 等阅读理解任务的抽样人工检查表明，重叠内容多为维基背景材料而问答对并未直接泄漏，但作者坦言，基于启发式 N-gram 的清洗无法完全保证排除所有污染影响；</li>
+<li><strong>干净子集存在统计偏差</strong>：在清洗后的子集上，部分基准表现出现显著波动（例如 Table C.1 中，DROP 在干净子集上相对于全量集下降约 21%，QuAC 相对上升约 20%，RACE-m 上升约 3%）。干净子集本身样本分布难保与原测试集完全一致，因此这一评估无法绝对排除记忆效应被统计偏差掩盖的可能性；</li>
+<li><strong>部分基准受重叠影响显著</strong>：由于数据过滤瑕疵，Wikipedia 语言建模任务与儿童图书测试（Children’s Book Test）因几乎完全包含于训练集中而被直接剔除、不予报告；PIQA 和 Winograd 任务因存在可测量的性能回退，在论文主表中被专门标注星号（*）以示潜在污染。</li>
+</ol>
+<hr>
+<h2 id="5-机制边界与固有局限">5. 机制边界与固有局限</h2>
+<p>尽管上下文学习提供了一种敏捷的交互机制，但将少样本提示等同于全能机制是严重的认知偏差。在当前模型架构下，它面临明确的技术边界：</p>
+<h3 id="51-单向因果自回归架构的结构约束">5.1 单向因果自回归架构的结构约束</h3>
+<p>GPT-3 采用仅包含解码器（decoder）的自回归因果语言模型结构。在第 5 节中，作者指出单向掩码机制<strong>可能是一种潜在解释（could be a possible explanation）</strong>，用于理解为何模型在某些双向对比任务中表现低迷：</p>
+<ul>
+<li>在自然语言推理（ANLI）以及词义上下文比对（WiC）任务上，GPT-3 的少样本表现接近随机猜测；</li>
+<li>在需要精细多步推理的长篇阅读理解上，单向逐 token 预测相比具备双向编码机制的模型依然存在明显差距。必须注意，这是论文提出的合理假说，而非经过严密受控消融实验最终确认的唯一起因。</li>
+</ul>
+<h3 id="52-提示词设定的敏感性">5.2 提示词设定的敏感性</h3>
+<p>任务说明、示例选择、数量和排列形式都是提示与评测设定的一部分。Brown 在评测中固定这些条件，并针对部分任务在开发集选择 K；因此比较结果时，应记录所用提示和示例条件，不能仅比较模型名称。</p>
+<h3 id="53-上下文窗口容量与推理计算开销">5.3 上下文窗口容量与推理计算开销</h3>
+<ul>
+<li><strong>总长度硬约束</strong>：GPT-3 的 2048 个 token 上下文窗口必须同时容纳示范样本、任务描述、测试输入以及待生成的全部补全。材料能够放入窗口，只说明模型可以接收它，并不保证所有示例或相关信息都被有效利用。对于长篇文档或多步长文本任务，示范能够占用的容量受到严格限制；</li>
+<li><strong>推理计算负担</strong>：输入数十个示范会导致前向传播必须承载更长的序列计算。GPT-3 架构中虽交替采用了密集注意力（dense attention）与局部带状稀疏注意力（locally banded sparse attention）以平衡效率，但长上下文带来的推理算力与显存消耗依然显著高于短提示。</li>
+</ul>
+<h3 id="54-状态非持久化特征">5.4 状态非持久化特征</h3>
+<p>提示与示范的信息作用完全依附于当前的推理输入。一旦在新的请求中去除了这些提示词，前置示范便不再参与前向计算，模型本身不会因曾处理过这些示例而在权重中持久沉淀出该任务的规则。</p>
+<hr>
+<h2 id="总结">总结</h2>
+<p>提示与少样本之所以能够改变大语言模型的输出，其表现为：<strong>模型参数保持固定，输入上下文仍可改变前向计算中的隐藏状态及后续输出的条件概率分布</strong>：</p>
+<ol>
+<li><strong>范式边界明确</strong>：微调通过反向传播修改权重，针对性强但受限于标注成本与泛化迁移；上下文学习评测在推理中保持参数完全固定（<code>Δθ = 0</code>），以文本示范引导输出；</li>
+<li><strong>底层计算机制</strong>：自注意力计算将示范信息与待测输入进行交叉加权，在前向计算中重塑了深层激活态（直观比喻为临时工作空间），但其微观认知逻辑仍属理论探索阶段；</li>
+<li><strong>元学习假说未决</strong>：大模型既在利用预训练语料沉淀的先验模式识别完成翻译与问答，又在简单生造词和特定字符规则上表现出局部的现场适应，但两者的真实界限仍有待深入研究；</li>
+<li><strong>规模驱动效应</strong>：超大参数规模通常能提升模型对上下文示范的利用效率，但示范数量与表现之间并非绝对单调递增，逆序等极端任务证明模型并不具备万能的符号推理能力；</li>
+<li><strong>客观技术局限</strong>：单向因果掩码的架构约束假说、数据污染排查中的统计不确定性、上下文窗口物理容量以及长提示带来的推理算力成本，共同界定了当前上下文学习的真实能力边界。</li>
+</ol>
+<p>这些结果说明，固定参数并不意味着输出行为固定；示范如何被利用，以及其中有多少属于任务识别或局部适应，仍需结合具体任务研究。</p>
+<hr>
+<h2 id="参考资料">参考资料</h2>
+<ol>
+  <li>
+    Brown, T. B., Mann, B., Ryder, N., Subbiah, M., Kaplan, J., Dhariwal, P., Neelakantan, A., Shyam, P., Sastry, G., Askell, A., Agarwal, S., Herbert-Voss, A., Krueger, G., Henighan, T., Child, R., Ramesh, A., Ziegler, D. M., Wu, J., Winter, C., Hesse, C., Chen, M., Sigler, E., Litwin, M., Gray, S., Chess, B., Clark, J., Berner, C., McCandlish, S., Radford, A., Sutskever, I., &#x26; Amodei, D. (2020). <i>Language Models are Few-Shot Learners</i>. arXiv:2005.14165v4 [cs.CL].
+    <br>
+    首次提交日期：2020-05-28；本篇依据版本：2020-07-22 (arXiv:2005.14165v4).
+    <br>
+    原文链接：<a id="ref-brown-2020" href="https://arxiv.org/abs/2005.14165v4" target="_blank" rel="noopener noreferrer">https://arxiv.org/abs/2005.14165v4</a>
+  </li>
+</ol></article><hr class="my-8 border-dashed"><div id="btt-btn-container" class="fixed inset-e-4 bottom-8 z-50 md:sticky md:inset-e-auto md:float-end md:me-1 translate-y-14 opacity-0 transition duration-500"><button data-button="back-to-top" class="group bg-background relative px-2 py-1 size-14 rounded-full shadow-xl md:h-8 md:w-fit md:rounded-md md:shadow-none md:focus-visible:rounded-none md:bg-background/35 md:bg-clip-padding md:backdrop-blur-lg"><span id="progress-indicator" class="absolute inset-0 -z-10 block size-14 scale-110 rounded-full bg-transparent md:hidden md:h-8 md:rounded-md"></span><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="inline-block rotate-90 md:hidden" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M5 12h14M5 12l6 6M5 12l6-6" /></svg><span class="group-hover:text-accent sr-only text-sm md:not-sr-only"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="inline-block size-4" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M12 5v14M16 9l-4-4M8 9l4-4" /></svg> 回到顶部</span></button></div><script data-astro-rerun>
+  function backToTop() {
+    const rootElement = document.documentElement;
+    const btnContainer = document.querySelector("#btt-btn-container");
+    const backToTopBtn = document.querySelector("[data-button='back-to-top']");
+    const progressIndicator = document.querySelector("#progress-indicator");
+
+    if (!rootElement || !btnContainer || !backToTopBtn || !progressIndicator)
+      return;
+
+    backToTopBtn.addEventListener("click", () => {
+      document.body.scrollTop = 0;
+      document.documentElement.scrollTop = 0;
+    });
+
+    let lastVisible = null;
+    function handleScroll() {
+      const scrollTotal = rootElement.scrollHeight - rootElement.clientHeight;
+      const scrollTop = rootElement.scrollTop;
+      const scrollPercent = Math.floor((scrollTop / scrollTotal) * 100);
+
+      progressIndicator.style.setProperty(
+        "background-image",
+        `conic-gradient(var(--accent), var(--accent) ${scrollPercent}%, transparent ${scrollPercent}%)`
+      );
+
+      const isVisible = scrollTop / scrollTotal > 0.3;
+
+      if (isVisible !== lastVisible) {
+        btnContainer.classList.toggle("opacity-100", isVisible);
+        btnContainer.classList.toggle("translate-y-0", isVisible);
+        btnContainer.classList.toggle("opacity-0", !isVisible);
+        btnContainer.classList.toggle("translate-y-14", !isVisible);
+        lastVisible = isVisible;
+      }
+    }
+
+    let ticking = false;
+    document.addEventListener("scroll", () => {
+      if (!ticking) {
+        window.requestAnimationFrame(() => {
+          handleScroll();
+          ticking = false;
+        });
+        ticking = true;
+      }
+    });
+  }
+  backToTop();
+</script><ul class="mt-4 mb-8 flex flex-wrap gap-4 sm:my-8"><li><a data-astro-transition-scope="astro-bztu2lml-1" href="/tags/ai/" class="flex items-center gap-0.5 border-foreground border-b-2 border-dashed hover:border-accent hover:text-accent hover:-mt-0.5 focus-visible:text-accent focus-visible:border-none text-sm"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="opacity-80 size-4" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M5 9h14M5 15h14M11 4 7 20M17 4l-4 16" /></svg>AI</a></li><li><a data-astro-transition-scope="astro-bztu2lml-2" href="/tags/llm/" class="flex items-center gap-0.5 border-foreground border-b-2 border-dashed hover:border-accent hover:text-accent hover:-mt-0.5 focus-visible:text-accent focus-visible:border-none text-sm"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="opacity-80 size-4" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M5 9h14M5 15h14M11 4 7 20M17 4l-4 16" /></svg>LLM</a></li><li><a data-astro-transition-scope="astro-bztu2lml-3" href="/tags/in-context-learning/" class="flex items-center gap-0.5 border-foreground border-b-2 border-dashed hover:border-accent hover:text-accent hover:-mt-0.5 focus-visible:text-accent focus-visible:border-none text-sm"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="opacity-80 size-4" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M5 9h14M5 15h14M11 4 7 20M17 4l-4 16" /></svg>In-Context Learning</a></li><li><a data-astro-transition-scope="astro-bztu2lml-4" href="/tags/few-shot/" class="flex items-center gap-0.5 border-foreground border-b-2 border-dashed hover:border-accent hover:text-accent hover:-mt-0.5 focus-visible:text-accent focus-visible:border-none text-sm"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="opacity-80 size-4" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M5 9h14M5 15h14M11 4 7 20M17 4l-4 16" /></svg>Few-Shot</a></li><li><a data-astro-transition-scope="astro-bztu2lml-5" href="/tags/prompting/" class="flex items-center gap-0.5 border-foreground border-b-2 border-dashed hover:border-accent hover:text-accent hover:-mt-0.5 focus-visible:text-accent focus-visible:border-none text-sm"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="opacity-80 size-4" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M5 9h14M5 15h14M11 4 7 20M17 4l-4 16" /></svg>Prompting</a></li></ul><hr class="my-8 border-dashed"><div data-pagefind-ignore class="my-8 grid grid-cols-1 gap-6 sm:grid-cols-2"><a href="/posts/llm-sft-rlhf/" class="flex w-full gap-1 hover:opacity-75"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="inline-block flex-none rtl:rotate-180" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M5 12h14M5 12l6 6M5 12l6-6" /></svg><div><span>上一篇</span><div class="text-accent/85 text-sm">SFT与RLHF怎样影响按指令回答：示范、偏好与优化边界</div></div></a><a href="/posts/transformer-attention-is-all-you-need/" class="flex w-full justify-end gap-1 text-end hover:opacity-75 sm:col-start-2"><div><span>下一篇</span><div class="text-accent/85 text-sm">Transformer为什么需要Attention？从《Attention Is All You Need》读起</div></div><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="inline-block flex-none rtl:rotate-180" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M5 12h14M13 18l6-6M13 6l6 6" /></svg></a></div></main><footer class="app-layout mt-auto"><div class="border-border flex flex-col items-center justify-between border-t py-6 sm:flex-row-reverse sm:py-4"><div class="flex flex-wrap items-center gap-1"><a href="https://github.com/SaromChars" title="Sarom Chars 的 GitHub" class="group inline-flex items-center gap-1 hover:text-accent p-2 hover:rotate-6 sm:p-1"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="inline-block size-6 scale-125 fill-transparent stroke-current stroke-2 opacity-90 group-hover:fill-transparent sm:scale-110" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M9 19c-4.3 1.4-4.3-2.5-6-3m12 5v-3.5c0-1 .1-1.4-.5-2 2.8-.3 5.5-1.4 5.5-6a4.6 4.6 0 0 0-1.3-3.2 4.2 4.2 0 0 0-.1-3.2s-1.1-.3-3.5 1.3a12.3 12.3 0 0 0-6.2 0C6.5 2.8 5.4 3.1 5.4 3.1a4.2 4.2 0 0 0-.1 3.2A4.6 4.6 0 0 0 4 9.5c0 4.6 2.7 5.7 5.5 6-.6.6-.6 1.2-.5 2V21" /></svg><span class="sr-only">Sarom Chars 的 GitHub</span></a></div><div class="my-2 flex flex-col items-center whitespace-nowrap sm:flex-row"><span>版权 &#169; 2026</span><span class="hidden sm:inline">&nbsp;|&nbsp;</span><span>保留所有权利。</span></div></div></footer><script type="module">var e=`theme`,t=`light`,n=`dark`;function r(){return localStorage.getItem(e)||(window.matchMedia(`(prefers-color-scheme: dark)`).matches?n:t)}var i=window.__theme?.value??r();function a(){localStorage.setItem(e,i),o()}function o(){let e=document.firstElementChild;e?.setAttribute(`data-theme`,i),e?.classList.toggle(`dark`,i===n),document.querySelector(`#theme-btn`)?.setAttribute(`aria-label`,i);let t=window.getComputedStyle(document.body).backgroundColor;document.querySelector(`meta[name='theme-color']`)?.setAttribute(`content`,t)}function s(){o(),document.querySelector(`#theme-btn`)?.addEventListener(`click`,()=>{i=i===t?n:t,a()})}s(),document.addEventListener(`astro:after-swap`,s),document.addEventListener(`astro:before-swap`,e=>{let t=document.querySelector(`meta[name='theme-color']`)?.getAttribute(`content`);t&&e.newDocument.querySelector(`meta[name='theme-color']`)?.setAttribute(`content`,t)}),window.matchMedia(`(prefers-color-scheme: dark)`).addEventListener(`change`,({matches:e})=>{i=e?n:t,a()});</script></body></html><script type="module">var e=document.querySelector(`#article`);if(e?.querySelector(`a[href^="#ref-"]`)){let t=null,n=!1,r=document.createElement(`button`);r.type=`button`,r.className=`citation-return`,r.textContent=`返回阅读位置`,r.setAttribute(`data-pagefind-ignore`,``),e.addEventListener(`click`,n=>{if(n.button!==0||n.metaKey||n.ctrlKey||n.shiftKey||n.altKey)return;let i=n.target instanceof Element?n.target.closest(`a[href^="#ref-"]`):null;if(!i||!e.contains(i))return;let a=i.hash,o=document.getElementById(decodeURIComponent(a.slice(1)));o&&e.contains(o)&&(t={source:i,url:window.location.href,top:window.scrollY,left:window.scrollX,targetHash:a},o.insertAdjacentElement(`afterend`,r))}),r.addEventListener(`click`,()=>{if(!t||n)return;let e=t,i=i=>{r.remove(),window.requestAnimationFrame(()=>{window.requestAnimationFrame(()=>{e.source.focus({preventScroll:!0}),window.scrollTo({top:e.top,left:e.left,behavior:`instant`}),t=null,n=!1,i?.()})})};window.location.href===e.url?i():(n=!0,window.addEventListener(`popstate`,()=>{let e=window.history.scrollRestoration;window.history.scrollRestoration=`manual`,window.setTimeout(()=>{i(()=>{window.history.scrollRestoration=e})},0)},{once:!0}),window.history.back())}),window.addEventListener(`hashchange`,()=>{!n&&t&&window.location.hash!==t.targetHash&&(r.remove(),t=null)})}</script><script data-astro-rerun>
+  function createProgressBar() {
+    const progressContainer = document.createElement("div");
+    progressContainer.className =
+      "progress-container fixed top-0 z-10 h-1 w-full bg-background";
+
+    const progressBar = document.createElement("div");
+    progressBar.className = "progress-bar h-1 w-0 bg-accent";
+    progressBar.id = "myBar";
+
+    progressContainer.appendChild(progressBar);
+    document.body.appendChild(progressContainer);
+  }
+  createProgressBar();
+
+  function updateScrollProgress() {
+    document.addEventListener("scroll", () => {
+      const winScroll =
+        document.body.scrollTop || document.documentElement.scrollTop;
+      const height =
+        document.documentElement.scrollHeight -
+        document.documentElement.clientHeight;
+      const scrolled = (winScroll / height) * 100;
+      if (document) {
+        const myBar = document.getElementById("myBar");
+        if (myBar) {
+          myBar.style.width = scrolled + "%";
+        }
+      }
+    });
+  }
+  updateScrollProgress();
+
+  function addHeadingLinks() {
+    const headings = Array.from(
+      document.querySelectorAll("h2, h3, h4, h5, h6")
+    );
+    for (const heading of headings) {
+      heading.classList.add("group");
+      const link = document.createElement("a");
+      link.className =
+        "heading-link ms-2 no-underline opacity-75 md:opacity-0 md:group-hover:opacity-100 md:focus:opacity-100";
+      link.href = "#" + heading.id;
+
+      const span = document.createElement("span");
+      span.ariaHidden = "true";
+      span.innerText = "#";
+      link.appendChild(span);
+      heading.appendChild(link);
+    }
+  }
+  addHeadingLinks();
+
+  function attachCopyButtons() {
+    const copyButtonLabel = "Copy";
+    const codeBlocks = Array.from(document.querySelectorAll("pre"));
+
+    for (const codeBlock of codeBlocks) {
+      const wrapper = document.createElement("div");
+      wrapper.style.position = "relative";
+
+      const computedStyle = getComputedStyle(codeBlock);
+      const hasFileNameOffset =
+        computedStyle.getPropertyValue("--file-name-offset").trim() !== "";
+
+      const topClass = hasFileNameOffset
+        ? "top-(--file-name-offset)"
+        : "-top-3";
+
+      const copyButton = document.createElement("button");
+      copyButton.className = `copy-code absolute end-3 ${topClass} rounded bg-muted border border-muted px-2 py-1 text-xs leading-4 text-foreground font-medium`;
+      copyButton.innerHTML = copyButtonLabel;
+      codeBlock.setAttribute("tabindex", "0");
+      codeBlock.appendChild(copyButton);
+
+      codeBlock?.parentNode?.insertBefore(wrapper, codeBlock);
+      wrapper.appendChild(codeBlock);
+
+      copyButton.addEventListener("click", async () => {
+        await copyCode(codeBlock, copyButton);
+      });
+    }
+
+    async function copyCode(block, button) {
+      const code = block.querySelector("code");
+      const text = code?.innerText;
+
+      await navigator.clipboard.writeText(text ?? "");
+
+      button.innerText = "Copied";
+
+      setTimeout(() => {
+        button.innerText = copyButtonLabel;
+      }, 700);
+    }
+  }
+  attachCopyButtons();
+
+  /** Accessible image lightbox for article images. */
+  function initLightbox() {
+    const article = document.getElementById("article");
+    if (!article) return;
+
+    const prefersReducedMotion = () =>
+      window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+    let overlay = null;
+    let lastFocused = null;
+    let removeDragListeners = null;
+
+    // Defer attribute mutations so they don't push the LCP timestamp.
+    // Event listeners below use delegation and don't need the attributes to exist yet.
+    requestAnimationFrame(() => {
+      const images = Array.from(article.querySelectorAll("img"));
+      for (const image of images) {
+        if (image.closest("a")) continue;
+        image.setAttribute("role", "button");
+        image.setAttribute("tabindex", "0");
+        image.setAttribute("aria-haspopup", "dialog");
+        image.setAttribute(
+          "aria-label",
+          image.alt ? `Zoom image: ${image.alt}` : "Zoom image"
+        );
+      }
+    });
+
+    function open(src, alt, trigger) {
+      if (overlay) return;
+      lastFocused = trigger ?? document.activeElement;
+
+      overlay = document.createElement("div");
+      overlay.setAttribute("role", "dialog");
+      overlay.setAttribute("aria-modal", "true");
+      overlay.setAttribute(
+        "aria-label",
+        alt ? `Image preview: ${alt}` : "Image preview"
+      );
+      overlay.className =
+        "fixed inset-0 z-50 flex cursor-zoom-out items-center justify-center bg-black/70 backdrop-blur-sm opacity-0 transition-opacity duration-200 motion-reduce:transition-none";
+
+      const closeButton = document.createElement("button");
+      closeButton.type = "button";
+      closeButton.setAttribute("aria-label", "Close image preview");
+      closeButton.className =
+        "absolute end-4 top-4 z-1 flex size-11 items-center justify-center rounded bg-black/50 text-3xl leading-none text-white";
+      closeButton.innerHTML = "&#10005;";
+      closeButton.addEventListener("click", close);
+
+      const image = document.createElement("img");
+      image.src = src;
+      image.alt = "";
+      image.className =
+        "max-h-[90dvh] max-w-[90dvw] cursor-default object-contain transition-transform duration-100 ease-out motion-reduce:transition-none data-[zoom=drag]:cursor-grabbing data-[zoom=drag]:transition-none data-[zoom=in]:cursor-grab";
+
+      overlay.append(closeButton, image);
+      overlay.addEventListener("click", e => {
+        if (e.target === overlay && currentScale <= 1) close();
+      });
+
+      let currentScale = 1;
+      let translateX = 0;
+      let translateY = 0;
+      let initialDist = 0;
+      let initialScale = 1;
+      let panStartX = 0;
+      let panStartY = 0;
+      let panStartTranslateX = 0;
+      let panStartTranslateY = 0;
+      let lastTapTime = 0;
+
+      function applyTransform() {
+        image.style.transform = `scale(${currentScale}) translate(${translateX}px, ${translateY}px)`;
+        // A backdrop click only closes at fit size, so drop the zoom-out cursor while zoomed.
+        overlay?.classList.toggle("cursor-zoom-out", currentScale <= 1);
+      }
+
+      function resetTransform() {
+        currentScale = 1;
+        translateX = 0;
+        translateY = 0;
+        image.style.transform = "";
+        image.removeAttribute("data-zoom");
+        overlay?.classList.add("cursor-zoom-out");
+      }
+
+      // Keep the zoomed image from being panned past its edges.
+      function clampTranslate() {
+        if (!overlay) return;
+        const maxX = Math.max(
+          0,
+          (image.clientWidth - overlay.clientWidth / currentScale) / 2
+        );
+        const maxY = Math.max(
+          0,
+          (image.clientHeight - overlay.clientHeight / currentScale) / 2
+        );
+        translateX = Math.min(maxX, Math.max(-maxX, translateX));
+        translateY = Math.min(maxY, Math.max(-maxY, translateY));
+      }
+
+      overlay.addEventListener(
+        "touchstart",
+        e => {
+          const t = e.touches;
+          if (t.length === 2) {
+            image.setAttribute("data-zoom", "drag");
+            initialDist = Math.hypot(
+              t[1].clientX - t[0].clientX,
+              t[1].clientY - t[0].clientY
+            );
+            initialScale = currentScale;
+          } else if (t.length === 1) {
+            const now = Date.now();
+            if (now - lastTapTime < 300) {
+              e.preventDefault();
+              if (currentScale > 1) {
+                resetTransform();
+              } else {
+                currentScale = 2;
+                translateX = 0;
+                translateY = 0;
+                applyTransform();
+                image.setAttribute("data-zoom", "in");
+              }
+              lastTapTime = 0;
+              panStartX = t[0].clientX;
+              panStartY = t[0].clientY;
+              panStartTranslateX = translateX;
+              panStartTranslateY = translateY;
+            } else {
+              lastTapTime = now;
+              if (currentScale > 1) {
+                image.setAttribute("data-zoom", "drag");
+                panStartX = t[0].clientX;
+                panStartY = t[0].clientY;
+                panStartTranslateX = translateX;
+                panStartTranslateY = translateY;
+              }
+            }
+          }
+        },
+        { passive: false }
+      );
+
+      overlay.addEventListener(
+        "touchmove",
+        e => {
+          const t = e.touches;
+          if (t.length === 2) {
+            e.preventDefault();
+            const dist = Math.hypot(
+              t[1].clientX - t[0].clientX,
+              t[1].clientY - t[0].clientY
+            );
+            const oldScale = currentScale;
+            currentScale = Math.min(
+              4,
+              Math.max(1, initialScale * (dist / initialDist))
+            );
+
+            // Zoom to the geometric center of the two fingers
+            const midX = (t[0].clientX + t[1].clientX) / 2;
+            const midY = (t[0].clientY + t[1].clientY) / 2;
+            const ox = overlay.clientWidth / 2;
+            const oy = overlay.clientHeight / 2;
+            translateX =
+              (midX - ox) * (1 / currentScale - 1 / oldScale) + translateX;
+            translateY =
+              (midY - oy) * (1 / currentScale - 1 / oldScale) + translateY;
+            clampTranslate();
+            applyTransform();
+          } else if (t.length === 1) {
+            if (currentScale > 1) {
+              e.preventDefault();
+              image.setAttribute("data-zoom", "drag");
+              translateX =
+                panStartTranslateX + (t[0].clientX - panStartX) / currentScale;
+              translateY =
+                panStartTranslateY + (t[0].clientY - panStartY) / currentScale;
+              clampTranslate();
+              applyTransform();
+            } else {
+              e.preventDefault();
+            }
+          }
+        },
+        { passive: false }
+      );
+
+      overlay.addEventListener("touchend", e => {
+        if (e.touches.length === 0) {
+          if (currentScale > 1) {
+            image.setAttribute("data-zoom", "in");
+          } else {
+            image.removeAttribute("data-zoom");
+          }
+          if (currentScale <= 1.05) resetTransform();
+        }
+      });
+
+      overlay.addEventListener("touchcancel", e => {
+        if (e.touches.length === 0) {
+          if (currentScale > 1) {
+            image.setAttribute("data-zoom", "in");
+          } else {
+            image.removeAttribute("data-zoom");
+          }
+          if (currentScale <= 1.05) resetTransform();
+        }
+      });
+
+      overlay.addEventListener(
+        "wheel",
+        e => {
+          e.preventDefault();
+          const oldScale = currentScale;
+          const delta = -e.deltaY * 0.001;
+          currentScale = Math.min(4, Math.max(1, currentScale * (1 + delta)));
+
+          if (currentScale <= 1.05) {
+            resetTransform();
+          } else {
+            image.setAttribute("data-zoom", "in");
+            // Zoom to cursor: adjust translate so the point under cursor stays fixed
+            const ox = overlay.clientWidth / 2;
+            const oy = overlay.clientHeight / 2;
+            translateX =
+              (e.clientX - ox) * (1 / currentScale - 1 / oldScale) + translateX;
+            translateY =
+              (e.clientY - oy) * (1 / currentScale - 1 / oldScale) + translateY;
+            clampTranslate();
+            applyTransform();
+          }
+        },
+        { passive: false }
+      );
+
+      let isMouseDown = false;
+      let mouseStartX = 0;
+      let mouseStartY = 0;
+
+      overlay.addEventListener("mousedown", e => {
+        if (e.button !== 0 || currentScale <= 1) return;
+        if (e.target.closest("button")) return;
+        isMouseDown = true;
+        mouseStartX = e.clientX;
+        mouseStartY = e.clientY;
+        panStartTranslateX = translateX;
+        panStartTranslateY = translateY;
+        image.setAttribute("data-zoom", "drag");
+        e.preventDefault();
+      });
+
+      function onMouseMove(e) {
+        if (!isMouseDown || !overlay) return;
+        translateX =
+          panStartTranslateX + (e.clientX - mouseStartX) / currentScale;
+        translateY =
+          panStartTranslateY + (e.clientY - mouseStartY) / currentScale;
+        clampTranslate();
+        applyTransform();
+      }
+
+      function onMouseUp() {
+        if (!isMouseDown) return;
+        isMouseDown = false;
+        if (currentScale > 1) {
+          image.setAttribute("data-zoom", "in");
+        } else {
+          image.removeAttribute("data-zoom");
+        }
+      }
+
+      document.addEventListener("mousemove", onMouseMove);
+      document.addEventListener("mouseup", onMouseUp);
+      removeDragListeners = () => {
+        document.removeEventListener("mousemove", onMouseMove);
+        document.removeEventListener("mouseup", onMouseUp);
+      };
+
+      document.body.appendChild(overlay);
+      document.documentElement.style.overflow = "hidden";
+      document.addEventListener("keydown", onKeyDown);
+      window.__closeLightbox = close;
+
+      requestAnimationFrame(() => overlay?.classList.add("opacity-100"));
+      closeButton.focus();
+    }
+
+    function close() {
+      if (!overlay) return;
+      const el = overlay;
+      overlay = null;
+      el.classList.add("pointer-events-none");
+      window.__closeLightbox = null;
+
+      document.removeEventListener("keydown", onKeyDown);
+      removeDragListeners?.();
+      removeDragListeners = null;
+      document.documentElement.style.overflow = "";
+      lastFocused?.focus();
+      lastFocused = null;
+
+      if (prefersReducedMotion()) {
+        el.remove();
+        return;
+      }
+      const remove = () => el.remove();
+      el.addEventListener("transitionend", remove, { once: true });
+      setTimeout(remove, 250); // fallback in case transitionend never fires
+      el.classList.remove("opacity-100");
+    }
+
+    function onKeyDown(e) {
+      if (e.key === "Escape") {
+        close();
+      } else if (e.key === "Tab") {
+        trapFocus(e);
+      }
+    }
+
+    // Keep keyboard focus inside the open dialog.
+    function trapFocus(e) {
+      if (!overlay) return;
+      const focusables = overlay.querySelectorAll(
+        'a[href], button, [tabindex]:not([tabindex="-1"])'
+      );
+      if (focusables.length === 0) return;
+      const first = focusables[0];
+      const last = focusables[focusables.length - 1];
+      if (e.shiftKey && document.activeElement === first) {
+        e.preventDefault();
+        last.focus();
+      } else if (!e.shiftKey && document.activeElement === last) {
+        e.preventDefault();
+        first.focus();
+      }
+    }
+
+    function triggerFromEvent(e) {
+      const image = e.target.closest("img");
+      if (!image || !article.contains(image) || image.closest("a")) return null;
+      return image;
+    }
+
+    function activate(image) {
+      open(image.currentSrc || image.src, image.alt, image);
+    }
+
+    article.addEventListener("click", e => {
+      const image = triggerFromEvent(e);
+      if (!image) return;
+      e.preventDefault();
+      activate(image);
+    });
+
+    article.addEventListener("keydown", e => {
+      if (e.key !== "Enter" && e.key !== " " && e.key !== "Spacebar") return;
+      const image = triggerFromEvent(e);
+      if (!image) return;
+      e.preventDefault();
+      activate(image);
+    });
+  }
+  initLightbox();
+
+  if (!window.__lightboxSwapBound) {
+    window.__lightboxSwapBound = true;
+    document.addEventListener("astro:before-swap", () =>
+      window.__closeLightbox?.()
+    );
+  }
+
+  document.addEventListener("astro:after-swap", () =>
+    window.scrollTo({ left: 0, top: 0, behavior: "instant" })
+  );
+</script>
