@@ -1,7 +1,8 @@
 ---
 title: "TLS 的起源与演进：从 Netscape SSL 到 TLS 1.3"
+modDatetime: 2026-11-07T07:28:11Z
 pubDatetime: 2018-08-08T16:40:00+08:00
-description: "以 2018 年 8 月 8 日为资料截止日，梳理 SSL 与 TLS 的起源、TLS 1.2 及 TLS 1.3 draft-28 的握手设计，用 Canvas 动画解释证书、密钥交换与 0-RTT。"
+description: "梳理 SSL 与 TLS 的起源、TLS 1.2 及 TLS 1.3 draft-28 的握手设计，用 Canvas 动画解释证书、密钥交换与 0-RTT。"
 author: Sarom Chars
 draft: false
 tags: [TLS, SSL, HTTPS, 网络安全, 协议历史]
@@ -9,15 +10,13 @@ tags: [TLS, SSL, HTTPS, 网络安全, 协议历史]
 
 上一篇记了[数字签名、证书和中间人攻击](/2018/08/04/thinking_about_ruanyifeng_signature/)。这篇接着看 SSL 和 TLS：证书怎样参与建立连接，两端又怎样得到保护数据的密钥。
 
-TLS（Transport Layer Security，传输层安全协议）源于 Netscape 的 SSL。1999 年，IETF 发布 TLS 1.0；TLS 1.2 的规范发表于 2008 年。TLS 1.3 这里按 2018 年 3 月 20 日公开的 draft-28 介绍，仍将它作为草案材料，不预先采用之后的正式文档或结论。[RFC 2246](#ref-rfc2246) · [RFC 5246](#ref-rfc5246) · [TLS 1.3 draft-28](#ref-draft-ietf-tls-tls13-28)
-
-*这是一篇按历史视角整理的学习笔记，知识截止日期为 2018 年 8 月 8 日。图是教学示意，不是实测抓包。*
+TLS（Transport Layer Security，传输层安全协议）源于 Netscape 的 SSL。1999 年，IETF 发布 TLS 1.0；TLS 1.2 的规范发表于 2008 年。TLS 1.3 这里按 2018 年 3 月 20 日公开的 draft-28 介绍，仍将它作为草案材料。[RFC 2246](#ref-rfc2246) · [RFC 5246](#ref-rfc5246) · [TLS 1.3 draft-28](#ref-draft-ietf-tls-tls13-28)
 
 ## TLS 为什么会出现：可靠送达不等于安全送达
 
 设想浏览器通过网络提交一段登录信息。如果应用直接发送明文，即使底层传输可以可靠地把字节送到另一端，也没有自动解决三个问题：经过链路的人能否读到内容、内容会不会被修改、连接的另一端是不是你想访问的服务。
 
-TLS 把这些目标组合起来：**保密性**保护内容，**完整性**帮助发现篡改，**认证**帮助确认对端身份。实际 HTTPS 中通常由服务器出示证书，客户端验证证书和目标名称；是否认证客户端取决于应用需求。TLS 的保护范围也有边界：终端被控制、应用主动泄露数据、或用户向恶意网站提交信息，都不能只靠加密链路解决。[TLS 的目标，RFC 5246 §1](#ref-rfc5246-section-1)
+TLS 把这些目标组合起来：**保密性**保护内容，**完整性**帮助发现篡改，<strong>身份认证（authentication）</strong>帮助确认对端身份。实际 HTTPS 中通常由服务器出示数字证书（digital certificate），客户端验证证书和目标名称；是否认证客户端取决于应用需求。TLS 的保护范围也有边界：终端被控制、应用主动泄露数据、或用户向恶意网站提交信息，都不能只靠加密链路解决。[TLS 的目标，RFC 5246 §1](#ref-rfc5246-section-1)
 
 在传统 HTTPS over TCP 连接中，HTTP 负责请求和响应的语义，TLS 先协商参数、认证对端并建立密钥，再保护这些 HTTP 数据。证书参与认证；443 是常用端口，端口号本身不能说明连接协商了哪个版本。[RFC 2246 附录 E](#ref-rfc2246-appendix-E)
 
@@ -30,7 +29,7 @@ TLS 把这些目标组合起来：**保密性**保护内容，**完整性**帮�
 | 1995 年 | Netscape SSL 2.0 文档 | TLS 出现之前的 SSL 路线；RFC 6176 引用的原始 SSL 2.0 文档日期为 1995-02-09 | [RFC 6176 §6.2](#ref-rfc6176-section-6.2) |
 | 1996 年 | SSL 3.0 | 后来 TLS 1.0 的直接基础；RFC 6101 归档的是 1996-11-18 版本 | [RFC 6101 摘要](#ref-rfc6101) |
 | 1999 年 1 月 | TLS 1.0 | IETF 发布 RFC 2246，将 SSL 3.0 的基础推进为 TLS 标准 | [RFC 2246](#ref-rfc2246) |
-| 2006 年 4 月 | TLS 1.1 | 改善 CBC 记录保护，包括使用显式初始化向量（IV） | [RFC 4346 §1.1](#ref-rfc4346-section-1.1) |
+| 2006 年 4 月 | TLS 1.1 | 改善 CBC 记录保护，包括使用显式初始化向量（initialization vector，IV） | [RFC 4346 §1.1](#ref-rfc4346-section-1.1) |
 | 2008 年 8 月 | TLS 1.2 | 增加 AEAD 密码套件支持，并调整哈希、签名等机制 | [RFC 5246 §1.2](#ref-rfc5246-section-1.2) |
 | 2011 年 3 月 | 禁止 SSL 2.0 | 旧协议正式退出可协商版本 | [RFC 6176](#ref-rfc6176) |
 | 2015 年 6 月 | 弃用 SSL 3.0 | 修补旧实现不能消除其协议层面的全部问题 | [RFC 7568](#ref-rfc7568) |
@@ -52,7 +51,7 @@ RFC 2246 明确说明 TLS 1.0 基于 Netscape 的 SSL 3.0 规范，同时两者�
 
 TLS 的变化不只发生在握手上，它还必须规定怎样把应用数据分成记录并加以保护。
 
-TLS 1.1 对 CBC 模式的处理做了调整，例如显式 IV。TLS 1.2 则支持 AEAD（Authenticated Encryption with Associated Data，带关联数据的认证加密），并改进了哈希与签名算法的选择方式。前者修正已有路径，后者给更现代的数据保护机制提供了协议空间。[RFC 4346 §1.1](#ref-rfc4346-section-1.1) · [RFC 5246 §1.2](#ref-rfc5246-section-1.2)
+TLS 1.1 对 CBC 模式的处理做了调整，例如显式 IV。TLS 1.2 则支持带关联数据的认证加密（authenticated encryption with associated data，AEAD），并改进了哈希与签名算法的选择方式。前者修正已有路径，后者给更现代的数据保护机制提供了协议空间。[RFC 4346 §1.1](#ref-rfc4346-section-1.1) · [RFC 5246 §1.2](#ref-rfc5246-section-1.2)
 
 这也解释了为什么“版本支持 TLS 1.2”只是判断条件之一：同一个协议版本还可能允许不同的密码套件。讨论安全性需要同时看版本、算法、实现和配置，而不能只在版本号上打勾。面向实际配置时，应结合具体平台文档与适用规范；本文侧重历史，不提供一份适用于所有服务的配置清单。[2015 年的安全使用建议：RFC 7525](#ref-rfc7525)
 
@@ -63,6 +62,8 @@ draft-28 中，TLS 1.3 把握手收紧：保留 AEAD 数据保护，移除静态
 在常见的、基于证书和临时密钥交换的连接中，客户端不必等服务器回应后才首次发送密钥交换参数。它把 key_share 提前放进 ClientHello，减少了等待。这是下面动画对比的重点。
 
 ### 握手示意：TLS 1.2 与 TLS 1.3 draft-28
+
+*注：下图为教学示意动画，展示消息交互时序，不是实测抓包。*
 
 <iframe src="/animations/tls-handshake.html" title="TLS 1.2 与 TLS 1.3 draft-28 握手逐步对比动画" loading="lazy" width="100%" height="800" style="border:1px solid #64748b;border-radius:12px" sandbox="allow-scripts"></iframe>
 
@@ -87,7 +88,7 @@ draft-28 中，TLS 1.3 把握手收紧：保留 AEAD 数据保护，移除静态
 
 - **证书与信任链**：帮助客户端把服务名称与公钥建立可信关联，还需要正确完成名称、有效期和信任路径等验证。
 - **CertificateVerify**：服务器用对应私钥对握手上下文签名，证明持有私钥，并把身份认证绑定到本次握手。
-- **临时密钥交换**：两端利用各自秘密和交换的公开参数建立共享秘密，再按协议派生流量密钥。私密密钥材料不会原样传输。
+- **临时密钥协商**：两端利用各自秘密和交换的公开参数通过临时密钥协商（key agreement）建立共享秘密，再按协议派生流量密钥。私密密钥材料不会原样传输。
 - **对称流量密钥**：用于高效保护后续记录。证书里的公钥并不直接承担每个 HTTP 响应正文的加密工作。
 
 这些职责在握手里相互配合：只交换密钥而不认证对端，仍可能遭遇中间人攻击；只持有证书而不证明私钥持有，也不能完成这里描述的认证。[draft-28 §4.4](#ref-draft-ietf-tls-tls13-28-section-4.4) · [draft-28 §7](#ref-draft-ietf-tls-tls13-28-section-7)
