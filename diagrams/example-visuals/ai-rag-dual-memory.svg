@@ -1,0 +1,66 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 710" width="100%" height="100%">
+  <title>RAG双记忆检索增强生成流程图（竖排手机适配）</title>
+  <desc>展示输入查询、DPR稠密向量检索、外部维基切片库Top-k召回、候选切片与查询分别拼接输入生成器以及序列级与词级边缘化输出的推理数据流拓扑。</desc>
+
+  <rect x="0" y="0" width="400" height="710" rx="12" fill="#f8fafc" stroke="#cbd5e1" stroke-width="2"/>
+
+  <!-- 顶部标题 -->
+  <text x="200" y="38" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="20" font-weight="700" fill="#0f172a">RAG 检索增强生成拓扑</text>
+  <text x="200" y="66" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="18" fill="#475569">非参数化检索与参数化生成</text>
+
+  <!-- 步骤 1: 用户输入查询 -->
+  <g transform="translate(20, 85)">
+    <rect x="0" y="0" width="360" height="66" rx="8" fill="#ffffff" stroke="#94a3b8" stroke-width="2"/>
+    <text x="180" y="28" text-anchor="middle" font-family="sans-serif" font-size="18" font-weight="700" fill="#334155">1. 输入查询 (Query x)</text>
+    <text x="180" y="52" text-anchor="middle" font-family="sans-serif" font-size="18" fill="#0f172a">用户提出开放域知识问题</text>
+  </g>
+
+  <!-- 箭头 1 -->
+  <path d="M 200 151 L 200 169" fill="none" stroke="#64748b" stroke-width="3"/>
+  <polygon points="193,169 200,179 207,169" fill="#64748b"/>
+
+  <!-- 步骤 2: 外部密集向量索引匹配 (DPR + FAISS MIPS) -->
+  <g transform="translate(20, 181)">
+    <rect x="0" y="0" width="360" height="88" rx="8" fill="#ffffff" stroke="#2563eb" stroke-width="2"/>
+    <text x="180" y="28" text-anchor="middle" font-family="sans-serif" font-size="18" font-weight="700" fill="#1e3a8a">2. 外部向量检索 (DPR MIPS)</text>
+    <text x="180" y="54" text-anchor="middle" font-family="sans-serif" font-size="18" fill="#1d4ed8">查询编码器 q(x) 映射特征</text>
+    <text x="180" y="78" text-anchor="middle" font-family="sans-serif" font-size="18" fill="#1d4ed8">与 2100 万切片索引库内积匹配</text>
+  </g>
+
+  <!-- 箭头 2 -->
+  <path d="M 200 269 L 200 287" fill="none" stroke="#64748b" stroke-width="3"/>
+  <polygon points="193,287 200,297 207,287" fill="#64748b"/>
+
+  <!-- 步骤 3: 召回 Top-k 文档 -->
+  <g transform="translate(20, 299)">
+    <rect x="0" y="0" width="360" height="74" rx="8" fill="#ffffff" stroke="#d97706" stroke-width="2"/>
+    <text x="180" y="28" text-anchor="middle" font-family="sans-serif" font-size="18" font-weight="700" fill="#92400e">3. 召回 Top-k 文本切片</text>
+    <text x="180" y="54" text-anchor="middle" font-family="sans-serif" font-size="18" fill="#b45309">获得先验候选集 {z_1, ..., z_k}</text>
+  </g>
+
+  <!-- 箭头 3 -->
+  <path d="M 200 373 L 200 391" fill="none" stroke="#64748b" stroke-width="3"/>
+  <polygon points="193,391 200,401 207,391" fill="#64748b"/>
+
+  <!-- 步骤 4: 参数化生成器 -->
+  <g transform="translate(20, 403)">
+    <rect x="0" y="0" width="360" height="96" rx="8" fill="#ffffff" stroke="#6366f1" stroke-width="2"/>
+    <text x="180" y="28" text-anchor="middle" font-family="sans-serif" font-size="18" font-weight="700" fill="#312e81">4. 参数化记忆生成器</text>
+    <text x="180" y="54" text-anchor="middle" font-family="sans-serif" font-size="18" fill="#4338ca">每篇候选 z 分别</text>
+    <text x="180" y="78" text-anchor="middle" font-family="sans-serif" font-size="18" fill="#4338ca">与查询 x 拼接后输入生成器</text>
+  </g>
+
+  <!-- 箭头 4 -->
+  <path d="M 200 499 L 200 517" fill="none" stroke="#64748b" stroke-width="3"/>
+  <polygon points="193,517 200,527 207,517" fill="#64748b"/>
+
+  <!-- 步骤 5: 隐变量边缘化输出 -->
+  <g transform="translate(20, 529)">
+    <rect x="0" y="0" width="360" height="156" rx="8" fill="#f0fdf4" stroke="#22c55e" stroke-width="2"/>
+    <text x="180" y="28" text-anchor="middle" font-family="sans-serif" font-size="18" font-weight="700" fill="#14532d">5. 隐变量概率边缘化</text>
+    <text x="180" y="54" text-anchor="middle" font-family="sans-serif" font-size="18" fill="#15803d">Sequence：单文档生成整序列</text>
+    <text x="180" y="78" text-anchor="middle" font-family="sans-serif" font-size="18" fill="#15803d">再跨候选文档加权</text>
+    <text x="180" y="104" text-anchor="middle" font-family="sans-serif" font-size="18" fill="#15803d">Token：每一步跨文档加权</text>
+    <text x="180" y="134" text-anchor="middle" font-family="sans-serif" font-size="18" font-weight="700" fill="#14532d">输出最终自然语言回答 y</text>
+  </g>
+</svg>

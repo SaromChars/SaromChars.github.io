@@ -1,0 +1,41 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 620" width="100%" height="100%">
+  <title>生成目标不保证真实性示意图（竖排手机适配）</title>
+  <desc>展示语言模型最大似然训练拟合网络语料统计共现、模仿人类流传误区，与客观事实校验之间的机制偏差。</desc>
+
+  <rect x="0" y="0" width="400" height="620" rx="12" fill="#f8fafc" stroke="#cbd5e1" stroke-width="2"/>
+
+  <!-- 顶部标题 -->
+  <text x="200" y="38" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="20" font-weight="700" fill="#0f172a">生成目标不保证真实性</text>
+  <text x="200" y="66" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="18" fill="#475569">自回归拟合与事实幻觉机理</text>
+
+  <!-- 上部分：最大似然训练驱动 -->
+  <g transform="translate(20, 85)">
+    <rect x="0" y="0" width="360" height="230" rx="8" fill="#ffffff" stroke="#d97706" stroke-width="2"/>
+    <text x="180" y="32" text-anchor="middle" font-family="sans-serif" font-size="18" font-weight="700" fill="#92400e">最大似然目标 (Likelihood)</text>
+
+    <rect x="15" y="45" width="330" height="40" rx="6" fill="#fef3c7"/>
+    <text x="180" y="70" text-anchor="middle" font-family="sans-serif" font-size="18" font-weight="700" fill="#b45309">优化目标：最小化预测负对数似然</text>
+
+    <text x="180" y="115" text-anchor="middle" font-family="sans-serif" font-size="18" fill="#334155">1. 统计共现与文本流畅度驱动</text>
+    <text x="180" y="145" text-anchor="middle" font-family="sans-serif" font-size="18" fill="#334155">2. 拟合训练语料中高频偏见</text>
+    <text x="180" y="175" text-anchor="middle" font-family="sans-serif" font-size="18" fill="#334155">3. 该基准观察：部分大模型更易出错</text>
+    <text x="180" y="205" text-anchor="middle" font-family="sans-serif" font-size="18" fill="#b45309">TruthfulQA 基准中的观察</text>
+  </g>
+
+  <!-- 中间警示 -->
+  <text x="200" y="345" text-anchor="middle" font-family="sans-serif" font-size="18" font-weight="700" fill="#dc2626">≠ 统计概率不等于事实真伪</text>
+
+  <!-- 下部分：客观事实校验要求 -->
+  <g transform="translate(20, 365)">
+    <rect x="0" y="0" width="360" height="230" rx="8" fill="#ffffff" stroke="#2563eb" stroke-width="2"/>
+    <text x="180" y="32" text-anchor="middle" font-family="sans-serif" font-size="18" font-weight="700" fill="#1e3a8a">客观真实性 (Factuality)</text>
+
+    <rect x="15" y="45" width="330" height="40" rx="6" fill="#eff6ff"/>
+    <text x="180" y="70" text-anchor="middle" font-family="sans-serif" font-size="18" font-weight="700" fill="#1d4ed8">现实检验：客观世界事实真值</text>
+
+    <text x="180" y="115" text-anchor="middle" font-family="sans-serif" font-size="18" fill="#334155">1. 通过可靠证据核对事实</text>
+    <text x="180" y="145" text-anchor="middle" font-family="sans-serif" font-size="18" fill="#334155">2. 需权威外部证据溯源支撑</text>
+    <text x="180" y="175" text-anchor="middle" font-family="sans-serif" font-size="18" fill="#334155">3. 笃定语气不代表置信度校准</text>
+    <text x="180" y="205" text-anchor="middle" font-family="sans-serif" font-size="18" fill="#1e40af">可用手段：检索与外部核对</text>
+  </g>
+</svg>
