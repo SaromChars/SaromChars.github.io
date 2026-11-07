@@ -1,0 +1,1010 @@
+<!DOCTYPE html><html dir="ltr" lang="zh-CN" class="overflow-y-scroll scroll-smooth"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1"><link rel="icon" type="image/png" href="/images/favicon-32x32-next.png"><link rel="icon" href="/favicon.ico"><link rel="canonical" href="https://www.saromchars.tech/posts/llm-long-context-boundaries/"><meta name="generator" content="Astro v7.4.5"><!-- Primary meta --><title>Longformer 的长上下文建模 | Sarom&#39;s Blog</title><meta name="title" content="Longformer 的长上下文建模 | Sarom's Blog"><meta name="description" content="针对标准自注意力随长度二次方增长的计算与显存开销，剖析 Longformer 如何将全连接替换为局部滑动窗口与少量任务全局连接，将计算与注意力矩阵显存降为随序列长度线性扩展；同时解析带状算子实现与分阶段训练策略，并结合多跳问答与篇章分类实验说明上下文收益取决于证据是分散多跳还是局部集中。"><meta name="author" content="Sarom Chars"><link rel="sitemap" href="/sitemap-index.xml"><!-- Open Graph --><meta property="og:type" content="article"><meta property="og:site_name" content="Sarom's Blog"><meta property="og:title" content="Longformer 的长上下文建模 | Sarom's Blog"><meta property="og:description" content="针对标准自注意力随长度二次方增长的计算与显存开销，剖析 Longformer 如何将全连接替换为局部滑动窗口与少量任务全局连接，将计算与注意力矩阵显存降为随序列长度线性扩展；同时解析带状算子实现与分阶段训练策略，并结合多跳问答与篇章分类实验说明上下文收益取决于证据是分散多跳还是局部集中。"><meta property="og:url" content="https://www.saromchars.tech/posts/llm-long-context-boundaries/"><meta property="og:image" content="https://www.saromchars.tech/og.png"><!-- Twitter / X --><meta property="twitter:card" content="summary_large_image"><meta property="twitter:url" content="https://www.saromchars.tech/posts/llm-long-context-boundaries/"><meta property="twitter:title" content="Longformer 的长上下文建模 | Sarom's Blog"><meta property="twitter:description" content="针对标准自注意力随长度二次方增长的计算与显存开销，剖析 Longformer 如何将全连接替换为局部滑动窗口与少量任务全局连接，将计算与注意力矩阵显存降为随序列长度线性扩展；同时解析带状算子实现与分阶段训练策略，并结合多跳问答与篇章分类实验说明上下文收益取决于证据是分散多跳还是局部集中。"><meta property="twitter:image" content="https://www.saromchars.tech/og.png"><!-- RSS autodiscovery --><link rel="alternate" type="application/rss+xml" title="Sarom's Blog" href="https://www.saromchars.tech/rss.xml"><!-- Filled at runtime by theme.ts to match the current background colour --><meta name="theme-color" content=""><!-- Extra head content injected by child layouts (e.g. JSON-LD, article meta) --><meta property="article:published_time" content="2022-04-15T02:00:00.000Z"><script type="application/ld+json">{"@context":"https://schema.org","@type":"BlogPosting","headline":"Longformer 的长上下文建模","mainEntityOfPage":"https://www.saromchars.tech/posts/llm-long-context-boundaries/","datePublished":"2022-04-15T02:00:00.000Z","author":[{"@type":"Person","name":"Sarom Chars","url":"https://github.com/SaromChars"}]}</script><!--
+      Inline FOUC-prevention script: sets data-theme on <html> before
+      the browser paints. Runs synchronously, no defer/async.
+    --><script>
+      (function () {
+        const stored = localStorage.getItem("theme");
+        const prefersDark = window.matchMedia(
+          "(prefers-color-scheme: dark)"
+        ).matches;
+        const theme = stored ?? (prefersDark ? "dark" : "light");
+        const root = document.firstElementChild;
+        root?.setAttribute("data-theme", theme);
+        root?.classList.toggle("dark", theme === "dark");
+        // Expose value so theme.ts can skip re-detection.
+        window.__theme = { value: theme };
+      })();
+    </script><meta name="robots" content="index, follow"><script async src="https://www.googletagmanager.com/gtag/js?id=G-WJJJTJ4FWX"></script><script>(function(){const measurementId = "G-WJJJTJ4FWX";
+
+    window.dataLayer = window.dataLayer || [];
+    function gtag(){ window.dataLayer.push(arguments); }
+    gtag('js', new Date());
+    gtag('config', measurementId);
+  })();</script><style>@keyframes astroFadeInOut{0%{opacity:1}to{opacity:0}}@keyframes astroFadeIn{0%{opacity:0;mix-blend-mode:plus-lighter}to{opacity:1;mix-blend-mode:plus-lighter}}@keyframes astroFadeOut{0%{opacity:1;mix-blend-mode:plus-lighter}to{opacity:0;mix-blend-mode:plus-lighter}}@keyframes astroSlideFromRight{0%{transform:translate(100%)}}@keyframes astroSlideFromLeft{0%{transform:translate(-100%)}}@keyframes astroSlideToRight{to{transform:translate(100%)}}@keyframes astroSlideToLeft{to{transform:translate(-100%)}}@media (prefers-reduced-motion){::view-transition-group(*),::view-transition-old(*),::view-transition-new(*),[data-astro-transition-scope]{animation:none!important}}
+</style><link rel="stylesheet" href="/_astro/Footer.DC6qDsIp.css"><style>[data-astro-transition-scope="astro-bztu2lml-1"] { view-transition-name: ai; }@layer astro { ::view-transition-old(ai) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }::view-transition-new(ai) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }[data-astro-transition=back]::view-transition-old(ai) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition=back]::view-transition-new(ai) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; } }[data-astro-transition-fallback="old"] [data-astro-transition-scope="astro-bztu2lml-1"],
+			[data-astro-transition-fallback="old"][data-astro-transition-scope="astro-bztu2lml-1"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition-fallback="new"] [data-astro-transition-scope="astro-bztu2lml-1"],
+			[data-astro-transition-fallback="new"][data-astro-transition-scope="astro-bztu2lml-1"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }[data-astro-transition=back][data-astro-transition-fallback="old"] [data-astro-transition-scope="astro-bztu2lml-1"],
+			[data-astro-transition=back][data-astro-transition-fallback="old"][data-astro-transition-scope="astro-bztu2lml-1"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition=back][data-astro-transition-fallback="new"] [data-astro-transition-scope="astro-bztu2lml-1"],
+			[data-astro-transition=back][data-astro-transition-fallback="new"][data-astro-transition-scope="astro-bztu2lml-1"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }</style><style>[data-astro-transition-scope="astro-bztu2lml-2"] { view-transition-name: llm; }@layer astro { ::view-transition-old(llm) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }::view-transition-new(llm) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }[data-astro-transition=back]::view-transition-old(llm) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition=back]::view-transition-new(llm) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; } }[data-astro-transition-fallback="old"] [data-astro-transition-scope="astro-bztu2lml-2"],
+			[data-astro-transition-fallback="old"][data-astro-transition-scope="astro-bztu2lml-2"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition-fallback="new"] [data-astro-transition-scope="astro-bztu2lml-2"],
+			[data-astro-transition-fallback="new"][data-astro-transition-scope="astro-bztu2lml-2"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }[data-astro-transition=back][data-astro-transition-fallback="old"] [data-astro-transition-scope="astro-bztu2lml-2"],
+			[data-astro-transition=back][data-astro-transition-fallback="old"][data-astro-transition-scope="astro-bztu2lml-2"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition=back][data-astro-transition-fallback="new"] [data-astro-transition-scope="astro-bztu2lml-2"],
+			[data-astro-transition=back][data-astro-transition-fallback="new"][data-astro-transition-scope="astro-bztu2lml-2"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }</style><style>[data-astro-transition-scope="astro-bztu2lml-3"] { view-transition-name: longcontext; }@layer astro { ::view-transition-old(longcontext) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }::view-transition-new(longcontext) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }[data-astro-transition=back]::view-transition-old(longcontext) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition=back]::view-transition-new(longcontext) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; } }[data-astro-transition-fallback="old"] [data-astro-transition-scope="astro-bztu2lml-3"],
+			[data-astro-transition-fallback="old"][data-astro-transition-scope="astro-bztu2lml-3"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition-fallback="new"] [data-astro-transition-scope="astro-bztu2lml-3"],
+			[data-astro-transition-fallback="new"][data-astro-transition-scope="astro-bztu2lml-3"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }[data-astro-transition=back][data-astro-transition-fallback="old"] [data-astro-transition-scope="astro-bztu2lml-3"],
+			[data-astro-transition=back][data-astro-transition-fallback="old"][data-astro-transition-scope="astro-bztu2lml-3"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition=back][data-astro-transition-fallback="new"] [data-astro-transition-scope="astro-bztu2lml-3"],
+			[data-astro-transition=back][data-astro-transition-fallback="new"][data-astro-transition-scope="astro-bztu2lml-3"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }</style><style>[data-astro-transition-scope="astro-bztu2lml-4"] { view-transition-name: transformer; }@layer astro { ::view-transition-old(transformer) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }::view-transition-new(transformer) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }[data-astro-transition=back]::view-transition-old(transformer) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition=back]::view-transition-new(transformer) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; } }[data-astro-transition-fallback="old"] [data-astro-transition-scope="astro-bztu2lml-4"],
+			[data-astro-transition-fallback="old"][data-astro-transition-scope="astro-bztu2lml-4"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition-fallback="new"] [data-astro-transition-scope="astro-bztu2lml-4"],
+			[data-astro-transition-fallback="new"][data-astro-transition-scope="astro-bztu2lml-4"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }[data-astro-transition=back][data-astro-transition-fallback="old"] [data-astro-transition-scope="astro-bztu2lml-4"],
+			[data-astro-transition=back][data-astro-transition-fallback="old"][data-astro-transition-scope="astro-bztu2lml-4"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition=back][data-astro-transition-fallback="new"] [data-astro-transition-scope="astro-bztu2lml-4"],
+			[data-astro-transition=back][data-astro-transition-fallback="new"][data-astro-transition-scope="astro-bztu2lml-4"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }</style><style>[data-astro-transition-scope="astro-bztu2lml-5"] { view-transition-name: attentionmechanism; }@layer astro { ::view-transition-old(attentionmechanism) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }::view-transition-new(attentionmechanism) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }[data-astro-transition=back]::view-transition-old(attentionmechanism) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition=back]::view-transition-new(attentionmechanism) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; } }[data-astro-transition-fallback="old"] [data-astro-transition-scope="astro-bztu2lml-5"],
+			[data-astro-transition-fallback="old"][data-astro-transition-scope="astro-bztu2lml-5"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition-fallback="new"] [data-astro-transition-scope="astro-bztu2lml-5"],
+			[data-astro-transition-fallback="new"][data-astro-transition-scope="astro-bztu2lml-5"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }[data-astro-transition=back][data-astro-transition-fallback="old"] [data-astro-transition-scope="astro-bztu2lml-5"],
+			[data-astro-transition=back][data-astro-transition-fallback="old"][data-astro-transition-scope="astro-bztu2lml-5"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition=back][data-astro-transition-fallback="new"] [data-astro-transition-scope="astro-bztu2lml-5"],
+			[data-astro-transition=back][data-astro-transition-fallback="new"][data-astro-transition-scope="astro-bztu2lml-5"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }</style></head><body class="bg-background font-app text-foreground selection:bg-accent/75 selection:text-accent-foreground flex min-h-svh flex-col"><a id="skip-to-content" href="#main-content" class="bg-background text-accent absolute inset-s-16 -top-full z-50 px-3 py-2 backdrop-blur-lg transition-all focus:top-4">跳到正文</a><header class="app-layout flex flex-col items-center justify-between sm:flex-row"><div class="border-border bg-background relative flex w-full items-baseline justify-between border-b py-4 sm:items-center sm:py-6"><a href="/" class="absolute py-1 text-xl leading-8 font-semibold whitespace-nowrap sm:static sm:my-auto sm:text-2xl sm:leading-none">Sarom&#39;s Blog</a><nav id="nav-menu" class="flex w-full flex-col items-center sm:ms-2 sm:flex-row sm:justify-end sm:space-x-4 sm:py-0"><button id="menu-btn" class="focus-outline self-end p-2 sm:hidden" aria-label="展开菜单" aria-expanded="false" aria-controls="menu-items" data-label-open="展开菜单" data-label-close="收起菜单"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="hidden" viewBox="0 0 24 24" id="close-icon"><path stroke="none" d="M0 0h24v24H0z" /><path d="M18 6 6 18M6 6l12 12" /></svg><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="icon icon-tabler icons-tabler-outline icon-tabler-menu-deep" viewBox="0 0 24 24" id="menu-icon"><path stroke="none" d="M0 0h24v24H0z" /><path d="M4 6h16M7 12h13M10 18h10" /></svg></button><ul id="menu-items" class="[&amp;&gt;li&gt;a]:hover:text-accent mt-4 hidden w-44 grid-cols-2 place-content-center gap-2 sm:mt-0 sm:flex sm:w-auto sm:gap-x-5 sm:gap-y-0 sm:[&amp;&gt;li]:h-8 [&amp;&gt;li&gt;a]:block [&amp;&gt;li&gt;a]:px-4 [&amp;&gt;li&gt;a]:py-3 [&amp;&gt;li&gt;a]:text-center [&amp;&gt;li&gt;a]:font-medium sm:[&amp;&gt;li&gt;a]:px-2 sm:[&amp;&gt;li&gt;a]:py-1"><li class="col-span-2"><a href="/posts/" class="active-nav">文章</a></li><li class="col-span-2"><a href="/tags/">标签</a></li><li class="col-span-2"><a href="/about/">关于</a></li><li class="col-span-2"><a href="/archives/" title="归档" aria-label="归档" class="group inline-flex items-center gap-1 hover:text-accent focus-outline flex size-full justify-center p-3 sm:relative sm:size-8 sm:p-0"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="hidden sm:absolute sm:top-1/2 sm:left-1/2 sm:block sm:size-6 sm:-translate-x-1/2 sm:-translate-y-1/2" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M3 6a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2 2 2 0 0 1-2 2H5a2 2 0 0 1-2-2M5 8v10a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8M10 12h4" /></svg><span class="sm:sr-only">归档</span></a></li><li class="col-span-1 flex items-center justify-center"><a href="/search/" title="搜索" aria-label="搜索" class="group inline-flex items-center gap-1 hover:text-accent focus-outline relative size-8"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="absolute top-1/2 left-1/2 size-6 -translate-x-1/2 -translate-y-1/2" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M3 10a7 7 0 1 0 14 0 7 7 0 1 0-14 0M21 21l-6-6" /></svg><span class="sr-only">搜索</span></a></li><li class="col-span-1 flex items-center justify-center"><button id="theme-btn" class="focus-outline hover:[&amp;&gt;svg]:stroke-accent relative size-12 p-4 sm:size-8" title="切换主题" aria-label="auto" aria-live="polite"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="absolute top-[50%] left-[50%] translate-[-50%] scale-100 rotate-0 transition-all dark:scale-0 dark:-rotate-90" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M12 3h.393a7.5 7.5 0 0 0 7.92 12.446A9 9 0 1 1 12 2.992z" /></svg><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="absolute top-[50%] left-[50%] translate-[-50%] scale-0 rotate-90 transition-all dark:scale-100 dark:rotate-0" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M14.828 14.828a4 4 0 1 0-5.656-5.656 4 4 0 0 0 5.656 5.656M6.343 17.657l-1.414 1.414M6.343 6.343 4.929 4.929M17.657 6.343l1.414-1.414M17.657 17.657l1.414 1.414M4 12H2M12 4V2M20 12h2M12 20v2" /></svg></button></li></ul></nav></div></header><script type="module">function e(){let e=document.querySelector(`#menu-btn`),t=document.querySelector(`#menu-items`),n=document.querySelector(`#menu-icon`),r=document.querySelector(`#close-icon`);if(!e||!t||!n||!r)return;let i=e.dataset.labelOpen??`Open menu`,a=e.dataset.labelClose??`Close menu`;e.addEventListener(`click`,()=>{let o=e.getAttribute(`aria-expanded`)===`true`;e.setAttribute(`aria-expanded`,o?`false`:`true`),e.setAttribute(`aria-label`,o?i:a),t.classList.toggle(`hidden`),t.classList.toggle(`grid`),n.classList.toggle(`hidden`),r.classList.toggle(`hidden`)})}function t(){let e=document.getElementById(`skip-to-content`);e&&e.addEventListener(`click`,e=>{if(e.defaultPrevented||e.metaKey||e.ctrlKey||e.shiftKey||e.button!==0)return;e.preventDefault();let t=document.getElementById(`main-content`);t&&(t.setAttribute(`tabindex`,`-1`),t.addEventListener(`blur`,()=>t.removeAttribute(`tabindex`),{once:!0}),t.focus(),t.scrollIntoView({behavior:`smooth`}))})}e(),document.addEventListener(`astro:after-swap`,e),t(),document.addEventListener(`astro:after-swap`,t);</script><div class="app-layout flex items-center justify-start"><a id="back-button" href="/" class="group inline-flex items-center gap-1 hover:text-accent focus-outline hover:text-foreground/75 -ms-2 mt-8 mb-2"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="inline-block size-6 rtl:rotate-180" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="m15 6-6 6 6 6" /></svg><span>返回</span></a></div><script type="module">function e(){let e=document.querySelector(`#back-button`),t=sessionStorage.getItem(`backUrl`);t&&e&&(e.href=t)}document.addEventListener(`astro:page-load`,e),e();</script><main id="main-content" class="app-layout" data-pagefind-body><h1 style="view-transition-name:llm-long-context-boundaries" class="text-accent inline-block text-2xl font-bold sm:text-3xl">Longformer 的长上下文建模</h1><div class="my-2 flex items-center gap-2"><div class="text-muted-foreground flex items-center gap-x-2"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="inline-block size-6 min-w-5.5" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M4 7a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2zM16 3v4M8 3v4M4 11h16M7 14h.013M10.01 14h.005M13.01 14h.005M16.015 14h.005M13.015 17h.005M7.01 17h.005M10.01 17h.005" /></svg><time class="text-sm sm:text-base" datetime="2022-04-15T02:00:00.000Z">2022年4月15日</time></div><span aria-hidden="true" class="text-muted-foreground max-sm:hidden hidden">|</span></div><article id="article" class="mt-8 w-full app-prose max-w-app prose-pre:bg-(--shiki-light-bg) dark:prose-pre:bg-(--shiki-dark-bg)"><p>在大语言模型（large language model，LLM）与预训练语言模型的演进中，Transformer<a href="#ref-beltagy-2020"><span id="citation-beltagy-vaswani">1 (§1)</span></a> 架构凭借自注意力（self-attention）捕获全局上下文依赖的能力，奠定了现代文本建模的基石。然而，标准全自注意力的计算时间与注意力矩阵显存消耗随着序列长度呈现二次方（<code>O(n^2)</code>）增长。在常规深度学习框架实现下，早期的 BERT 与 RoBERTa 等主流预训练模型普遍受限于 512 个 token（模型处理的基本序列单位，词元）的输入上限。</p>
+<p>面对长篇小说、学术论文或跨文档推理任务，512 token 的输入限制迫使工程实践依赖文本截断（truncation）、滑动分块（chunking）或两阶段检索过滤（two-stage retrieval）<a href="#ref-beltagy-2020"><span id="citation-beltagy-sec2">1 (§2)</span></a>。简单截断容易丢弃尾部关键事实；分块独立编码在底层缺少跨块自注意力，后续需通过上层任务模型另行拼接整合；两阶段检索若在第一阶段召回偏差，则会引发级联错误。</p>
+<p>为了在长文本场景下降低计算开销，Beltagy et al. 于 2020 年提出了 Longformer 架构<a href="#ref-beltagy-2020"><span id="citation-beltagy-intro">1 (§1)</span></a>。该架构设计了一种随输入长度呈线性（<code>O(n)</code>）扩展的稀疏注意力模式，结合局部滑动窗口与任务驱动的全局注意力。需要首先明确的是，论文包含两组独立的模型与任务设定：一组是在因果解码器下进行的字符级自回归语言建模（character-level autoregressive language modeling，评估输入可达 32,256 字符），另一组是在 RoBERTa 基础上继续预训练的双向掩码语言模型（输入长度扩展至 4,096 token）。两者的单位、注意力掩码与位置机制各有不同，单次前向可接入的上下文跨度也不等同于模型的持久记忆容量。</p>
+<hr>
+<h2 id="1-全自注意力的计算与显存开销">1. 全自注意力的计算与显存开销</h2>
+<p>标准 Transformer 编码器（encoder）计算注意力权重的核心机制，依赖查询（query，Q）、键（key，K）与值（value，V）的内积映射<a href="#ref-beltagy-2020"><span id="citation-beltagy-eq1">1 (§3.1)</span></a>：</p>
+<pre class="astro-code astro-code-themes min-light night-owl" style="--shiki-light:#24292eff;--shiki-dark:#d6deeb;--shiki-light-bg:#ffffff;--shiki-dark-bg:#011627; overflow-x: auto;--file-name-offset: -0.75rem;" tabindex="0" data-language="text"><code><span class="line"><span>标准多头自注意力的核心计算形式：</span></span>
+<span class="line"><span>Attention(Q, K, V) = softmax( (Q · K^T) / sqrt(d_k) ) · V</span></span></code></pre>
+<p>在包含 <code>n</code> 个 token 的输入序列中，矩阵乘法 <code>Q · K^T</code> 需要计算所有位置两两配对的标量积，生成一个维度为 <code>n × n</code> 的注意力矩阵。</p>
+<svg width="100%" height="auto" viewBox="0 0 380 430" role="img" aria-labelledby="svg-dense-banded-title svg-dense-banded-desc" style="max-width: 380px; display: block; margin: 16px auto;">
+  <title id="svg-dense-banded-title">全自注意力与局部滑动窗口注意力的矩阵结构对比</title>
+  <desc id="svg-dense-banded-desc">上图展示标准稠密全自注意力的 n 乘 n 全连接结构；下图展示局部滑动窗口注意力的带状结构，矩阵仅在对角线附近计算权重。</desc>
+  <text x="10" y="26" font-size="18" font-weight="bold" fill="currentColor">(a) 全自注意力（稠密 n × n）</text>
+  <g fill="#2563eb">
+    <rect x="10" y="40" width="22" height="22" rx="3"></rect>
+    <rect x="36" y="40" width="22" height="22" rx="3"></rect>
+    <rect x="62" y="40" width="22" height="22" rx="3"></rect>
+    <rect x="88" y="40" width="22" height="22" rx="3"></rect>
+    <rect x="114" y="40" width="22" height="22" rx="3"></rect>
+    <rect x="10" y="66" width="22" height="22" rx="3"></rect>
+    <rect x="36" y="66" width="22" height="22" rx="3"></rect>
+    <rect x="62" y="66" width="22" height="22" rx="3"></rect>
+    <rect x="88" y="66" width="22" height="22" rx="3"></rect>
+    <rect x="114" y="66" width="22" height="22" rx="3"></rect>
+    <rect x="10" y="92" width="22" height="22" rx="3"></rect>
+    <rect x="36" y="92" width="22" height="22" rx="3"></rect>
+    <rect x="62" y="92" width="22" height="22" rx="3"></rect>
+    <rect x="88" y="92" width="22" height="22" rx="3"></rect>
+    <rect x="114" y="92" width="22" height="22" rx="3"></rect>
+    <rect x="10" y="118" width="22" height="22" rx="3"></rect>
+    <rect x="36" y="118" width="22" height="22" rx="3"></rect>
+    <rect x="62" y="118" width="22" height="22" rx="3"></rect>
+    <rect x="88" y="118" width="22" height="22" rx="3"></rect>
+    <rect x="114" y="118" width="22" height="22" rx="3"></rect>
+    <rect x="10" y="144" width="22" height="22" rx="3"></rect>
+    <rect x="36" y="144" width="22" height="22" rx="3"></rect>
+    <rect x="62" y="144" width="22" height="22" rx="3"></rect>
+    <rect x="88" y="144" width="22" height="22" rx="3"></rect>
+    <rect x="114" y="144" width="22" height="22" rx="3"></rect>
+  </g>
+  <text x="150" y="75" font-size="18" fill="currentColor">复杂度: O(n²)</text>
+  <text x="150" y="110" font-size="18" fill="currentColor">所有位置两两交互</text>
+  <text x="150" y="145" font-size="18" fill="currentColor">显存二次方增长</text>
+  <line x1="10" y1="190" x2="370" y2="190" stroke="currentColor" stroke-dasharray="4" stroke-opacity="0.3"></line>
+  <text x="10" y="225" font-size="18" font-weight="bold" fill="currentColor">(b) 局部滑动窗口（带状 n × w）</text>
+  <g>
+    <rect x="10" y="240" width="22" height="22" rx="3" fill="#2563eb"></rect>
+    <rect x="36" y="240" width="22" height="22" rx="3" fill="#2563eb"></rect>
+    <rect x="62" y="240" width="22" height="22" rx="3" fill="#94a3b8" opacity="0.3"></rect>
+    <rect x="88" y="240" width="22" height="22" rx="3" fill="#94a3b8" opacity="0.3"></rect>
+    <rect x="114" y="240" width="22" height="22" rx="3" fill="#94a3b8" opacity="0.3"></rect>
+    <rect x="10" y="266" width="22" height="22" rx="3" fill="#2563eb"></rect>
+    <rect x="36" y="266" width="22" height="22" rx="3" fill="#2563eb"></rect>
+    <rect x="62" y="266" width="22" height="22" rx="3" fill="#2563eb"></rect>
+    <rect x="88" y="266" width="22" height="22" rx="3" fill="#94a3b8" opacity="0.3"></rect>
+    <rect x="114" y="266" width="22" height="22" rx="3" fill="#94a3b8" opacity="0.3"></rect>
+    <rect x="10" y="292" width="22" height="22" rx="3" fill="#94a3b8" opacity="0.3"></rect>
+    <rect x="36" y="292" width="22" height="22" rx="3" fill="#2563eb"></rect>
+    <rect x="62" y="292" width="22" height="22" rx="3" fill="#2563eb"></rect>
+    <rect x="88" y="292" width="22" height="22" rx="3" fill="#2563eb"></rect>
+    <rect x="114" y="292" width="22" height="22" rx="3" fill="#94a3b8" opacity="0.3"></rect>
+    <rect x="10" y="318" width="22" height="22" rx="3" fill="#94a3b8" opacity="0.3"></rect>
+    <rect x="36" y="318" width="22" height="22" rx="3" fill="#94a3b8" opacity="0.3"></rect>
+    <rect x="62" y="318" width="22" height="22" rx="3" fill="#2563eb"></rect>
+    <rect x="88" y="318" width="22" height="22" rx="3" fill="#2563eb"></rect>
+    <rect x="114" y="318" width="22" height="22" rx="3" fill="#2563eb"></rect>
+    <rect x="10" y="344" width="22" height="22" rx="3" fill="#94a3b8" opacity="0.3"></rect>
+    <rect x="36" y="344" width="22" height="22" rx="3" fill="#94a3b8" opacity="0.3"></rect>
+    <rect x="62" y="344" width="22" height="22" rx="3" fill="#94a3b8" opacity="0.3"></rect>
+    <rect x="88" y="344" width="22" height="22" rx="3" fill="#2563eb"></rect>
+    <rect x="114" y="344" width="22" height="22" rx="3" fill="#2563eb"></rect>
+  </g>
+  <text x="150" y="275" font-size="18" fill="currentColor">复杂度: O(n × w)</text>
+  <text x="150" y="310" font-size="18" fill="currentColor">仅保留局部带状窗口</text>
+  <text x="150" y="345" font-size="18" fill="currentColor">显存随长度线性扩展</text>
+</svg>
+<blockquote><p>图示说明：标准全自注意力在每对 token 之间均计算注意力权重，矩阵呈现完全填充的稠密方阵，注意力矩阵显存开销随序列长度二次方增长；局部滑动窗口注意力仅在由窗口大小 <code>w</code> 确定的对角线附近带状区域内计算注意力，其余元素无需显式计算或存储，从而将复杂度降低为随序列长度线性扩展。</p></blockquote>
+<p>这种全连接计算带来了双重约束<a href="#ref-beltagy-2020"><span id="citation-beltagy-sec1-2">1 (§1, §3.2)</span></a>：</p>
+<ol>
+<li><strong>浮点运算量二次方增长</strong>：前向传播与反向传播的乘加运算次数随序列长度平方级攀升；</li>
+<li><strong>训练期激活值显存占用</strong>：在常规显式存储注意力矩阵的实现中，反向传播需要保留该 <code>n × n</code> 的中间分布矩阵。当序列长度从 512 扩展到 4,096 时，该矩阵的显存需求理论上增大为原本的 64 倍，在给定硬件显存条件下容易发生显存溢出（out-of-memory，OOM）。</li>
+</ol>
+<hr>
+<h2 id="2-局部稀疏注意力滑动窗口与多层感受野">2. 局部稀疏注意力：滑动窗口与多层感受野</h2>
+<p>为了降低显存与计算开销，Longformer 将密集的注意力矩阵进行结构化稀疏（sparsify）变换，仅保留局部和特定位置的连接<a href="#ref-beltagy-2020"><span id="citation-beltagy-sec3">1 (§3)</span></a>。</p>
+<h3 id="21-滑动窗口注意力与感受野累积">2.1 滑动窗口注意力与感受野累积</h3>
+<p>在自然语言文本中，词义与句法依赖具有极强的局部聚集性（local context）<a href="#ref-beltagy-2020"><span id="citation-beltagy-sec31">1 (§3.1)</span></a>。Longformer 采用<strong>滑动窗口注意力（sliding window attention）</strong>：围绕每个 token 设定一个固定大小为 <code>w</code> 的窗口，即每个 token 仅与其左侧及右侧各 <code>w / 2</code> 个相邻 token 计算注意力。</p>
+<p>在窗口大小 <code>w</code> 固定且远小于 <code>n</code> 时，单层自注意力计算的复杂度为 <code>O(n × w)</code>，随序列长度 <code>n</code> 线性增长。</p>
+<p>滑动窗口多层堆叠的感受野逐层累积路径：</p>
+<ul>
+<li><strong>第 1 层（底层）</strong>：每个 token 在局部窗口 <code>w</code> 内仅与相邻 token 交互；</li>
+<li><strong>第 2 层（中间层）</strong>：基于下层激活继续进行局部聚合，有效感受野扩展至 <code>2 × w</code>；</li>
+<li><strong>第 3 层（较高层）</strong>：感受野进一步扩散至 <code>3 × w</code>，覆盖更广跨度；</li>
+<li><strong>第 L 层（顶层）</strong>：堆叠 <code>L</code> 层后理论感受野范围达到 <code>L × w</code>。</li>
+</ul>
+<p>类似卷积神经网络（convolutional neural network，CNN）通过多层小卷积核累积感受野（receptive field），在 Transformer 中堆叠 <code>L</code> 层窗口大小为 <code>w</code> 的滑动窗口层，顶层 token 的理论感受野范围可达到 <code>L × w</code><a href="#ref-beltagy-2020"><span id="citation-beltagy-sec31b">1 (§3.1)</span></a>。</p>
+<h3 id="22-字符级实验中的层级窗口与空洞模式">2.2 字符级实验中的层级窗口与空洞模式</h3>
+<p>在字符级自回归语言建模实验中（因果解码器，窗口仅关注当前位置之前的字符，采用相对正弦位置机制）<a href="#ref-beltagy-2020"><span id="citation-beltagy-sec41">1 (§4.1)</span></a>，论文探索了层间窗口策略：</p>
+<ul>
+<li><strong>底层小窗口、高层大窗口</strong>：底层抽取局部字符与词法特征，高层扩大窗口建模更广范围。在小模型基于 text8 数据集第一阶段训练 150K 步的开发集控制实验中，窗口从底层 32 递增至顶层 512 的配置取得了 1.21 的每字符比特数（bits per character，BPC，该指标越低越好），优于递减配置（1.24）与固定均值配置（1.23）<a href="#ref-beltagy-2020"><span id="citation-beltagy-sec422">1 (§4.2.2, Table 4)</span></a>。论文指出该中间对比用于控制试验，不保证最终完全训练或其他模型的排序完全一致；</li>
+<li><strong>空洞滑动窗口（dilated sliding window）</strong>：类似空洞卷积，在固定窗口大小 <code>w</code> 上引入跨步间距 <code>d</code>（dilation gap），理论感受野可扩展至 <code>L × d × w</code><a href="#ref-beltagy-2020"><span id="citation-beltagy-sec31c">1 (§3.1)</span></a>。在上述字符实验的高层结构中，作者仅在 2 个注意力头上配置空洞，兼顾局部连续性与长距跨越，将 150K 步的开发集 BPC 由 1.21 降至 1.20<a href="#ref-beltagy-2020"><span id="citation-beltagy-sec41b">1 (§4.1, Table 4)</span></a>。</li>
+</ul>
+<blockquote><p><strong>注意文献中的限定与推测</strong>：论文作者特别指出，在从标准预训练模型（RoBERTa）权重进行继续预训练时，加入空洞模式反而降低了下游任务表现；作者推测（suspect）跳跃采样的空洞模式可能与 RoBERTa 原有的全密集预训练权重不兼容，若要生效可能需要从头训练（retraining from scratch）<a href="#ref-beltagy-2020"><span id="citation-beltagy-sec5-fn8">1 (§5, footnote 8)</span></a>。</p></blockquote>
+<hr>
+<h2 id="3-任务归纳偏置对称全局注意力与解耦投影">3. 任务归纳偏置：对称全局注意力与解耦投影</h2>
+<p>纯局部的滑动窗口虽实现了线性计算，但在双向编码器处理分类或问答等下游任务时，信息传递面临路径过长的问题。例如，分类任务需要将全篇信息汇聚到特定的 <code>[CLS]</code> 标记；问答任务需要让问题 token 与全文候选证据建立跨段交互<a href="#ref-beltagy-2020"><span id="citation-beltagy-sec31d">1 (§3.1)</span></a>。因果解码器不能配置对称全局连接以防泄露未来字符，而双向编码器则可根据任务预先指定少量全局位置。</p>
+<h3 id="31-对称全局注意力结构">3.1 对称全局注意力结构</h3>
+<p>Longformer 为此在双向编码器下游微调中引入了<strong>任务驱动的全局注意力（task-motivated global attention）</strong><a href="#ref-beltagy-2020"><span id="citation-beltagy-sec31e">1 (§3.1)</span></a>：</p>
+<ol>
+<li><strong>对称交互</strong>：被赋予全局注意力的 token 会关注序列中的所有 token，同时全序列的所有 token 也都会关注该全局 token；</li>
+<li><strong>维持线性复杂度</strong>：当预设的全局 token 数量 <code>g</code> 较少且独立于序列总长 <code>n</code> 时，局部与全局组合后的总计算复杂度为 <code>O(n × (w + g))</code>，依然保持对序列长度 <code>n</code> 的线性扩展<a href="#ref-beltagy-2020"><span id="citation-beltagy-sec31f">1 (§3.1)</span></a>。</li>
+</ol>
+<svg width="100%" height="auto" viewBox="0 0 380 230" role="img" aria-labelledby="svg-global-title svg-global-desc" style="max-width: 380px; display: block; margin: 16px auto;">
+  <title id="svg-global-title">复合全局与滑动窗口注意力的矩阵结构</title>
+  <desc id="svg-global-desc">展示首行与首列全局 token 与全序列所有位置的双向全连接，以及其余位置保留的局部带状窗口</desc>
+  <g>
+    <!-- Row 1: [CLS] global token attends to all positions -->
+    <rect x="10" y="40" width="22" height="22" rx="3" fill="#7c3aed"></rect>
+    <rect x="36" y="40" width="22" height="22" rx="3" fill="#7c3aed"></rect>
+    <rect x="62" y="40" width="22" height="22" rx="3" fill="#7c3aed"></rect>
+    <rect x="88" y="40" width="22" height="22" rx="3" fill="#7c3aed"></rect>
+    <rect x="114" y="40" width="22" height="22" rx="3" fill="#7c3aed"></rect>
+    <!-- Row 2: t1 -->
+    <rect x="10" y="66" width="22" height="22" rx="3" fill="#7c3aed"></rect>
+    <rect x="36" y="66" width="22" height="22" rx="3" fill="#2563eb"></rect>
+    <rect x="62" y="66" width="22" height="22" rx="3" fill="#2563eb"></rect>
+    <rect x="88" y="66" width="22" height="22" rx="3" fill="#94a3b8" opacity="0.3"></rect>
+    <rect x="114" y="66" width="22" height="22" rx="3" fill="#94a3b8" opacity="0.3"></rect>
+    <!-- Row 3: t2 -->
+    <rect x="10" y="92" width="22" height="22" rx="3" fill="#7c3aed"></rect>
+    <rect x="36" y="92" width="22" height="22" rx="3" fill="#2563eb"></rect>
+    <rect x="62" y="92" width="22" height="22" rx="3" fill="#2563eb"></rect>
+    <rect x="88" y="92" width="22" height="22" rx="3" fill="#2563eb"></rect>
+    <rect x="114" y="92" width="22" height="22" rx="3" fill="#94a3b8" opacity="0.3"></rect>
+    <!-- Row 4: t3 -->
+    <rect x="10" y="118" width="22" height="22" rx="3" fill="#7c3aed"></rect>
+    <rect x="36" y="118" width="22" height="22" rx="3" fill="#94a3b8" opacity="0.3"></rect>
+    <rect x="62" y="118" width="22" height="22" rx="3" fill="#2563eb"></rect>
+    <rect x="88" y="118" width="22" height="22" rx="3" fill="#2563eb"></rect>
+    <rect x="114" y="118" width="22" height="22" rx="3" fill="#2563eb"></rect>
+    <!-- Row 5: tn -->
+    <rect x="10" y="144" width="22" height="22" rx="3" fill="#7c3aed"></rect>
+    <rect x="36" y="144" width="22" height="22" rx="3" fill="#94a3b8" opacity="0.3"></rect>
+    <rect x="62" y="144" width="22" height="22" rx="3" fill="#94a3b8" opacity="0.3"></rect>
+    <rect x="88" y="144" width="22" height="22" rx="3" fill="#2563eb"></rect>
+    <rect x="114" y="144" width="22" height="22" rx="3" fill="#2563eb"></rect>
+  </g>
+  <text x="150" y="60" font-size="18" font-weight="bold" fill="currentColor">全局标记 [CLS]</text>
+  <text x="150" y="95" font-size="18" fill="currentColor">双向对称关注全序列</text>
+  <text x="150" y="130" font-size="18" fill="currentColor">普通位置保留局部窗口</text>
+  <text x="150" y="165" font-size="18" fill="currentColor">总复杂度维持 O(n)</text>
+</svg>
+<blockquote><p>图示说明（仅适用于双向编码器设置）：在预设的少数全局位置（如分类任务的 <code>[CLS]</code> 或问答任务的问题 token）上，全局标记与序列中所有 token 建立双向对称注意力连接；其余普通 token 之间保留局部滑动窗口，并通过全局节点在两层中实现间接信息交换。由于全局标记数量固定且独立于序列总长 <code>n</code>，整体计算复杂度依然维持线性扩展。因果自回归解码器不适用此类无掩码对称全局连接，以防未来字符信息泄露。</p></blockquote>
+<h3 id="32-独立线性投影设置与消融证据">3.2 独立线性投影设置与消融证据</h3>
+<p>为了给局部与全局两类不同模式提供建模灵活性，Longformer 为滑动窗口与全局注意力分别设置了两组独立的线性投影矩阵<a href="#ref-beltagy-2020"><span id="citation-beltagy-sec31g">1 (§3.1)</span></a>：</p>
+<ul>
+<li><strong>局部滑动窗口投影</strong>：使用 <code>Q_s, K_s, V_s</code> 计算局部窗口内的注意力得分，负责建模相邻 token 的局部上下文；</li>
+<li><strong>全局注意力独立投影</strong>：使用 <code>Q_g, K_g, V_g</code> 计算全局标记与全序列的对称交互得分，初始化时复制对应局部投影的初始权重。</li>
+</ul>
+<p>在 WikiHop 多跳问答任务（开发集，默认 5 epoch）中，论文通过消融实验评估了上述结构变体<a href="#ref-beltagy-2020"><span id="citation-beltagy-sec53">1 (§5.3, Table 11)</span></a>：</p>
+<div class="table-wrapper" tabindex="0">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<table><thead><tr><th>模型配置变体（WikiHop 开发集）</th><th>准确率（Accuracy）</th><th>相对 5 epoch 基准差异（Δ）</th></tr></thead><tbody><tr><td>Longformer-base（完整版，5 epoch）</td><td>73.8%</td><td>基准（seqlen: 4,096）</td></tr><tr><td>移除全局注意力独立线性投影</td><td>72.2%</td><td>-1.6 个百分点</td></tr><tr><td>同时移除独立全局投影与全局注意力</td><td>65.5%</td><td>-8.3 个百分点</td></tr><tr><td>序列长度 512、window 配置</td><td>68.8%</td><td>-5.0 个百分点</td></tr></tbody></table></div>
+<p>实验数据显示，在 WikiHop 开发集上，若同时移除独立投影与全局注意力，准确率由 73.8% 降至 65.5%（下降 8.3 个百分点）；若保留全局注意力但强制共享同一组线性投影矩阵，准确率降至 72.2%（下降 1.6 个百分点）。该对照表明在此特定任务配置下，解耦独立投影与引入全局连接均带来了性能收益。</p>
+<hr>
+<h2 id="4-算子实现与训练策略">4. 算子实现与训练策略</h2>
+<p>稀疏注意力虽然降低了理论计算量，但在常见深度学习框架中需要解决非稠密矩阵的硬件执行效率问题。</p>
+<h3 id="41-带状矩阵乘法与-tvm-自定义算子">4.1 带状矩阵乘法与 TVM 自定义算子</h3>
+<p>滑动窗口注意力在矩阵运算上对应<strong>带状矩阵乘法（banded matrix multiplication）</strong>，即仅需计算对角线周围特定带状区域的元素<a href="#ref-beltagy-2020"><span id="citation-beltagy-sec32">1 (§3.2)</span></a>。</p>
+<p>若直接使用通用框架的高阶循环遍历实现，因无法有效调度 GPU 线程高并发，计算速度极慢；若先构造完整稠密掩码再相乘，又会重新承受二次方显存占用。为此，Longformer 借助深度学习编译器 TVM（Tensor Virtual Machine）编写带状矩阵计算逻辑，并编译生成优化的 CUDA 内核<a href="#ref-beltagy-2020"><span id="citation-beltagy-sec32b">1 (§3.2)</span></a>。</p>
+<p>根据论文图 1 算子基准测试（Benchmark）<a href="#ref-beltagy-2020"><span id="citation-beltagy-fig1">1 (§1, Figure 1)</span></a>，该 TVM 自定义算子使内存消耗随序列长度线性增长，其在测试硬件下的运行速度比 PyTorch 简单循环快近 6 倍，并接近针对稠密矩阵高度优化的全自注意力算子。</p>
+<h3 id="42-字符级自回归实验中的分阶段训练与精度设置">4.2 字符级自回归实验中的分阶段训练与精度设置</h3>
+<p>在字符级自回归语言建模训练中，若直接在长序列上从头开始训练，计算消耗依旧较大。论文发现模型需要先通过较多步数学习局部语境，随后再学习利用远距离依赖<a href="#ref-beltagy-2020"><span id="citation-beltagy-sec42">1 (§4.2)</span></a>。</p>
+<p>因此，该实验采用了<strong>分阶段训练策略（staged training procedure）</strong><a href="#ref-beltagy-2020"><span id="citation-beltagy-sec42b">1 (§4.2)</span></a>：</p>
+<ul>
+<li>第 1 阶段：在序列长度 2,048、底层窗口 32 下开始迭代；</li>
+<li>后续阶段：逐步将序列长度与窗口大小翻倍，同时减半学习率；</li>
+<li>最终阶段：序列长度为 23,040，底层窗口扩大至 512，将开销最大的长序列训练推迟至最后阶段完成。</li>
+</ul>
+<p>在数值精度方面，虽然实验采用了混合精度与梯度检查点（gradient checkpointing）以节省显存，但作者指出<strong>注意力得分的运算保持在 FP32 精度</strong>；论文实验观察到若在注意力算子中使用 FP16，在训练后期容易出现浮点溢出并产生 NaN<a href="#ref-beltagy-2020"><span id="citation-beltagy-sec42c">1 (§4.2, footnote 5)</span></a>。</p>
+<h3 id="43-位置嵌入扩展与继续预训练">4.3 位置嵌入扩展与继续预训练</h3>
+<p>为了让预训练上限为 512 的 RoBERTa 双向模型能够直接处理 4,096 token 的输入，Longformer 将 RoBERTa 原有的 512 个已训练位置嵌入（positional embedding）沿序列连续复制多次（copy position embeddings）<a href="#ref-beltagy-2020"><span id="citation-beltagy-sec5">1 (§5)</span></a>。</p>
+<p>基于局部相邻位置注意力偏好的观察，这种复制初始化在保留局部相对结构（分段边界除外）的同时避免了随机初始化带来的早期扰动。在掩码语言建模（masked language modeling，MLM）开发集上，未经更新时随机初始化的 BPC 为 10.299，而复制初始化则为 1.957（接近原版 RoBERTa 的 1.846），随后经过 65K 步继续预训练（continued pretraining）收敛至 1.705<a href="#ref-beltagy-2020"><span id="citation-beltagy-tab6">1 (§5, Table 6)</span></a>。</p>
+<hr>
+<h2 id="5-真实信息利用的边界">5. 真实信息利用的边界</h2>
+<p>将注意力计算开销降至线性，使模型具备了接入数千 token 的物理可行性。然而，<strong>输入窗口可容纳的 token 数量，并不等同于模型实际能够提取并推理的信息量</strong>。论文在多个下游任务开发集上的系统对比，反映出长上下文收益的实际边界<a href="#ref-beltagy-2020"><span id="citation-beltagy-sec52">1 (§5.2)</span></a>。</p>
+<div class="table-wrapper" tabindex="0">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<table><thead><tr><th>评测任务与数据集（开发集）</th><th>RoBERTa-base 基线</th><th>Longformer-base（4,096）</th></tr></thead><tbody><tr><td>多跳问答 WikiHop (Acc)</td><td>72.4%（分块拼接）</td><td>75.0%（15 epoch，+2.6 个百分点）</td></tr><tr><td>篇章分类 Hyperpartisan (F1)</td><td>87.4%（分块拼接）</td><td>94.8%（+7.4 个百分点）</td></tr><tr><td>开放问答 TriviaQA (F1)</td><td>74.3%（分块拼接）</td><td>75.2%（+0.9 个百分点）</td></tr><tr><td>多跳问答 HotpotQA (Joint F1)</td><td>63.5%（分块拼接）</td><td>64.4%（+0.9 个百分点）</td></tr><tr><td>共指消解 OntoNotes (Avg F1)</td><td>78.4%（分块段长 384）</td><td>78.6%（无全局注意力，+0.2 个百分点）</td></tr></tbody></table></div>
+<p>从上述对比中，可以梳理出长上下文实际利用的几处边界：</p>
+<h3 id="51-收益分化取决于任务的证据分布">5.1 收益分化：取决于任务的证据分布</h3>
+<p>在 RoBERTa 基线中，长文本被切分为最长片段（除共指任务调优为 384 外通常为 512）分别编码并拼接表征<a href="#ref-beltagy-2020"><span id="citation-beltagy-sec51">1 (§5.1)</span></a>：</p>
+<ol>
+<li><strong>显著收益任务（WikiHop 与 Hyperpartisan）</strong>：证据分散在多个段落且需要跨段关联，Longformer 单次前向覆盖完整篇章带来了明显提升（WikiHop 提升 2.6 个百分点，Hyperpartisan 提升 7.4 个百分点）；</li>
+<li><strong>平缓收益任务（TriviaQA 与 OntoNotes）</strong>：在 TriviaQA 中，回答问题所需的证据往往集中在局部上下文内，单次窗口扩大的边际增益相对温和（提升 0.9 个百分点）；在 OntoNotes 共指消解中，语料中绝大多数指代词与其实体距离较短，分块拼接基线已能解决大部分情况，因此在扩大局部输入段长后（该任务未配置全局注意力），平均 F1 仅提升 0.2 个百分点。</li>
+</ol>
+<h3 id="52-篇章连贯性与结构归纳偏置">5.2 篇章连贯性与结构归纳偏置</h3>
+<p>在 HotpotQA（干扰项开发集）中，模型需从 10 个维基百科段落中提取证据与答案（2 个段落相关，8 个为干扰项）<a href="#ref-beltagy-2020"><span id="citation-beltagy-sec51b">1 (§5.1)</span></a>。</p>
+<p>Longformer-base 在该任务上的联合 F1 仅提升 0.9 个百分点（64.4% vs 63.5%），表现低于专门引入图神经网络（graph neural network，GNN）的多阶段流水线模型（如 HGN 73.0%、C2F 73.9%）<a href="#ref-beltagy-2020"><span id="citation-beltagy-tab10">1 (§5.2, Table 10)</span></a>；对于 TAP2，原表仅给出答案 F1 79.4 与支撑证据 F1 86.2，未提供联合 F1 数据。</p>
+<ul>
+<li><strong>非连贯篇章拼贴</strong>：作者推测，由于 10 个段落来自完全不同的文档，拼接后的输入缺乏自然文本的篇章连贯性，可能影响模型利用预训练中形成的长程上下文先验；</li>
+<li><strong>实体图偏置的作用</strong>：作者认为图结构模型似乎编码了针对该任务的重要归纳偏置；作者在脚注 12 中同时指出，未来亦可通过在实体位置配置全局注意力来尝试编码此类结构先验。</li>
+</ul>
+<h3 id="53-稀疏连接的信息聚合边界">5.3 稀疏连接的信息聚合边界</h3>
+<p>在纯局部配置中，远距离交互需要沿窗口逐层传递；加入全局节点后，两个普通 token 也可经全局节点在两层中进行间接信息交换。直接连接与理论可达性仍不保证下游任务能有效利用全部远端证据。</p>
+<h3 id="54-具体任务与显存边界">5.4 具体任务与显存边界</h3>
+<p>尽管稀疏机制将自注意力开销降至线性，但从张量规模看，前馈网络（feed-forward network，FFN）张量与多层隐层激活依然占据可观显存。在论文实验中，WikiHop 的 Longformer-large 模型因显存限制仅能输入首个 4,096 token 的序列（Appendix B WikiHop），而 TriviaQA 截断在 4,096 的原因则是为了避免训练时间过长（该实验中 large 模型在 8 张 V100 GPU 上运行 1 天）<a href="#ref-beltagy-2020"><span id="citation-beltagy-appb">1 (Appendix B)</span></a>。</p>
+<hr>
+<h2 id="6-机制与权衡总结">6. 机制与权衡总结</h2>
+<p>在双向编码器的下游任务中，Longformer 结合局部窗口与少量任务全局位置；另一个字符级自回归实验使用仅看前文的滑动与空洞窗口。两者都减少了注意力连接，但长度单位、掩码与任务不同。输入窗口的扩大属于单次前向可接入文本范围的扩展，其对下游性能的实际提升依然受限于任务的证据分布结构、文本本身的连贯性以及具体的稀疏连接模式。理解局部稀疏化、全局连接通路与任务结构之间的匹配关系，是在长文本场景下合理利用该机制的必要前提。</p>
+<hr>
+<h2 id="参考资料">参考资料</h2>
+<ol>
+  <li>
+    Beltagy, I., Peters, M. E., &#x26; Cohan, A. (2020). <i>Longformer: The Long-Document Transformer</i>. arXiv:2004.05150v1 [cs.CL].
+    <br>
+    首次提交日期：2020-04-10；本篇依据版本：2020-04-10 (arXiv:2004.05150v1).
+    <br>
+    原文链接：<a id="ref-beltagy-2020" href="https://arxiv.org/abs/2004.05150v1" target="_blank" rel="noopener noreferrer">https://arxiv.org/abs/2004.05150v1</a>
+  </li>
+</ol></article><hr class="my-8 border-dashed"><div id="btt-btn-container" class="fixed inset-e-4 bottom-8 z-50 md:sticky md:inset-e-auto md:float-end md:me-1 translate-y-14 opacity-0 transition duration-500"><button data-button="back-to-top" class="group bg-background relative px-2 py-1 size-14 rounded-full shadow-xl md:h-8 md:w-fit md:rounded-md md:shadow-none md:focus-visible:rounded-none md:bg-background/35 md:bg-clip-padding md:backdrop-blur-lg"><span id="progress-indicator" class="absolute inset-0 -z-10 block size-14 scale-110 rounded-full bg-transparent md:hidden md:h-8 md:rounded-md"></span><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="inline-block rotate-90 md:hidden" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M5 12h14M5 12l6 6M5 12l6-6" /></svg><span class="group-hover:text-accent sr-only text-sm md:not-sr-only"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="inline-block size-4" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M12 5v14M16 9l-4-4M8 9l4-4" /></svg> 回到顶部</span></button></div><script data-astro-rerun>
+  function backToTop() {
+    const rootElement = document.documentElement;
+    const btnContainer = document.querySelector("#btt-btn-container");
+    const backToTopBtn = document.querySelector("[data-button='back-to-top']");
+    const progressIndicator = document.querySelector("#progress-indicator");
+
+    if (!rootElement || !btnContainer || !backToTopBtn || !progressIndicator)
+      return;
+
+    backToTopBtn.addEventListener("click", () => {
+      document.body.scrollTop = 0;
+      document.documentElement.scrollTop = 0;
+    });
+
+    let lastVisible = null;
+    function handleScroll() {
+      const scrollTotal = rootElement.scrollHeight - rootElement.clientHeight;
+      const scrollTop = rootElement.scrollTop;
+      const scrollPercent = Math.floor((scrollTop / scrollTotal) * 100);
+
+      progressIndicator.style.setProperty(
+        "background-image",
+        `conic-gradient(var(--accent), var(--accent) ${scrollPercent}%, transparent ${scrollPercent}%)`
+      );
+
+      const isVisible = scrollTop / scrollTotal > 0.3;
+
+      if (isVisible !== lastVisible) {
+        btnContainer.classList.toggle("opacity-100", isVisible);
+        btnContainer.classList.toggle("translate-y-0", isVisible);
+        btnContainer.classList.toggle("opacity-0", !isVisible);
+        btnContainer.classList.toggle("translate-y-14", !isVisible);
+        lastVisible = isVisible;
+      }
+    }
+
+    let ticking = false;
+    document.addEventListener("scroll", () => {
+      if (!ticking) {
+        window.requestAnimationFrame(() => {
+          handleScroll();
+          ticking = false;
+        });
+        ticking = true;
+      }
+    });
+  }
+  backToTop();
+</script><ul class="mt-4 mb-8 flex flex-wrap gap-4 sm:my-8"><li><a data-astro-transition-scope="astro-bztu2lml-1" href="/tags/ai/" class="flex items-center gap-0.5 border-foreground border-b-2 border-dashed hover:border-accent hover:text-accent hover:-mt-0.5 focus-visible:text-accent focus-visible:border-none text-sm"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="opacity-80 size-4" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M5 9h14M5 15h14M11 4 7 20M17 4l-4 16" /></svg>AI</a></li><li><a data-astro-transition-scope="astro-bztu2lml-2" href="/tags/llm/" class="flex items-center gap-0.5 border-foreground border-b-2 border-dashed hover:border-accent hover:text-accent hover:-mt-0.5 focus-visible:text-accent focus-visible:border-none text-sm"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="opacity-80 size-4" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M5 9h14M5 15h14M11 4 7 20M17 4l-4 16" /></svg>LLM</a></li><li><a data-astro-transition-scope="astro-bztu2lml-3" href="/tags/longcontext/" class="flex items-center gap-0.5 border-foreground border-b-2 border-dashed hover:border-accent hover:text-accent hover:-mt-0.5 focus-visible:text-accent focus-visible:border-none text-sm"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="opacity-80 size-4" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M5 9h14M5 15h14M11 4 7 20M17 4l-4 16" /></svg>LongContext</a></li><li><a data-astro-transition-scope="astro-bztu2lml-4" href="/tags/transformer/" class="flex items-center gap-0.5 border-foreground border-b-2 border-dashed hover:border-accent hover:text-accent hover:-mt-0.5 focus-visible:text-accent focus-visible:border-none text-sm"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="opacity-80 size-4" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M5 9h14M5 15h14M11 4 7 20M17 4l-4 16" /></svg>Transformer</a></li><li><a data-astro-transition-scope="astro-bztu2lml-5" href="/tags/attentionmechanism/" class="flex items-center gap-0.5 border-foreground border-b-2 border-dashed hover:border-accent hover:text-accent hover:-mt-0.5 focus-visible:text-accent focus-visible:border-none text-sm"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="opacity-80 size-4" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M5 9h14M5 15h14M11 4 7 20M17 4l-4 16" /></svg>AttentionMechanism</a></li></ul><hr class="my-8 border-dashed"><div data-pagefind-ignore class="my-8 grid grid-cols-1 gap-6 sm:grid-cols-2"><a href="/posts/llm-multimodal-alignment/" class="flex w-full gap-1 hover:opacity-75"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="inline-block flex-none rtl:rotate-180" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M5 12h14M5 12l6 6M5 12l6-6" /></svg><div><span>上一篇</span><div class="text-accent/85 text-sm">多模态文本与图像的表征对齐</div></div></a><a href="/posts/llm-reasoning-verification/" class="flex w-full justify-end gap-1 text-end hover:opacity-75 sm:col-start-2"><div><span>下一篇</span><div class="text-accent/85 text-sm">思维链与自洽性</div></div><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="inline-block flex-none rtl:rotate-180" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M5 12h14M13 18l6-6M13 6l6 6" /></svg></a></div></main><footer class="app-layout mt-auto"><div class="border-border flex flex-col items-center justify-between border-t py-6 sm:flex-row-reverse sm:py-4"><div class="flex flex-wrap items-center gap-1"><a href="https://github.com/SaromChars" title="Sarom Chars 的 GitHub" class="group inline-flex items-center gap-1 hover:text-accent p-2 hover:rotate-6 sm:p-1"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="inline-block size-6 scale-125 fill-transparent stroke-current stroke-2 opacity-90 group-hover:fill-transparent sm:scale-110" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M9 19c-4.3 1.4-4.3-2.5-6-3m12 5v-3.5c0-1 .1-1.4-.5-2 2.8-.3 5.5-1.4 5.5-6a4.6 4.6 0 0 0-1.3-3.2 4.2 4.2 0 0 0-.1-3.2s-1.1-.3-3.5 1.3a12.3 12.3 0 0 0-6.2 0C6.5 2.8 5.4 3.1 5.4 3.1a4.2 4.2 0 0 0-.1 3.2A4.6 4.6 0 0 0 4 9.5c0 4.6 2.7 5.7 5.5 6-.6.6-.6 1.2-.5 2V21" /></svg><span class="sr-only">Sarom Chars 的 GitHub</span></a></div><div class="my-2 flex flex-col items-center whitespace-nowrap sm:flex-row"><span>版权 &#169; 2026</span><span class="hidden sm:inline">&nbsp;|&nbsp;</span><span>保留所有权利。</span></div></div></footer><script type="module">var e=`theme`,t=`light`,n=`dark`;function r(){return localStorage.getItem(e)||(window.matchMedia(`(prefers-color-scheme: dark)`).matches?n:t)}var i=window.__theme?.value??r();function a(){localStorage.setItem(e,i),o()}function o(){let e=document.firstElementChild;e?.setAttribute(`data-theme`,i),e?.classList.toggle(`dark`,i===n),document.querySelector(`#theme-btn`)?.setAttribute(`aria-label`,i);let t=window.getComputedStyle(document.body).backgroundColor;document.querySelector(`meta[name='theme-color']`)?.setAttribute(`content`,t)}function s(){o(),document.querySelector(`#theme-btn`)?.addEventListener(`click`,()=>{i=i===t?n:t,a()})}s(),document.addEventListener(`astro:after-swap`,s),document.addEventListener(`astro:before-swap`,e=>{let t=document.querySelector(`meta[name='theme-color']`)?.getAttribute(`content`);t&&e.newDocument.querySelector(`meta[name='theme-color']`)?.setAttribute(`content`,t)}),window.matchMedia(`(prefers-color-scheme: dark)`).addEventListener(`change`,({matches:e})=>{i=e?n:t,a()});</script></body></html><script type="module">var e=document.querySelector(`#article`);if(e?.querySelector(`a[href^="#ref-"]`)){let t=null,n=!1,r=document.createElement(`button`);r.type=`button`,r.className=`citation-return`,r.textContent=`返回阅读位置`,r.setAttribute(`data-pagefind-ignore`,``),e.addEventListener(`click`,n=>{if(n.button!==0||n.metaKey||n.ctrlKey||n.shiftKey||n.altKey)return;let i=n.target instanceof Element?n.target.closest(`a[href^="#ref-"]`):null;if(!i||!e.contains(i))return;let a=i.hash,o=document.getElementById(decodeURIComponent(a.slice(1)));o&&e.contains(o)&&(t={source:i,url:window.location.href,top:window.scrollY,left:window.scrollX,targetHash:a},o.insertAdjacentElement(`afterend`,r))}),r.addEventListener(`click`,()=>{if(!t||n)return;let e=t,i=i=>{r.remove(),window.requestAnimationFrame(()=>{window.requestAnimationFrame(()=>{e.source.focus({preventScroll:!0}),window.scrollTo({top:e.top,left:e.left,behavior:`instant`}),t=null,n=!1,i?.()})})};window.location.href===e.url?i():(n=!0,window.addEventListener(`popstate`,()=>{let e=window.history.scrollRestoration;window.history.scrollRestoration=`manual`,window.setTimeout(()=>{i(()=>{window.history.scrollRestoration=e})},0)},{once:!0}),window.history.back())}),window.addEventListener(`hashchange`,()=>{!n&&t&&window.location.hash!==t.targetHash&&(r.remove(),t=null)})}</script><script data-astro-rerun>
+  function createProgressBar() {
+    const progressContainer = document.createElement("div");
+    progressContainer.className =
+      "progress-container fixed top-0 z-10 h-1 w-full bg-background";
+
+    const progressBar = document.createElement("div");
+    progressBar.className = "progress-bar h-1 w-0 bg-accent";
+    progressBar.id = "myBar";
+
+    progressContainer.appendChild(progressBar);
+    document.body.appendChild(progressContainer);
+  }
+  createProgressBar();
+
+  function updateScrollProgress() {
+    document.addEventListener("scroll", () => {
+      const winScroll =
+        document.body.scrollTop || document.documentElement.scrollTop;
+      const height =
+        document.documentElement.scrollHeight -
+        document.documentElement.clientHeight;
+      const scrolled = (winScroll / height) * 100;
+      if (document) {
+        const myBar = document.getElementById("myBar");
+        if (myBar) {
+          myBar.style.width = scrolled + "%";
+        }
+      }
+    });
+  }
+  updateScrollProgress();
+
+  function addHeadingLinks() {
+    const headings = Array.from(
+      document.querySelectorAll("h2, h3, h4, h5, h6")
+    );
+    for (const heading of headings) {
+      heading.classList.add("group");
+      const link = document.createElement("a");
+      link.className =
+        "heading-link ms-2 no-underline opacity-75 md:opacity-0 md:group-hover:opacity-100 md:focus:opacity-100";
+      link.href = "#" + heading.id;
+
+      const span = document.createElement("span");
+      span.ariaHidden = "true";
+      span.innerText = "#";
+      link.appendChild(span);
+      heading.appendChild(link);
+    }
+  }
+  addHeadingLinks();
+
+  function attachCopyButtons() {
+    const copyButtonLabel = "Copy";
+    const codeBlocks = Array.from(document.querySelectorAll("pre"));
+
+    for (const codeBlock of codeBlocks) {
+      const wrapper = document.createElement("div");
+      wrapper.style.position = "relative";
+
+      const computedStyle = getComputedStyle(codeBlock);
+      const hasFileNameOffset =
+        computedStyle.getPropertyValue("--file-name-offset").trim() !== "";
+
+      const topClass = hasFileNameOffset
+        ? "top-(--file-name-offset)"
+        : "-top-3";
+
+      const copyButton = document.createElement("button");
+      copyButton.className = `copy-code absolute end-3 ${topClass} rounded bg-muted border border-muted px-2 py-1 text-xs leading-4 text-foreground font-medium`;
+      copyButton.innerHTML = copyButtonLabel;
+      codeBlock.setAttribute("tabindex", "0");
+      codeBlock.appendChild(copyButton);
+
+      codeBlock?.parentNode?.insertBefore(wrapper, codeBlock);
+      wrapper.appendChild(codeBlock);
+
+      copyButton.addEventListener("click", async () => {
+        await copyCode(codeBlock, copyButton);
+      });
+    }
+
+    async function copyCode(block, button) {
+      const code = block.querySelector("code");
+      const text = code?.innerText;
+
+      await navigator.clipboard.writeText(text ?? "");
+
+      button.innerText = "Copied";
+
+      setTimeout(() => {
+        button.innerText = copyButtonLabel;
+      }, 700);
+    }
+  }
+  attachCopyButtons();
+
+  /** Accessible image lightbox for article images. */
+  function initLightbox() {
+    const article = document.getElementById("article");
+    if (!article) return;
+
+    const prefersReducedMotion = () =>
+      window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+    let overlay = null;
+    let lastFocused = null;
+    let removeDragListeners = null;
+
+    // Defer attribute mutations so they don't push the LCP timestamp.
+    // Event listeners below use delegation and don't need the attributes to exist yet.
+    requestAnimationFrame(() => {
+      const images = Array.from(article.querySelectorAll("img"));
+      for (const image of images) {
+        if (image.closest("a")) continue;
+        image.setAttribute("role", "button");
+        image.setAttribute("tabindex", "0");
+        image.setAttribute("aria-haspopup", "dialog");
+        image.setAttribute(
+          "aria-label",
+          image.alt ? `Zoom image: ${image.alt}` : "Zoom image"
+        );
+      }
+    });
+
+    function open(src, alt, trigger) {
+      if (overlay) return;
+      lastFocused = trigger ?? document.activeElement;
+
+      overlay = document.createElement("div");
+      overlay.setAttribute("role", "dialog");
+      overlay.setAttribute("aria-modal", "true");
+      overlay.setAttribute(
+        "aria-label",
+        alt ? `Image preview: ${alt}` : "Image preview"
+      );
+      overlay.className =
+        "fixed inset-0 z-50 flex cursor-zoom-out items-center justify-center bg-black/70 backdrop-blur-sm opacity-0 transition-opacity duration-200 motion-reduce:transition-none";
+
+      const closeButton = document.createElement("button");
+      closeButton.type = "button";
+      closeButton.setAttribute("aria-label", "Close image preview");
+      closeButton.className =
+        "absolute end-4 top-4 z-1 flex size-11 items-center justify-center rounded bg-black/50 text-3xl leading-none text-white";
+      closeButton.innerHTML = "&#10005;";
+      closeButton.addEventListener("click", close);
+
+      const image = document.createElement("img");
+      image.src = src;
+      image.alt = "";
+      image.className =
+        "max-h-[90dvh] max-w-[90dvw] cursor-default object-contain transition-transform duration-100 ease-out motion-reduce:transition-none data-[zoom=drag]:cursor-grabbing data-[zoom=drag]:transition-none data-[zoom=in]:cursor-grab";
+
+      overlay.append(closeButton, image);
+      overlay.addEventListener("click", e => {
+        if (e.target === overlay && currentScale <= 1) close();
+      });
+
+      let currentScale = 1;
+      let translateX = 0;
+      let translateY = 0;
+      let initialDist = 0;
+      let initialScale = 1;
+      let panStartX = 0;
+      let panStartY = 0;
+      let panStartTranslateX = 0;
+      let panStartTranslateY = 0;
+      let lastTapTime = 0;
+
+      function applyTransform() {
+        image.style.transform = `scale(${currentScale}) translate(${translateX}px, ${translateY}px)`;
+        // A backdrop click only closes at fit size, so drop the zoom-out cursor while zoomed.
+        overlay?.classList.toggle("cursor-zoom-out", currentScale <= 1);
+      }
+
+      function resetTransform() {
+        currentScale = 1;
+        translateX = 0;
+        translateY = 0;
+        image.style.transform = "";
+        image.removeAttribute("data-zoom");
+        overlay?.classList.add("cursor-zoom-out");
+      }
+
+      // Keep the zoomed image from being panned past its edges.
+      function clampTranslate() {
+        if (!overlay) return;
+        const maxX = Math.max(
+          0,
+          (image.clientWidth - overlay.clientWidth / currentScale) / 2
+        );
+        const maxY = Math.max(
+          0,
+          (image.clientHeight - overlay.clientHeight / currentScale) / 2
+        );
+        translateX = Math.min(maxX, Math.max(-maxX, translateX));
+        translateY = Math.min(maxY, Math.max(-maxY, translateY));
+      }
+
+      overlay.addEventListener(
+        "touchstart",
+        e => {
+          const t = e.touches;
+          if (t.length === 2) {
+            image.setAttribute("data-zoom", "drag");
+            initialDist = Math.hypot(
+              t[1].clientX - t[0].clientX,
+              t[1].clientY - t[0].clientY
+            );
+            initialScale = currentScale;
+          } else if (t.length === 1) {
+            const now = Date.now();
+            if (now - lastTapTime < 300) {
+              e.preventDefault();
+              if (currentScale > 1) {
+                resetTransform();
+              } else {
+                currentScale = 2;
+                translateX = 0;
+                translateY = 0;
+                applyTransform();
+                image.setAttribute("data-zoom", "in");
+              }
+              lastTapTime = 0;
+              panStartX = t[0].clientX;
+              panStartY = t[0].clientY;
+              panStartTranslateX = translateX;
+              panStartTranslateY = translateY;
+            } else {
+              lastTapTime = now;
+              if (currentScale > 1) {
+                image.setAttribute("data-zoom", "drag");
+                panStartX = t[0].clientX;
+                panStartY = t[0].clientY;
+                panStartTranslateX = translateX;
+                panStartTranslateY = translateY;
+              }
+            }
+          }
+        },
+        { passive: false }
+      );
+
+      overlay.addEventListener(
+        "touchmove",
+        e => {
+          const t = e.touches;
+          if (t.length === 2) {
+            e.preventDefault();
+            const dist = Math.hypot(
+              t[1].clientX - t[0].clientX,
+              t[1].clientY - t[0].clientY
+            );
+            const oldScale = currentScale;
+            currentScale = Math.min(
+              4,
+              Math.max(1, initialScale * (dist / initialDist))
+            );
+
+            // Zoom to the geometric center of the two fingers
+            const midX = (t[0].clientX + t[1].clientX) / 2;
+            const midY = (t[0].clientY + t[1].clientY) / 2;
+            const ox = overlay.clientWidth / 2;
+            const oy = overlay.clientHeight / 2;
+            translateX =
+              (midX - ox) * (1 / currentScale - 1 / oldScale) + translateX;
+            translateY =
+              (midY - oy) * (1 / currentScale - 1 / oldScale) + translateY;
+            clampTranslate();
+            applyTransform();
+          } else if (t.length === 1) {
+            if (currentScale > 1) {
+              e.preventDefault();
+              image.setAttribute("data-zoom", "drag");
+              translateX =
+                panStartTranslateX + (t[0].clientX - panStartX) / currentScale;
+              translateY =
+                panStartTranslateY + (t[0].clientY - panStartY) / currentScale;
+              clampTranslate();
+              applyTransform();
+            } else {
+              e.preventDefault();
+            }
+          }
+        },
+        { passive: false }
+      );
+
+      overlay.addEventListener("touchend", e => {
+        if (e.touches.length === 0) {
+          if (currentScale > 1) {
+            image.setAttribute("data-zoom", "in");
+          } else {
+            image.removeAttribute("data-zoom");
+          }
+          if (currentScale <= 1.05) resetTransform();
+        }
+      });
+
+      overlay.addEventListener("touchcancel", e => {
+        if (e.touches.length === 0) {
+          if (currentScale > 1) {
+            image.setAttribute("data-zoom", "in");
+          } else {
+            image.removeAttribute("data-zoom");
+          }
+          if (currentScale <= 1.05) resetTransform();
+        }
+      });
+
+      overlay.addEventListener(
+        "wheel",
+        e => {
+          e.preventDefault();
+          const oldScale = currentScale;
+          const delta = -e.deltaY * 0.001;
+          currentScale = Math.min(4, Math.max(1, currentScale * (1 + delta)));
+
+          if (currentScale <= 1.05) {
+            resetTransform();
+          } else {
+            image.setAttribute("data-zoom", "in");
+            // Zoom to cursor: adjust translate so the point under cursor stays fixed
+            const ox = overlay.clientWidth / 2;
+            const oy = overlay.clientHeight / 2;
+            translateX =
+              (e.clientX - ox) * (1 / currentScale - 1 / oldScale) + translateX;
+            translateY =
+              (e.clientY - oy) * (1 / currentScale - 1 / oldScale) + translateY;
+            clampTranslate();
+            applyTransform();
+          }
+        },
+        { passive: false }
+      );
+
+      let isMouseDown = false;
+      let mouseStartX = 0;
+      let mouseStartY = 0;
+
+      overlay.addEventListener("mousedown", e => {
+        if (e.button !== 0 || currentScale <= 1) return;
+        if (e.target.closest("button")) return;
+        isMouseDown = true;
+        mouseStartX = e.clientX;
+        mouseStartY = e.clientY;
+        panStartTranslateX = translateX;
+        panStartTranslateY = translateY;
+        image.setAttribute("data-zoom", "drag");
+        e.preventDefault();
+      });
+
+      function onMouseMove(e) {
+        if (!isMouseDown || !overlay) return;
+        translateX =
+          panStartTranslateX + (e.clientX - mouseStartX) / currentScale;
+        translateY =
+          panStartTranslateY + (e.clientY - mouseStartY) / currentScale;
+        clampTranslate();
+        applyTransform();
+      }
+
+      function onMouseUp() {
+        if (!isMouseDown) return;
+        isMouseDown = false;
+        if (currentScale > 1) {
+          image.setAttribute("data-zoom", "in");
+        } else {
+          image.removeAttribute("data-zoom");
+        }
+      }
+
+      document.addEventListener("mousemove", onMouseMove);
+      document.addEventListener("mouseup", onMouseUp);
+      removeDragListeners = () => {
+        document.removeEventListener("mousemove", onMouseMove);
+        document.removeEventListener("mouseup", onMouseUp);
+      };
+
+      document.body.appendChild(overlay);
+      document.documentElement.style.overflow = "hidden";
+      document.addEventListener("keydown", onKeyDown);
+      window.__closeLightbox = close;
+
+      requestAnimationFrame(() => overlay?.classList.add("opacity-100"));
+      closeButton.focus();
+    }
+
+    function close() {
+      if (!overlay) return;
+      const el = overlay;
+      overlay = null;
+      el.classList.add("pointer-events-none");
+      window.__closeLightbox = null;
+
+      document.removeEventListener("keydown", onKeyDown);
+      removeDragListeners?.();
+      removeDragListeners = null;
+      document.documentElement.style.overflow = "";
+      lastFocused?.focus();
+      lastFocused = null;
+
+      if (prefersReducedMotion()) {
+        el.remove();
+        return;
+      }
+      const remove = () => el.remove();
+      el.addEventListener("transitionend", remove, { once: true });
+      setTimeout(remove, 250); // fallback in case transitionend never fires
+      el.classList.remove("opacity-100");
+    }
+
+    function onKeyDown(e) {
+      if (e.key === "Escape") {
+        close();
+      } else if (e.key === "Tab") {
+        trapFocus(e);
+      }
+    }
+
+    // Keep keyboard focus inside the open dialog.
+    function trapFocus(e) {
+      if (!overlay) return;
+      const focusables = overlay.querySelectorAll(
+        'a[href], button, [tabindex]:not([tabindex="-1"])'
+      );
+      if (focusables.length === 0) return;
+      const first = focusables[0];
+      const last = focusables[focusables.length - 1];
+      if (e.shiftKey && document.activeElement === first) {
+        e.preventDefault();
+        last.focus();
+      } else if (!e.shiftKey && document.activeElement === last) {
+        e.preventDefault();
+        first.focus();
+      }
+    }
+
+    function triggerFromEvent(e) {
+      const image = e.target.closest("img");
+      if (!image || !article.contains(image) || image.closest("a")) return null;
+      return image;
+    }
+
+    function activate(image) {
+      open(image.currentSrc || image.src, image.alt, image);
+    }
+
+    article.addEventListener("click", e => {
+      const image = triggerFromEvent(e);
+      if (!image) return;
+      e.preventDefault();
+      activate(image);
+    });
+
+    article.addEventListener("keydown", e => {
+      if (e.key !== "Enter" && e.key !== " " && e.key !== "Spacebar") return;
+      const image = triggerFromEvent(e);
+      if (!image) return;
+      e.preventDefault();
+      activate(image);
+    });
+  }
+  initLightbox();
+
+  if (!window.__lightboxSwapBound) {
+    window.__lightboxSwapBound = true;
+    document.addEventListener("astro:before-swap", () =>
+      window.__closeLightbox?.()
+    );
+  }
+
+  document.addEventListener("astro:after-swap", () =>
+    window.scrollTo({ left: 0, top: 0, behavior: "instant" })
+  );
+</script>

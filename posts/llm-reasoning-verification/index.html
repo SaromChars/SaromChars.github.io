@@ -1,0 +1,973 @@
+<!DOCTYPE html><html dir="ltr" lang="zh-CN" class="overflow-y-scroll scroll-smooth"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1"><link rel="icon" type="image/png" href="/images/favicon-32x32-next.png"><link rel="icon" href="/favicon.ico"><link rel="canonical" href="https://www.saromchars.tech/posts/llm-reasoning-verification/"><meta name="generator" content="Astro v7.4.5"><!-- Primary meta --><title>思维链与自洽性 | Sarom&#39;s Blog</title><meta name="title" content="思维链与自洽性 | Sarom's Blog"><meta name="description" content="从大语言模型在多步推理中的平坦缩放曲线出发，解析思维链如何在自回归生成中引入中间推导步骤，探讨消融实验揭示的机制线索与适用边界，并讨论多路径自洽性聚合在无额外训练下的收益、开销与验证局限。"><meta name="author" content="Sarom Chars"><link rel="sitemap" href="/sitemap-index.xml"><!-- Open Graph --><meta property="og:type" content="article"><meta property="og:site_name" content="Sarom's Blog"><meta property="og:title" content="思维链与自洽性 | Sarom's Blog"><meta property="og:description" content="从大语言模型在多步推理中的平坦缩放曲线出发，解析思维链如何在自回归生成中引入中间推导步骤，探讨消融实验揭示的机制线索与适用边界，并讨论多路径自洽性聚合在无额外训练下的收益、开销与验证局限。"><meta property="og:url" content="https://www.saromchars.tech/posts/llm-reasoning-verification/"><meta property="og:image" content="https://www.saromchars.tech/og.png"><!-- Twitter / X --><meta property="twitter:card" content="summary_large_image"><meta property="twitter:url" content="https://www.saromchars.tech/posts/llm-reasoning-verification/"><meta property="twitter:title" content="思维链与自洽性 | Sarom's Blog"><meta property="twitter:description" content="从大语言模型在多步推理中的平坦缩放曲线出发，解析思维链如何在自回归生成中引入中间推导步骤，探讨消融实验揭示的机制线索与适用边界，并讨论多路径自洽性聚合在无额外训练下的收益、开销与验证局限。"><meta property="twitter:image" content="https://www.saromchars.tech/og.png"><!-- RSS autodiscovery --><link rel="alternate" type="application/rss+xml" title="Sarom's Blog" href="https://www.saromchars.tech/rss.xml"><!-- Filled at runtime by theme.ts to match the current background colour --><meta name="theme-color" content=""><!-- Extra head content injected by child layouts (e.g. JSON-LD, article meta) --><meta property="article:published_time" content="2022-04-18T02:00:00.000Z"><script type="application/ld+json">{"@context":"https://schema.org","@type":"BlogPosting","headline":"思维链与自洽性","mainEntityOfPage":"https://www.saromchars.tech/posts/llm-reasoning-verification/","datePublished":"2022-04-18T02:00:00.000Z","author":[{"@type":"Person","name":"Sarom Chars","url":"https://github.com/SaromChars"}]}</script><!--
+      Inline FOUC-prevention script: sets data-theme on <html> before
+      the browser paints. Runs synchronously, no defer/async.
+    --><script>
+      (function () {
+        const stored = localStorage.getItem("theme");
+        const prefersDark = window.matchMedia(
+          "(prefers-color-scheme: dark)"
+        ).matches;
+        const theme = stored ?? (prefersDark ? "dark" : "light");
+        const root = document.firstElementChild;
+        root?.setAttribute("data-theme", theme);
+        root?.classList.toggle("dark", theme === "dark");
+        // Expose value so theme.ts can skip re-detection.
+        window.__theme = { value: theme };
+      })();
+    </script><meta name="robots" content="index, follow"><script async src="https://www.googletagmanager.com/gtag/js?id=G-WJJJTJ4FWX"></script><script>(function(){const measurementId = "G-WJJJTJ4FWX";
+
+    window.dataLayer = window.dataLayer || [];
+    function gtag(){ window.dataLayer.push(arguments); }
+    gtag('js', new Date());
+    gtag('config', measurementId);
+  })();</script><style>@keyframes astroFadeInOut{0%{opacity:1}to{opacity:0}}@keyframes astroFadeIn{0%{opacity:0;mix-blend-mode:plus-lighter}to{opacity:1;mix-blend-mode:plus-lighter}}@keyframes astroFadeOut{0%{opacity:1;mix-blend-mode:plus-lighter}to{opacity:0;mix-blend-mode:plus-lighter}}@keyframes astroSlideFromRight{0%{transform:translate(100%)}}@keyframes astroSlideFromLeft{0%{transform:translate(-100%)}}@keyframes astroSlideToRight{to{transform:translate(100%)}}@keyframes astroSlideToLeft{to{transform:translate(-100%)}}@media (prefers-reduced-motion){::view-transition-group(*),::view-transition-old(*),::view-transition-new(*),[data-astro-transition-scope]{animation:none!important}}
+</style><link rel="stylesheet" href="/_astro/Footer.DC6qDsIp.css"><style>[data-astro-transition-scope="astro-bztu2lml-1"] { view-transition-name: ai; }@layer astro { ::view-transition-old(ai) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }::view-transition-new(ai) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }[data-astro-transition=back]::view-transition-old(ai) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition=back]::view-transition-new(ai) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; } }[data-astro-transition-fallback="old"] [data-astro-transition-scope="astro-bztu2lml-1"],
+			[data-astro-transition-fallback="old"][data-astro-transition-scope="astro-bztu2lml-1"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition-fallback="new"] [data-astro-transition-scope="astro-bztu2lml-1"],
+			[data-astro-transition-fallback="new"][data-astro-transition-scope="astro-bztu2lml-1"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }[data-astro-transition=back][data-astro-transition-fallback="old"] [data-astro-transition-scope="astro-bztu2lml-1"],
+			[data-astro-transition=back][data-astro-transition-fallback="old"][data-astro-transition-scope="astro-bztu2lml-1"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition=back][data-astro-transition-fallback="new"] [data-astro-transition-scope="astro-bztu2lml-1"],
+			[data-astro-transition=back][data-astro-transition-fallback="new"][data-astro-transition-scope="astro-bztu2lml-1"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }</style><style>[data-astro-transition-scope="astro-bztu2lml-2"] { view-transition-name: llm; }@layer astro { ::view-transition-old(llm) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }::view-transition-new(llm) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }[data-astro-transition=back]::view-transition-old(llm) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition=back]::view-transition-new(llm) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; } }[data-astro-transition-fallback="old"] [data-astro-transition-scope="astro-bztu2lml-2"],
+			[data-astro-transition-fallback="old"][data-astro-transition-scope="astro-bztu2lml-2"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition-fallback="new"] [data-astro-transition-scope="astro-bztu2lml-2"],
+			[data-astro-transition-fallback="new"][data-astro-transition-scope="astro-bztu2lml-2"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }[data-astro-transition=back][data-astro-transition-fallback="old"] [data-astro-transition-scope="astro-bztu2lml-2"],
+			[data-astro-transition=back][data-astro-transition-fallback="old"][data-astro-transition-scope="astro-bztu2lml-2"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition=back][data-astro-transition-fallback="new"] [data-astro-transition-scope="astro-bztu2lml-2"],
+			[data-astro-transition=back][data-astro-transition-fallback="new"][data-astro-transition-scope="astro-bztu2lml-2"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }</style><style>[data-astro-transition-scope="astro-bztu2lml-3"] { view-transition-name: chainofthought; }@layer astro { ::view-transition-old(chainofthought) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }::view-transition-new(chainofthought) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }[data-astro-transition=back]::view-transition-old(chainofthought) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition=back]::view-transition-new(chainofthought) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; } }[data-astro-transition-fallback="old"] [data-astro-transition-scope="astro-bztu2lml-3"],
+			[data-astro-transition-fallback="old"][data-astro-transition-scope="astro-bztu2lml-3"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition-fallback="new"] [data-astro-transition-scope="astro-bztu2lml-3"],
+			[data-astro-transition-fallback="new"][data-astro-transition-scope="astro-bztu2lml-3"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }[data-astro-transition=back][data-astro-transition-fallback="old"] [data-astro-transition-scope="astro-bztu2lml-3"],
+			[data-astro-transition=back][data-astro-transition-fallback="old"][data-astro-transition-scope="astro-bztu2lml-3"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition=back][data-astro-transition-fallback="new"] [data-astro-transition-scope="astro-bztu2lml-3"],
+			[data-astro-transition=back][data-astro-transition-fallback="new"][data-astro-transition-scope="astro-bztu2lml-3"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }</style><style>[data-astro-transition-scope="astro-bztu2lml-4"] { view-transition-name: reasoning; }@layer astro { ::view-transition-old(reasoning) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }::view-transition-new(reasoning) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }[data-astro-transition=back]::view-transition-old(reasoning) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition=back]::view-transition-new(reasoning) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; } }[data-astro-transition-fallback="old"] [data-astro-transition-scope="astro-bztu2lml-4"],
+			[data-astro-transition-fallback="old"][data-astro-transition-scope="astro-bztu2lml-4"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition-fallback="new"] [data-astro-transition-scope="astro-bztu2lml-4"],
+			[data-astro-transition-fallback="new"][data-astro-transition-scope="astro-bztu2lml-4"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }[data-astro-transition=back][data-astro-transition-fallback="old"] [data-astro-transition-scope="astro-bztu2lml-4"],
+			[data-astro-transition=back][data-astro-transition-fallback="old"][data-astro-transition-scope="astro-bztu2lml-4"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition=back][data-astro-transition-fallback="new"] [data-astro-transition-scope="astro-bztu2lml-4"],
+			[data-astro-transition=back][data-astro-transition-fallback="new"][data-astro-transition-scope="astro-bztu2lml-4"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }</style><style>[data-astro-transition-scope="astro-bztu2lml-5"] { view-transition-name: selfconsistency; }@layer astro { ::view-transition-old(selfconsistency) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }::view-transition-new(selfconsistency) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }[data-astro-transition=back]::view-transition-old(selfconsistency) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition=back]::view-transition-new(selfconsistency) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; } }[data-astro-transition-fallback="old"] [data-astro-transition-scope="astro-bztu2lml-5"],
+			[data-astro-transition-fallback="old"][data-astro-transition-scope="astro-bztu2lml-5"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition-fallback="new"] [data-astro-transition-scope="astro-bztu2lml-5"],
+			[data-astro-transition-fallback="new"][data-astro-transition-scope="astro-bztu2lml-5"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }[data-astro-transition=back][data-astro-transition-fallback="old"] [data-astro-transition-scope="astro-bztu2lml-5"],
+			[data-astro-transition=back][data-astro-transition-fallback="old"][data-astro-transition-scope="astro-bztu2lml-5"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition=back][data-astro-transition-fallback="new"] [data-astro-transition-scope="astro-bztu2lml-5"],
+			[data-astro-transition=back][data-astro-transition-fallback="new"][data-astro-transition-scope="astro-bztu2lml-5"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }</style></head><body class="bg-background font-app text-foreground selection:bg-accent/75 selection:text-accent-foreground flex min-h-svh flex-col"><a id="skip-to-content" href="#main-content" class="bg-background text-accent absolute inset-s-16 -top-full z-50 px-3 py-2 backdrop-blur-lg transition-all focus:top-4">跳到正文</a><header class="app-layout flex flex-col items-center justify-between sm:flex-row"><div class="border-border bg-background relative flex w-full items-baseline justify-between border-b py-4 sm:items-center sm:py-6"><a href="/" class="absolute py-1 text-xl leading-8 font-semibold whitespace-nowrap sm:static sm:my-auto sm:text-2xl sm:leading-none">Sarom&#39;s Blog</a><nav id="nav-menu" class="flex w-full flex-col items-center sm:ms-2 sm:flex-row sm:justify-end sm:space-x-4 sm:py-0"><button id="menu-btn" class="focus-outline self-end p-2 sm:hidden" aria-label="展开菜单" aria-expanded="false" aria-controls="menu-items" data-label-open="展开菜单" data-label-close="收起菜单"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="hidden" viewBox="0 0 24 24" id="close-icon"><path stroke="none" d="M0 0h24v24H0z" /><path d="M18 6 6 18M6 6l12 12" /></svg><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="icon icon-tabler icons-tabler-outline icon-tabler-menu-deep" viewBox="0 0 24 24" id="menu-icon"><path stroke="none" d="M0 0h24v24H0z" /><path d="M4 6h16M7 12h13M10 18h10" /></svg></button><ul id="menu-items" class="[&amp;&gt;li&gt;a]:hover:text-accent mt-4 hidden w-44 grid-cols-2 place-content-center gap-2 sm:mt-0 sm:flex sm:w-auto sm:gap-x-5 sm:gap-y-0 sm:[&amp;&gt;li]:h-8 [&amp;&gt;li&gt;a]:block [&amp;&gt;li&gt;a]:px-4 [&amp;&gt;li&gt;a]:py-3 [&amp;&gt;li&gt;a]:text-center [&amp;&gt;li&gt;a]:font-medium sm:[&amp;&gt;li&gt;a]:px-2 sm:[&amp;&gt;li&gt;a]:py-1"><li class="col-span-2"><a href="/posts/" class="active-nav">文章</a></li><li class="col-span-2"><a href="/tags/">标签</a></li><li class="col-span-2"><a href="/about/">关于</a></li><li class="col-span-2"><a href="/archives/" title="归档" aria-label="归档" class="group inline-flex items-center gap-1 hover:text-accent focus-outline flex size-full justify-center p-3 sm:relative sm:size-8 sm:p-0"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="hidden sm:absolute sm:top-1/2 sm:left-1/2 sm:block sm:size-6 sm:-translate-x-1/2 sm:-translate-y-1/2" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M3 6a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2 2 2 0 0 1-2 2H5a2 2 0 0 1-2-2M5 8v10a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8M10 12h4" /></svg><span class="sm:sr-only">归档</span></a></li><li class="col-span-1 flex items-center justify-center"><a href="/search/" title="搜索" aria-label="搜索" class="group inline-flex items-center gap-1 hover:text-accent focus-outline relative size-8"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="absolute top-1/2 left-1/2 size-6 -translate-x-1/2 -translate-y-1/2" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M3 10a7 7 0 1 0 14 0 7 7 0 1 0-14 0M21 21l-6-6" /></svg><span class="sr-only">搜索</span></a></li><li class="col-span-1 flex items-center justify-center"><button id="theme-btn" class="focus-outline hover:[&amp;&gt;svg]:stroke-accent relative size-12 p-4 sm:size-8" title="切换主题" aria-label="auto" aria-live="polite"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="absolute top-[50%] left-[50%] translate-[-50%] scale-100 rotate-0 transition-all dark:scale-0 dark:-rotate-90" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M12 3h.393a7.5 7.5 0 0 0 7.92 12.446A9 9 0 1 1 12 2.992z" /></svg><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="absolute top-[50%] left-[50%] translate-[-50%] scale-0 rotate-90 transition-all dark:scale-100 dark:rotate-0" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M14.828 14.828a4 4 0 1 0-5.656-5.656 4 4 0 0 0 5.656 5.656M6.343 17.657l-1.414 1.414M6.343 6.343 4.929 4.929M17.657 6.343l1.414-1.414M17.657 17.657l1.414 1.414M4 12H2M12 4V2M20 12h2M12 20v2" /></svg></button></li></ul></nav></div></header><script type="module">function e(){let e=document.querySelector(`#menu-btn`),t=document.querySelector(`#menu-items`),n=document.querySelector(`#menu-icon`),r=document.querySelector(`#close-icon`);if(!e||!t||!n||!r)return;let i=e.dataset.labelOpen??`Open menu`,a=e.dataset.labelClose??`Close menu`;e.addEventListener(`click`,()=>{let o=e.getAttribute(`aria-expanded`)===`true`;e.setAttribute(`aria-expanded`,o?`false`:`true`),e.setAttribute(`aria-label`,o?i:a),t.classList.toggle(`hidden`),t.classList.toggle(`grid`),n.classList.toggle(`hidden`),r.classList.toggle(`hidden`)})}function t(){let e=document.getElementById(`skip-to-content`);e&&e.addEventListener(`click`,e=>{if(e.defaultPrevented||e.metaKey||e.ctrlKey||e.shiftKey||e.button!==0)return;e.preventDefault();let t=document.getElementById(`main-content`);t&&(t.setAttribute(`tabindex`,`-1`),t.addEventListener(`blur`,()=>t.removeAttribute(`tabindex`),{once:!0}),t.focus(),t.scrollIntoView({behavior:`smooth`}))})}e(),document.addEventListener(`astro:after-swap`,e),t(),document.addEventListener(`astro:after-swap`,t);</script><div class="app-layout flex items-center justify-start"><a id="back-button" href="/" class="group inline-flex items-center gap-1 hover:text-accent focus-outline hover:text-foreground/75 -ms-2 mt-8 mb-2"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="inline-block size-6 rtl:rotate-180" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="m15 6-6 6 6 6" /></svg><span>返回</span></a></div><script type="module">function e(){let e=document.querySelector(`#back-button`),t=sessionStorage.getItem(`backUrl`);t&&e&&(e.href=t)}document.addEventListener(`astro:page-load`,e),e();</script><main id="main-content" class="app-layout" data-pagefind-body><h1 style="view-transition-name:llm-reasoning-verification" class="text-accent inline-block text-2xl font-bold sm:text-3xl">思维链与自洽性</h1><div class="my-2 flex items-center gap-2"><div class="text-muted-foreground flex items-center gap-x-2"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="inline-block size-6 min-w-5.5" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M4 7a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2zM16 3v4M8 3v4M4 11h16M7 14h.013M10.01 14h.005M13.01 14h.005M16.015 14h.005M13.015 17h.005M7.01 17h.005M10.01 17h.005" /></svg><time class="text-sm sm:text-base" datetime="2022-04-18T02:00:00.000Z">2022年4月18日</time></div><span aria-hidden="true" class="text-muted-foreground max-sm:hidden hidden">|</span></div><article id="article" class="mt-8 w-full app-prose max-w-app prose-pre:bg-(--shiki-light-bg) dark:prose-pre:bg-(--shiki-dark-bg)"><p>在大语言模型（large language model，LLM）的技术演进中，扩大参数规模与预训练（pretraining）数据量，在文本分类、情感分析与通用语言生成等直觉型任务上带来了稳定的表现提升<a href="#ref-wei-2022"><span id="citation-wei-sec1">1 (§1)</span></a>。然而，当面对需要多步拆解、符号操作与严密推理的任务时（如小学数学应用题），单纯扩展模型规模往往仅能获得近乎平坦的性能曲线（flat scaling curves）<a href="#ref-wei-2022"><span id="citation-wei-sec1-2">1 (§1)</span></a>。</p>
+<p>为了应对这一挑战，Wei et al. (2022) 提出了<strong>思维链（chain of thought，CoT）提示</strong><a href="#ref-wei-2022"><span id="citation-wei-sec2">1 (§2)</span></a>，通过示例引导模型在给出最终答案前显式输出一系列短句形式的中间推导步骤；随后，Wang et al. (2022) 提出了<strong>自洽性（self-consistency）</strong><a href="#ref-wang-2022"><span id="citation-wang-sec1">2 (§1)</span></a>，通过从解码器采样多样化的推导路径并执行答案频次投票，进一步提升了推理任务的求解准确率。</p>
+<hr>
+<h2 id="1-直接生成的瓶颈与平坦缩放曲线">1. 直接生成的瓶颈与平坦缩放曲线</h2>
+<p>在标准的少样本提示（standard few-shot prompting）中，大语言模型接收问题输入后，目标是直接逐 token（模型处理的基本序列单位，即词元）预测最终答案，而不显式输出中间推导过程<a href="#ref-wei-2022"><span id="citation-wei-sec31">1 (§3.1)</span></a>。人类在处理此类问题时通常依赖较慢的审慎思考（deliberate thinking），需要将复杂目标分解为若干子步骤逐步解决<a href="#ref-wei-2022"><span id="citation-wei-sec1-stanovich">1 (§1)</span></a>。</p>
+<p>基于 Transformer 架构（一种基于自注意力机制的模型架构）的自回归解码器在直接生成答案时，每个新 token 的生成仅依赖于输入问题与已生成的前序 token。对于包含多步数量关系与约束转移的题目，若不生成任何中间步骤，模型难以在单次直接回答中准确完成复杂运算<a href="#ref-wei-2022"><span id="citation-wei-sec2b">1 (§2)</span></a>。在 GSM8K 与 MultiArith 等挑战性数据集上，当稠密模型参数从 8B 扩展到 68B 乃至 137B 时，标准提示的正确率几乎没有明显起色（例如在 GSM8K 上仅徘徊在约 6%）<a href="#ref-wei-2022"><span id="citation-wei-sec32">1 (§3.2, Figure 3)</span></a>。这表明单纯增加参数量难以让模型自发跨越此类多步计算障碍。</p>
+<hr>
+<h2 id="2-思维链提示与中间步骤">2. 思维链提示与中间步骤</h2>
+<p>思维链提示的基本做法是在提示的少样本示例中，为每个问题人工编写一段模拟人类思考过程的自然语言推导步骤，引导模型在测试时也先生成推导链再给出最终答案<a href="#ref-wei-2022"><span id="citation-wei-sec2c">1 (§2)</span></a>。</p>
+<pre class="astro-code astro-code-themes min-light night-owl" style="--shiki-light:#24292eff;--shiki-dark:#d6deeb;--shiki-light-bg:#ffffff;--shiki-dark-bg:#011627; overflow-x: auto;--file-name-offset: -0.75rem;" tabindex="0" data-language="text"><code><span class="line"><span>标准提示与思维链提示的生成范式对比：</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>(a) 标准少样本提示 (直接生成答案，无中间推导步骤)</span></span>
+<span class="line"><span>问题输入 ──> [自回归解码] ──> 最终答案</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>(b) 思维链提示 (显式生成中间步骤，作为后续 token 上下文)</span></span>
+<span class="line"><span>问题输入 ──> [解码步骤 1] ──> token 输出</span></span>
+<span class="line"><span>                             │</span></span>
+<span class="line"><span>                             ▼ (作为新上下文)</span></span>
+<span class="line"><span>             [解码步骤 2] ──> token 输出</span></span>
+<span class="line"><span>                             │</span></span>
+<span class="line"><span>                             ▼ (作为新上下文)</span></span>
+<span class="line"><span>             [解码答案]   ──> 最终答案</span></span></code></pre>
+<h3 id="21-动态增加推理上下文">2.1 动态增加推理上下文</h3>
+<p>与直接生成答案相比，思维链提示让模型在答案前生成一段可供后续使用的中间文本<a href="#ref-wei-2022"><span id="citation-wei-sec2d">1 (§2)</span></a>。</p>
+<p>每一个生成的中间 token 都会被追加到注意力上下文中。在生成后续推理步骤与最终答案时，自注意力机制（self-attention）可以直接利用前序步骤已经外化的文本信息。这种方式允许模型根据题目的难易程度，在生成最终答案前消耗更多 token 并执行更多步自回归生成计算<a href="#ref-wei-2022"><span id="citation-wei-sec2e">1 (§2)</span></a>。</p>
+<h3 id="22-思维链提示的消融实验">2.2 思维链提示的消融实验</h3>
+<p>为了理解思维链的增益来源，Wei et al. (2022) 在 137B 模型上设计了三组关键消融实验<a href="#ref-wei-2022"><span id="citation-wei-sec33">1 (§3.3, Table 2)</span></a>：</p>
+<div class="table-wrapper" tabindex="0">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<table><thead><tr><th>提示变体与配置</th><th>MultiArith 准确率 (%)</th><th>GSM8K 准确率 (%)</th></tr></thead><tbody><tr><td>标准少样本提示 (基准)</td><td>7.6 ± 0.4</td><td>6.3 ± 0.4</td></tr><tr><td>思维链提示 (完整版)</td><td>45.0 ± 1.6</td><td>14.8 ± 0.7</td></tr><tr><td>变体 1: 仅算术方程 (Equation only)</td><td>5.7 ± 0.6</td><td>5.7 ± 0.3</td></tr><tr><td>变体 2: 该点号配置未带来同样收益 (Variable compute only)</td><td>7.7 ± 0.4</td><td>6.0 ± 0.3</td></tr><tr><td>变体 3: 后置推导未保留前置推导的增益 (Thought after answer)</td><td>7.6 ± 0.6</td><td>5.9 ± 0.5</td></tr></tbody></table></div>
+<blockquote><p>注：上述实验采用 137B 参数的 LaMDA-PT 模型；表中数值为 5 次随机种子（仅打乱少样本示例顺序，非训练 5 个独立模型）测试的平均值与标准差<a href="#ref-wei-2022"><span id="citation-wei-sec31-seed">1 (§3.1)</span></a>。</p></blockquote>
+<p>这些消融结果为解释思维链的机制提供了重要参考：</p>
+<ol>
+<li><strong>仅算术方程在困难数据集上未能带来提升</strong>：在“仅算术方程”配置中，模型被提示在给出答案前仅输出数学方程式。虽然该配置在四个较简单的算术数据集（如 SingleOp 等）上有一定帮助，但在 MultiArith 与 GSM8K 两个较难的数据集上，准确率并未提升甚至微幅下降（5.7% vs 7.6%、5.7% vs 6.3%）。论文分析推测，对于复杂应用题，直接将自然语言题干映射为方程式仍然过于困难，自然语言中间步骤有助于理顺条件关系<a href="#ref-wei-2022"><span id="citation-wei-sec33b">1 (§3.3)</span></a>；</li>
+<li><strong>变体 2：该点号配置未带来同样收益 (Variable compute only)</strong>：模型在回答前输出一串与方程式字符等长的点号（<code>...</code>）。其准确率在 GSM8K 上为 6.0%，与基准的 6.3% 表现接近。作者指出这支持自然语言中间步骤在这一设置中有用的解释<a href="#ref-wei-2022"><span id="citation-wei-sec33c">1 (§3.3)</span></a>；</li>
+<li><strong>变体 3：后置推导未保留前置推导的增益 (Thought after answer)</strong>：模型先输出答案再补全思维链，准确率回落到基准水平（GSM8K 5.9% vs 6.3%）。作者认为这支持收益不只来自激活预训练知识的解释<a href="#ref-wei-2022"><span id="citation-wei-sec33d">1 (§3.3)</span></a>。</li>
+</ol>
+<h3 id="23-不同模型规模下的实验表现">2.3 不同模型规模下的实验表现</h3>
+<p>论文实验表明，思维链提示的效果高度依赖于模型规模<a href="#ref-wei-2022"><span id="citation-wei-sec32b">1 (§3.2)</span></a>。在测试的 422M、2B、8B 与 68B 规模的 LaMDA-PT 模型上，引入思维链往往导致准确率低于标准少样本提示。</p>
+<p>人工检查发现，较小规模的模型生成的思维链虽然句式通顺，但经常包含无逻辑关联或算术荒谬的断言，这些错误推导进一步干扰了最终答案。在论文测试的 LaMDA-PT 尺度和具体任务中，明显收益主要出现在 137B 规模上<a href="#ref-wei-2022"><span id="citation-wei-sec32c">1 (§3.2)</span></a>。作者指出这是实验观察到的现象，不能直接作为其他架构或提示设计下的绝对参数下限。</p>
+<hr>
+<h2 id="3-单路径推导的局限与错误形态">3. 单路径推导的局限与错误形态</h2>
+<p>在工程实践中，思维链通常配合<strong>贪心解码（greedy decoding）</strong>生成单条推导路径。自回归生成的特性决定了单路径策略存在一定的脆弱性<a href="#ref-wang-2022"><span id="citation-wang-sec1-2">2 (§1)</span></a>。</p>
+<p>由于每个后续 token 都将前面生成的 token 视作输入上下文，一旦某个中间步骤产生了计算偏差或逻辑跳跃，该错误结果就可能对后续推导产生不利影响，而单路径生成没有额外的纠错或答案聚合机会。</p>
+<p>Wei et al. (2022) 对 GSM8K 测试集中 137B 模型回答错误的 50 个样本进行了人工分析<a href="#ref-wei-2022"><span id="citation-wei-sec32-err">1 (§3.2, §A.2)</span></a>：</p>
+<ul>
+<li><strong>46% 属于局部轻微失误</strong>：包括纯算术计算错误、符号对应错误或偶发遗漏单个推导步骤，其主干解题思路大致合理；</li>
+<li><strong>54% 属于较严重的语义理解或连贯性错误</strong>：模型未能正确理解题干条件或常识约束，导致整条推理方向出现偏差。</li>
+</ul>
+<hr>
+<h2 id="4-多路径采样与答案频次聚合自洽性">4. 多路径采样与答案频次聚合：自洽性</h2>
+<p>面对需要严谨推理的任务，人类往往可以从不同角度尝试推导；如果多条互不相同的合理思路都能得出相同答案，通常会增强对该答案的信心<a href="#ref-wang-2022"><span id="citation-wang-sec1-human">2 (§1)</span></a>。</p>
+<p>基于这一假说，Wang et al. (2022) 提出了<strong>自洽性（self-consistency）</strong>方法。该方法放弃了贪心解码的单一确定性路径，在解码阶段采样多样化的推导过程，并通过对最终答案进行频次投票来完成决策<a href="#ref-wang-2022"><span id="citation-wang-sec2">2 (§2)</span></a>。</p>
+<div style="text-align: center; margin: 1.5rem 0;">
+  <svg viewBox="0 0 400 520" width="100%" height="auto" role="img" aria-labelledby="svg-sc-title svg-sc-desc" style="max-width: 400px; font-family: -apple-system, BlinkMacSystemFont, sans-serif; background: #fafafa; border: 1px solid #e5e5e5; border-radius: 8px;">
+    <title id="svg-sc-title">求解范式对比：直接生成、单路径推导与多路径自洽聚合</title>
+    <desc id="svg-sc-desc">展示直接生成答案、单路径思维链推导以及自洽性通过采样多样推导路径并执行答案频次投票的流程对比。</desc>
+    <!-- 方案 1: 直接生成 -->
+    <rect x="20" y="20" width="360" height="65" rx="6" fill="#ffffff" stroke="#cbd5e1" stroke-width="1.5"></rect>
+    <text x="35" y="48" font-size="18" font-weight="bold" fill="#0f172a">直接生成答案 (标准提示)</text>
+    <text x="35" y="72" font-size="18" fill="#64748b">问题输入 ──> 最终答案</text>
+    <!-- 方案 2: 单路径推导 -->
+    <rect x="20" y="105" width="360" height="80" rx="6" fill="#ffffff" stroke="#cbd5e1" stroke-width="1.5"></rect>
+    <text x="35" y="135" font-size="18" font-weight="bold" fill="#0f172a">单路径推导 (贪心解码)</text>
+    <text x="35" y="165" font-size="18" fill="#334155">逐步生成步骤 ──> 单一答案</text>
+    <!-- 方案 3: 自洽性多路径采样与聚合 -->
+    <rect x="20" y="205" width="360" height="295" rx="6" fill="#eff6ff" stroke="#3b82f6" stroke-width="1.5"></rect>
+    <text x="35" y="235" font-size="18" font-weight="bold" fill="#1d4ed8">自洽性多路径采样与聚合</text>
+    <!-- 路径候选节点 -->
+    <rect x="35" y="255" width="150" height="40" rx="4" fill="#ffffff" stroke="#93c5fd" stroke-width="1.5"></rect>
+    <text x="48" y="281" font-size="18" fill="#1e293b">路径 1 ──> A</text>
+    <rect x="35" y="305" width="150" height="40" rx="4" fill="#ffffff" stroke="#93c5fd" stroke-width="1.5"></rect>
+    <text x="48" y="331" font-size="18" fill="#1e293b">路径 2 ──> A</text>
+    <rect x="35" y="355" width="150" height="40" rx="4" fill="#ffffff" stroke="#93c5fd" stroke-width="1.5"></rect>
+    <text x="48" y="381" font-size="18" fill="#1e293b">路径 3 ──> B</text>
+    <!-- 聚合节点 -->
+    <rect x="245" y="285" width="120" height="80" rx="6" fill="#ffffff" stroke="#3b82f6" stroke-width="2"></rect>
+    <text x="260" y="318" font-size="18" font-weight="bold" fill="#1d4ed8">频次统计</text>
+    <text x="265" y="348" font-size="18" fill="#1e293b">A:2，B:1</text>
+    <!-- 汇聚连线 -->
+    <line x1="185" y1="275" x2="245" y2="310" stroke="#3b82f6" stroke-width="2"></line>
+    <line x1="185" y1="325" x2="245" y2="325" stroke="#3b82f6" stroke-width="2"></line>
+    <line x1="185" y1="375" x2="245" y2="340" stroke="#3b82f6" stroke-width="2"></line>
+    <!-- 结果节点 -->
+    <rect x="120" y="435" width="160" height="50" rx="6" fill="#2563eb"></rect>
+    <text x="145" y="467" font-size="18" font-weight="bold" fill="#ffffff">选出最高频 A</text>
+    <line x1="305" y1="365" x2="240" y2="435" stroke="#2563eb" stroke-width="2"></line>
+  </svg>
+  <p style="font-size: 0.85rem; color: #64748b; margin-top: 0.5rem;">
+    教学示意：图示中的候选答案 A/B 与票数为人工构造示意，不代表论文具体推导样本；作者假说认为正确推导往往倾向于具有更高答案一致性，但频次聚合不能保证最高票答案必然正确。
+  </p>
+</div>
+<h3 id="41-算法流程与投票准则">4.1 算法流程与投票准则</h3>
+<p>自洽性的运行过程包括以下三个步骤<a href="#ref-wang-2022"><span id="citation-wang-sec2b">2 (§2)</span></a>：</p>
+<ol>
+<li><strong>思维链少样本提示</strong>：使用人工编写的少量思维链示例作为提示；</li>
+<li><strong>多样性解码采样</strong>：不采用贪心解码，而是在解码器中结合温度采样与截断采样（在主实验中采用 <code>T = 0.5</code> 且 <code>top-k = 40</code>），独立采样生成 <code>m</code> 条候选推理序列；</li>
+<li><strong>解析答案并进行频次投票</strong>：从每个生成的序列中提取推导路径 <code>r_i</code> 与最终答案 <code>a_i</code>，在候选答案集上计算各答案出现的频次，选取<strong>出现频次最高的相对多数票答案（plurality vote，最高频不要求过半）</strong>作为最终决策：</li>
+</ol>
+<pre class="astro-code astro-code-themes min-light night-owl" style="--shiki-light:#24292eff;--shiki-dark:#d6deeb;--shiki-light-bg:#ffffff;--shiki-dark-bg:#011627; overflow-x: auto;--file-name-offset: -0.75rem;" tabindex="0" data-language="text"><code><span class="line"><span>自洽性最优答案的选择准则：</span></span>
+<span class="line"><span>a_best = argmax_{a} sum_{j=1..m} I( a_j == a )</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>其中 I(·) 为指示函数，m 为采样的推导路径总数。</span></span>
+<span class="line"><span>若出现票数相同，则按照生成顺序选取首先遇到的候选答案。</span></span></code></pre>
+<p>需要注意的是，这一流程依赖于任务特定的答案解析器<a href="#ref-wang-2022"><span id="citation-wang-sec2-parse">2 (§2, footnote 1)</span></a>：对于算术应用题，解析器提取模型输出“The answer is ”之后的首个数值；对于常识多选任务，则提取后续的完整字符串。这种聚合方式要求最终答案具有结构化可比性，无法无条件直接推广到开放长文本生成任务。</p>
+<h3 id="42-频次投票与概率加权的对比">4.2 频次投票与概率加权的对比</h3>
+<p>在设计聚合规则时，一个自然的思路是根据模型生成该推导路径的自回归条件概率 <code>P(a_i, r_i | x)</code> 对各答案进行加权。</p>
+<p>然而，Wang et al. (2022) 的对比实验表明，<strong>不加权的纯频次多数投票（plurality vote）表现明显优于按模型条件概率加权的结果</strong><a href="#ref-wang-2022"><span id="citation-wang-sec2d">2 (§2)</span></a>。作者推测，这可能与语言模型给出的条件概率没有良好校准（not well calibrated）有关。</p>
+<h3 id="43-论文实验结果与免额外训练特性">4.3 论文实验结果与免额外训练特性</h3>
+<p>与早期在算术题上训练专用判别模型（如 Cobbe et al. 2021 的验证器 verifier）或收集人工标注训练重排序器（如 Thoppilan et al. 2022 的 re-ranker）的方法相比，自洽性在聚合阶段<strong>无需对基础模型进行微调，也无需额外训练验证模块</strong><a href="#ref-wang-2022"><span id="citation-wang-sec1-prior">2 (§1, §4)</span></a>。但需要明确的是，该方法在输入端依然依赖人工编写的少样本思维链示例。</p>
+<p>在 137B 模型上，自洽性相较于单路径贪心解码展现了明显的准确率提升<a href="#ref-wang-2022"><span id="citation-wang-sec32">2 (§3.2, Table 2)</span></a>：</p>
+<div class="table-wrapper" tabindex="0">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<table><thead><tr><th>评测数据集与代表任务</th><th>贪心单路径思维链 (%)</th><th>自洽性聚合 (40路径) (%)</th></tr></thead><tbody><tr><td>MultiArith (多步算术运算)</td><td>51.8</td><td>75.7 (+23.9)</td></tr><tr><td>GSM8K (小学数学应用题)</td><td>17.1</td><td>27.7 (+10.6)</td></tr></tbody></table></div>
+<blockquote><p>注：数据来自 137B 参数的 LaMDA-PT 模型，算术题使用 8 个人工示例，采用 <code>T = 0.5</code> 且 <code>top-k = 40</code>，聚合 40 条采样路径，结果为 10 次运行的平均值<a href="#ref-wang-2022"><span id="citation-wang-sec32-cond">2 (§3.1, §3.2)</span></a>。在论文测试的全部六个算术推理数据集（包括 MultiArith、SVAMP、GSM8K、AddSub、ASDiv、AQuA）上，自洽性带来了 9.1 至 23.9 个百分点的准确率提升。</p></blockquote>
+<p>实验表明，当模型在单路径贪心解码时偶发运算失误时，多路径采样能够提供更多到达正确答案的机会，并通过答案聚集性提高求解成功率<a href="#ref-wang-2022"><span id="citation-wang-sec32-analysis">2 (§3.2)</span></a>。</p>
+<hr>
+<h2 id="5-推理开销与能力边界">5. 推理开销与能力边界</h2>
+<p>尽管思维链与自洽性在多项基准上展示了性能收益，但在实际使用中仍伴随显著的计算代价与能力边界。</p>
+<h3 id="51-推理计算开销与边际递减">5.1 推理计算开销与边际递减</h3>
+<p>自洽性的主要开销在于解码端<a href="#ref-wang-2022"><span id="citation-wang-sec34">2 (§3.4)</span></a>：</p>
+<ul>
+<li>单路径贪心解码仅需生成一条推导序列；</li>
+<li>自洽性为了进行频次统计，通常需要独立采样 10 条、20 条乃至 40 条推导路径。这显著增加了生成 token 的总量与前向计算开销；实际响应延迟取决于序列长度与系统对并行采样的支持情况。</li>
+</ul>
+<p>此外，性能增益存在<strong>饱和效应</strong>：在论文测试的算术与常识任务中（Wang et al. Figures 2–3），随着采样路径数增加，准确率的提升逐渐趋于平缓，通常在 40 条路径左右达到平台期<a href="#ref-wang-2022"><span id="citation-wang-sec34b">2 (§3.4)</span></a>。</p>
+<h3 id="52-难以纠正系统性先验偏见">5.2 难以纠正系统性先验偏见</h3>
+<p>自洽性依赖于作者提出的一项核心假设：<strong>正确的推理过程倾向于在最终答案上取得一致，而错误的推导过程往往各有不同、答案分散</strong><a href="#ref-wang-2022"><span id="citation-wang-sec2f">2 (§2)</span></a>。</p>
+<p>然而这一假设存在清晰的边界：如果基础模型在预训练数据中形成了某种系统性先验偏见，或者题干中包含强诱导信息，导致多条不同的采样路径频繁犯下相同的常识性或逻辑性错误，多数投票机制将同样高频地选出该错误答案。自洽性作为无监督输出聚合手段，无法替代对事实基础与外部知识的核实。</p>
+<h3 id="53-答案自洽率与不确定性线索">5.3 答案自洽率与不确定性线索</h3>
+<p>论文在 GSM8K 实验中观察到，<strong>自洽性投票的一致性比例（即最高频答案获得的选票占总路径数的比例）与模型答案的正确率呈现较强的正相关</strong><a href="#ref-wang-2022"><span id="citation-wang-sec35">2 (§3.5, Figure 6)</span></a>。</p>
+<p>作者认为，这意味着投票集中度可以作为衡量模型自身置信度的一项经验线索，用于提示模型在哪些题目上可能存在较高不确定性。但必须指出，这种相关性在不同任务和模型中仍需针对性校验，高一致性并不能杜绝系统性共性错误。</p>
+<hr>
+<h2 id="6-机制与权衡总结">6. 机制与权衡总结</h2>
+<div class="table-wrapper" tabindex="0">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<table><thead><tr><th>方案类别</th><th>单路径思维链 (CoT)</th><th>自洽性多路径聚合</th></tr></thead><tbody><tr><td>推导展开形式</td><td>单条自然语言步骤序列</td><td>采样多条多样化步骤链</td></tr><tr><td>决策与聚合方式</td><td>贪心解码，无后续聚合</td><td>最终答案频次相对多数投票 (plurality)</td></tr><tr><td>推理计算需求</td><td>增加单次长序列 token 生成</td><td>需采样多条路径，计算量显著增加</td></tr><tr><td>示例与标注依赖</td><td>依赖人工编写少样本推导示例</td><td>依赖少样本示例，无需额外训练验证器</td></tr><tr><td>核心观察与增益</td><td>展开步骤有助于困难任务求解</td><td>论文这组六个算术数据集提升 9.1–23.9 个百分点</td></tr><tr><td>主要局限与边界</td><td>单条推导失误易影响最终答案</td><td>论文多数任务约 40 条趋饱和；不保证纠正多路径共同错误</td></tr></tbody></table></div>
+<p>思维链通过自回归显式生成中间步骤，在文本层面展开了多步推理过程；自洽性则通过多路径采样与最终答案频次聚合，在无额外模型训练的条件下提升了求解鲁棒性。这两种方法在特定任务中改善了模型的解题表现，但频次一致性本身不能等同于事实验证，也不能替代逻辑正确性的严格检验。</p>
+<hr>
+<h2 id="参考资料">参考资料</h2>
+<ol>
+  <li>
+    Wei, J., Wang, X., Schuurmans, D., Bosma, M., Chi, E., Le, Q., &#x26; Zhou, D. (2022). <i>Chain of Thought Prompting Elicits Reasoning in Large Language Models</i>. arXiv:2201.11903v1 [cs.CL].
+    <br>
+    首次提交日期：2022-01-28；本篇依据版本：2022-01-28 (arXiv:2201.11903v1).
+    <br>
+    原文链接：<a id="ref-wei-2022" href="https://arxiv.org/abs/2201.11903v1" target="_blank" rel="noopener noreferrer">https://arxiv.org/abs/2201.11903v1</a>
+  </li>
+  <li>
+    Wang, X., Wei, J., Schuurmans, D., Le, Q., Chi, E. H., &#x26; Zhou, D. (2022). <i>Self-Consistency Improves Chain of Thought Reasoning in Language Models</i>. arXiv:2203.11171v1 [cs.CL].
+    <br>
+    首次提交日期：2022-03-21；本篇依据版本：2022-03-21 (arXiv:2203.11171v1).
+    <br>
+    原文链接：<a id="ref-wang-2022" href="https://arxiv.org/abs/2203.11171v1" target="_blank" rel="noopener noreferrer">https://arxiv.org/abs/2203.11171v1</a>
+  </li>
+</ol></article><hr class="my-8 border-dashed"><div id="btt-btn-container" class="fixed inset-e-4 bottom-8 z-50 md:sticky md:inset-e-auto md:float-end md:me-1 translate-y-14 opacity-0 transition duration-500"><button data-button="back-to-top" class="group bg-background relative px-2 py-1 size-14 rounded-full shadow-xl md:h-8 md:w-fit md:rounded-md md:shadow-none md:focus-visible:rounded-none md:bg-background/35 md:bg-clip-padding md:backdrop-blur-lg"><span id="progress-indicator" class="absolute inset-0 -z-10 block size-14 scale-110 rounded-full bg-transparent md:hidden md:h-8 md:rounded-md"></span><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="inline-block rotate-90 md:hidden" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M5 12h14M5 12l6 6M5 12l6-6" /></svg><span class="group-hover:text-accent sr-only text-sm md:not-sr-only"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="inline-block size-4" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M12 5v14M16 9l-4-4M8 9l4-4" /></svg> 回到顶部</span></button></div><script data-astro-rerun>
+  function backToTop() {
+    const rootElement = document.documentElement;
+    const btnContainer = document.querySelector("#btt-btn-container");
+    const backToTopBtn = document.querySelector("[data-button='back-to-top']");
+    const progressIndicator = document.querySelector("#progress-indicator");
+
+    if (!rootElement || !btnContainer || !backToTopBtn || !progressIndicator)
+      return;
+
+    backToTopBtn.addEventListener("click", () => {
+      document.body.scrollTop = 0;
+      document.documentElement.scrollTop = 0;
+    });
+
+    let lastVisible = null;
+    function handleScroll() {
+      const scrollTotal = rootElement.scrollHeight - rootElement.clientHeight;
+      const scrollTop = rootElement.scrollTop;
+      const scrollPercent = Math.floor((scrollTop / scrollTotal) * 100);
+
+      progressIndicator.style.setProperty(
+        "background-image",
+        `conic-gradient(var(--accent), var(--accent) ${scrollPercent}%, transparent ${scrollPercent}%)`
+      );
+
+      const isVisible = scrollTop / scrollTotal > 0.3;
+
+      if (isVisible !== lastVisible) {
+        btnContainer.classList.toggle("opacity-100", isVisible);
+        btnContainer.classList.toggle("translate-y-0", isVisible);
+        btnContainer.classList.toggle("opacity-0", !isVisible);
+        btnContainer.classList.toggle("translate-y-14", !isVisible);
+        lastVisible = isVisible;
+      }
+    }
+
+    let ticking = false;
+    document.addEventListener("scroll", () => {
+      if (!ticking) {
+        window.requestAnimationFrame(() => {
+          handleScroll();
+          ticking = false;
+        });
+        ticking = true;
+      }
+    });
+  }
+  backToTop();
+</script><ul class="mt-4 mb-8 flex flex-wrap gap-4 sm:my-8"><li><a data-astro-transition-scope="astro-bztu2lml-1" href="/tags/ai/" class="flex items-center gap-0.5 border-foreground border-b-2 border-dashed hover:border-accent hover:text-accent hover:-mt-0.5 focus-visible:text-accent focus-visible:border-none text-sm"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="opacity-80 size-4" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M5 9h14M5 15h14M11 4 7 20M17 4l-4 16" /></svg>AI</a></li><li><a data-astro-transition-scope="astro-bztu2lml-2" href="/tags/llm/" class="flex items-center gap-0.5 border-foreground border-b-2 border-dashed hover:border-accent hover:text-accent hover:-mt-0.5 focus-visible:text-accent focus-visible:border-none text-sm"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="opacity-80 size-4" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M5 9h14M5 15h14M11 4 7 20M17 4l-4 16" /></svg>LLM</a></li><li><a data-astro-transition-scope="astro-bztu2lml-3" href="/tags/chainofthought/" class="flex items-center gap-0.5 border-foreground border-b-2 border-dashed hover:border-accent hover:text-accent hover:-mt-0.5 focus-visible:text-accent focus-visible:border-none text-sm"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="opacity-80 size-4" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M5 9h14M5 15h14M11 4 7 20M17 4l-4 16" /></svg>ChainOfThought</a></li><li><a data-astro-transition-scope="astro-bztu2lml-4" href="/tags/reasoning/" class="flex items-center gap-0.5 border-foreground border-b-2 border-dashed hover:border-accent hover:text-accent hover:-mt-0.5 focus-visible:text-accent focus-visible:border-none text-sm"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="opacity-80 size-4" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M5 9h14M5 15h14M11 4 7 20M17 4l-4 16" /></svg>Reasoning</a></li><li><a data-astro-transition-scope="astro-bztu2lml-5" href="/tags/selfconsistency/" class="flex items-center gap-0.5 border-foreground border-b-2 border-dashed hover:border-accent hover:text-accent hover:-mt-0.5 focus-visible:text-accent focus-visible:border-none text-sm"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="opacity-80 size-4" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M5 9h14M5 15h14M11 4 7 20M17 4l-4 16" /></svg>SelfConsistency</a></li></ul><hr class="my-8 border-dashed"><div data-pagefind-ignore class="my-8 grid grid-cols-1 gap-6 sm:grid-cols-2"><a href="/posts/llm-long-context-boundaries/" class="flex w-full gap-1 hover:opacity-75"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="inline-block flex-none rtl:rotate-180" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M5 12h14M5 12l6 6M5 12l6-6" /></svg><div><span>上一篇</span><div class="text-accent/85 text-sm">Longformer 的长上下文建模</div></div></a><a href="/posts/llm-lora-adaptation/" class="flex w-full justify-end gap-1 text-end hover:opacity-75 sm:col-start-2"><div><span>下一篇</span><div class="text-accent/85 text-sm">LoRA 的低秩适配</div></div><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="inline-block flex-none rtl:rotate-180" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M5 12h14M13 18l6-6M13 6l6 6" /></svg></a></div></main><footer class="app-layout mt-auto"><div class="border-border flex flex-col items-center justify-between border-t py-6 sm:flex-row-reverse sm:py-4"><div class="flex flex-wrap items-center gap-1"><a href="https://github.com/SaromChars" title="Sarom Chars 的 GitHub" class="group inline-flex items-center gap-1 hover:text-accent p-2 hover:rotate-6 sm:p-1"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="inline-block size-6 scale-125 fill-transparent stroke-current stroke-2 opacity-90 group-hover:fill-transparent sm:scale-110" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M9 19c-4.3 1.4-4.3-2.5-6-3m12 5v-3.5c0-1 .1-1.4-.5-2 2.8-.3 5.5-1.4 5.5-6a4.6 4.6 0 0 0-1.3-3.2 4.2 4.2 0 0 0-.1-3.2s-1.1-.3-3.5 1.3a12.3 12.3 0 0 0-6.2 0C6.5 2.8 5.4 3.1 5.4 3.1a4.2 4.2 0 0 0-.1 3.2A4.6 4.6 0 0 0 4 9.5c0 4.6 2.7 5.7 5.5 6-.6.6-.6 1.2-.5 2V21" /></svg><span class="sr-only">Sarom Chars 的 GitHub</span></a></div><div class="my-2 flex flex-col items-center whitespace-nowrap sm:flex-row"><span>版权 &#169; 2026</span><span class="hidden sm:inline">&nbsp;|&nbsp;</span><span>保留所有权利。</span></div></div></footer><script type="module">var e=`theme`,t=`light`,n=`dark`;function r(){return localStorage.getItem(e)||(window.matchMedia(`(prefers-color-scheme: dark)`).matches?n:t)}var i=window.__theme?.value??r();function a(){localStorage.setItem(e,i),o()}function o(){let e=document.firstElementChild;e?.setAttribute(`data-theme`,i),e?.classList.toggle(`dark`,i===n),document.querySelector(`#theme-btn`)?.setAttribute(`aria-label`,i);let t=window.getComputedStyle(document.body).backgroundColor;document.querySelector(`meta[name='theme-color']`)?.setAttribute(`content`,t)}function s(){o(),document.querySelector(`#theme-btn`)?.addEventListener(`click`,()=>{i=i===t?n:t,a()})}s(),document.addEventListener(`astro:after-swap`,s),document.addEventListener(`astro:before-swap`,e=>{let t=document.querySelector(`meta[name='theme-color']`)?.getAttribute(`content`);t&&e.newDocument.querySelector(`meta[name='theme-color']`)?.setAttribute(`content`,t)}),window.matchMedia(`(prefers-color-scheme: dark)`).addEventListener(`change`,({matches:e})=>{i=e?n:t,a()});</script></body></html><script type="module">var e=document.querySelector(`#article`);if(e?.querySelector(`a[href^="#ref-"]`)){let t=null,n=!1,r=document.createElement(`button`);r.type=`button`,r.className=`citation-return`,r.textContent=`返回阅读位置`,r.setAttribute(`data-pagefind-ignore`,``),e.addEventListener(`click`,n=>{if(n.button!==0||n.metaKey||n.ctrlKey||n.shiftKey||n.altKey)return;let i=n.target instanceof Element?n.target.closest(`a[href^="#ref-"]`):null;if(!i||!e.contains(i))return;let a=i.hash,o=document.getElementById(decodeURIComponent(a.slice(1)));o&&e.contains(o)&&(t={source:i,url:window.location.href,top:window.scrollY,left:window.scrollX,targetHash:a},o.insertAdjacentElement(`afterend`,r))}),r.addEventListener(`click`,()=>{if(!t||n)return;let e=t,i=i=>{r.remove(),window.requestAnimationFrame(()=>{window.requestAnimationFrame(()=>{e.source.focus({preventScroll:!0}),window.scrollTo({top:e.top,left:e.left,behavior:`instant`}),t=null,n=!1,i?.()})})};window.location.href===e.url?i():(n=!0,window.addEventListener(`popstate`,()=>{let e=window.history.scrollRestoration;window.history.scrollRestoration=`manual`,window.setTimeout(()=>{i(()=>{window.history.scrollRestoration=e})},0)},{once:!0}),window.history.back())}),window.addEventListener(`hashchange`,()=>{!n&&t&&window.location.hash!==t.targetHash&&(r.remove(),t=null)})}</script><script data-astro-rerun>
+  function createProgressBar() {
+    const progressContainer = document.createElement("div");
+    progressContainer.className =
+      "progress-container fixed top-0 z-10 h-1 w-full bg-background";
+
+    const progressBar = document.createElement("div");
+    progressBar.className = "progress-bar h-1 w-0 bg-accent";
+    progressBar.id = "myBar";
+
+    progressContainer.appendChild(progressBar);
+    document.body.appendChild(progressContainer);
+  }
+  createProgressBar();
+
+  function updateScrollProgress() {
+    document.addEventListener("scroll", () => {
+      const winScroll =
+        document.body.scrollTop || document.documentElement.scrollTop;
+      const height =
+        document.documentElement.scrollHeight -
+        document.documentElement.clientHeight;
+      const scrolled = (winScroll / height) * 100;
+      if (document) {
+        const myBar = document.getElementById("myBar");
+        if (myBar) {
+          myBar.style.width = scrolled + "%";
+        }
+      }
+    });
+  }
+  updateScrollProgress();
+
+  function addHeadingLinks() {
+    const headings = Array.from(
+      document.querySelectorAll("h2, h3, h4, h5, h6")
+    );
+    for (const heading of headings) {
+      heading.classList.add("group");
+      const link = document.createElement("a");
+      link.className =
+        "heading-link ms-2 no-underline opacity-75 md:opacity-0 md:group-hover:opacity-100 md:focus:opacity-100";
+      link.href = "#" + heading.id;
+
+      const span = document.createElement("span");
+      span.ariaHidden = "true";
+      span.innerText = "#";
+      link.appendChild(span);
+      heading.appendChild(link);
+    }
+  }
+  addHeadingLinks();
+
+  function attachCopyButtons() {
+    const copyButtonLabel = "Copy";
+    const codeBlocks = Array.from(document.querySelectorAll("pre"));
+
+    for (const codeBlock of codeBlocks) {
+      const wrapper = document.createElement("div");
+      wrapper.style.position = "relative";
+
+      const computedStyle = getComputedStyle(codeBlock);
+      const hasFileNameOffset =
+        computedStyle.getPropertyValue("--file-name-offset").trim() !== "";
+
+      const topClass = hasFileNameOffset
+        ? "top-(--file-name-offset)"
+        : "-top-3";
+
+      const copyButton = document.createElement("button");
+      copyButton.className = `copy-code absolute end-3 ${topClass} rounded bg-muted border border-muted px-2 py-1 text-xs leading-4 text-foreground font-medium`;
+      copyButton.innerHTML = copyButtonLabel;
+      codeBlock.setAttribute("tabindex", "0");
+      codeBlock.appendChild(copyButton);
+
+      codeBlock?.parentNode?.insertBefore(wrapper, codeBlock);
+      wrapper.appendChild(codeBlock);
+
+      copyButton.addEventListener("click", async () => {
+        await copyCode(codeBlock, copyButton);
+      });
+    }
+
+    async function copyCode(block, button) {
+      const code = block.querySelector("code");
+      const text = code?.innerText;
+
+      await navigator.clipboard.writeText(text ?? "");
+
+      button.innerText = "Copied";
+
+      setTimeout(() => {
+        button.innerText = copyButtonLabel;
+      }, 700);
+    }
+  }
+  attachCopyButtons();
+
+  /** Accessible image lightbox for article images. */
+  function initLightbox() {
+    const article = document.getElementById("article");
+    if (!article) return;
+
+    const prefersReducedMotion = () =>
+      window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+    let overlay = null;
+    let lastFocused = null;
+    let removeDragListeners = null;
+
+    // Defer attribute mutations so they don't push the LCP timestamp.
+    // Event listeners below use delegation and don't need the attributes to exist yet.
+    requestAnimationFrame(() => {
+      const images = Array.from(article.querySelectorAll("img"));
+      for (const image of images) {
+        if (image.closest("a")) continue;
+        image.setAttribute("role", "button");
+        image.setAttribute("tabindex", "0");
+        image.setAttribute("aria-haspopup", "dialog");
+        image.setAttribute(
+          "aria-label",
+          image.alt ? `Zoom image: ${image.alt}` : "Zoom image"
+        );
+      }
+    });
+
+    function open(src, alt, trigger) {
+      if (overlay) return;
+      lastFocused = trigger ?? document.activeElement;
+
+      overlay = document.createElement("div");
+      overlay.setAttribute("role", "dialog");
+      overlay.setAttribute("aria-modal", "true");
+      overlay.setAttribute(
+        "aria-label",
+        alt ? `Image preview: ${alt}` : "Image preview"
+      );
+      overlay.className =
+        "fixed inset-0 z-50 flex cursor-zoom-out items-center justify-center bg-black/70 backdrop-blur-sm opacity-0 transition-opacity duration-200 motion-reduce:transition-none";
+
+      const closeButton = document.createElement("button");
+      closeButton.type = "button";
+      closeButton.setAttribute("aria-label", "Close image preview");
+      closeButton.className =
+        "absolute end-4 top-4 z-1 flex size-11 items-center justify-center rounded bg-black/50 text-3xl leading-none text-white";
+      closeButton.innerHTML = "&#10005;";
+      closeButton.addEventListener("click", close);
+
+      const image = document.createElement("img");
+      image.src = src;
+      image.alt = "";
+      image.className =
+        "max-h-[90dvh] max-w-[90dvw] cursor-default object-contain transition-transform duration-100 ease-out motion-reduce:transition-none data-[zoom=drag]:cursor-grabbing data-[zoom=drag]:transition-none data-[zoom=in]:cursor-grab";
+
+      overlay.append(closeButton, image);
+      overlay.addEventListener("click", e => {
+        if (e.target === overlay && currentScale <= 1) close();
+      });
+
+      let currentScale = 1;
+      let translateX = 0;
+      let translateY = 0;
+      let initialDist = 0;
+      let initialScale = 1;
+      let panStartX = 0;
+      let panStartY = 0;
+      let panStartTranslateX = 0;
+      let panStartTranslateY = 0;
+      let lastTapTime = 0;
+
+      function applyTransform() {
+        image.style.transform = `scale(${currentScale}) translate(${translateX}px, ${translateY}px)`;
+        // A backdrop click only closes at fit size, so drop the zoom-out cursor while zoomed.
+        overlay?.classList.toggle("cursor-zoom-out", currentScale <= 1);
+      }
+
+      function resetTransform() {
+        currentScale = 1;
+        translateX = 0;
+        translateY = 0;
+        image.style.transform = "";
+        image.removeAttribute("data-zoom");
+        overlay?.classList.add("cursor-zoom-out");
+      }
+
+      // Keep the zoomed image from being panned past its edges.
+      function clampTranslate() {
+        if (!overlay) return;
+        const maxX = Math.max(
+          0,
+          (image.clientWidth - overlay.clientWidth / currentScale) / 2
+        );
+        const maxY = Math.max(
+          0,
+          (image.clientHeight - overlay.clientHeight / currentScale) / 2
+        );
+        translateX = Math.min(maxX, Math.max(-maxX, translateX));
+        translateY = Math.min(maxY, Math.max(-maxY, translateY));
+      }
+
+      overlay.addEventListener(
+        "touchstart",
+        e => {
+          const t = e.touches;
+          if (t.length === 2) {
+            image.setAttribute("data-zoom", "drag");
+            initialDist = Math.hypot(
+              t[1].clientX - t[0].clientX,
+              t[1].clientY - t[0].clientY
+            );
+            initialScale = currentScale;
+          } else if (t.length === 1) {
+            const now = Date.now();
+            if (now - lastTapTime < 300) {
+              e.preventDefault();
+              if (currentScale > 1) {
+                resetTransform();
+              } else {
+                currentScale = 2;
+                translateX = 0;
+                translateY = 0;
+                applyTransform();
+                image.setAttribute("data-zoom", "in");
+              }
+              lastTapTime = 0;
+              panStartX = t[0].clientX;
+              panStartY = t[0].clientY;
+              panStartTranslateX = translateX;
+              panStartTranslateY = translateY;
+            } else {
+              lastTapTime = now;
+              if (currentScale > 1) {
+                image.setAttribute("data-zoom", "drag");
+                panStartX = t[0].clientX;
+                panStartY = t[0].clientY;
+                panStartTranslateX = translateX;
+                panStartTranslateY = translateY;
+              }
+            }
+          }
+        },
+        { passive: false }
+      );
+
+      overlay.addEventListener(
+        "touchmove",
+        e => {
+          const t = e.touches;
+          if (t.length === 2) {
+            e.preventDefault();
+            const dist = Math.hypot(
+              t[1].clientX - t[0].clientX,
+              t[1].clientY - t[0].clientY
+            );
+            const oldScale = currentScale;
+            currentScale = Math.min(
+              4,
+              Math.max(1, initialScale * (dist / initialDist))
+            );
+
+            // Zoom to the geometric center of the two fingers
+            const midX = (t[0].clientX + t[1].clientX) / 2;
+            const midY = (t[0].clientY + t[1].clientY) / 2;
+            const ox = overlay.clientWidth / 2;
+            const oy = overlay.clientHeight / 2;
+            translateX =
+              (midX - ox) * (1 / currentScale - 1 / oldScale) + translateX;
+            translateY =
+              (midY - oy) * (1 / currentScale - 1 / oldScale) + translateY;
+            clampTranslate();
+            applyTransform();
+          } else if (t.length === 1) {
+            if (currentScale > 1) {
+              e.preventDefault();
+              image.setAttribute("data-zoom", "drag");
+              translateX =
+                panStartTranslateX + (t[0].clientX - panStartX) / currentScale;
+              translateY =
+                panStartTranslateY + (t[0].clientY - panStartY) / currentScale;
+              clampTranslate();
+              applyTransform();
+            } else {
+              e.preventDefault();
+            }
+          }
+        },
+        { passive: false }
+      );
+
+      overlay.addEventListener("touchend", e => {
+        if (e.touches.length === 0) {
+          if (currentScale > 1) {
+            image.setAttribute("data-zoom", "in");
+          } else {
+            image.removeAttribute("data-zoom");
+          }
+          if (currentScale <= 1.05) resetTransform();
+        }
+      });
+
+      overlay.addEventListener("touchcancel", e => {
+        if (e.touches.length === 0) {
+          if (currentScale > 1) {
+            image.setAttribute("data-zoom", "in");
+          } else {
+            image.removeAttribute("data-zoom");
+          }
+          if (currentScale <= 1.05) resetTransform();
+        }
+      });
+
+      overlay.addEventListener(
+        "wheel",
+        e => {
+          e.preventDefault();
+          const oldScale = currentScale;
+          const delta = -e.deltaY * 0.001;
+          currentScale = Math.min(4, Math.max(1, currentScale * (1 + delta)));
+
+          if (currentScale <= 1.05) {
+            resetTransform();
+          } else {
+            image.setAttribute("data-zoom", "in");
+            // Zoom to cursor: adjust translate so the point under cursor stays fixed
+            const ox = overlay.clientWidth / 2;
+            const oy = overlay.clientHeight / 2;
+            translateX =
+              (e.clientX - ox) * (1 / currentScale - 1 / oldScale) + translateX;
+            translateY =
+              (e.clientY - oy) * (1 / currentScale - 1 / oldScale) + translateY;
+            clampTranslate();
+            applyTransform();
+          }
+        },
+        { passive: false }
+      );
+
+      let isMouseDown = false;
+      let mouseStartX = 0;
+      let mouseStartY = 0;
+
+      overlay.addEventListener("mousedown", e => {
+        if (e.button !== 0 || currentScale <= 1) return;
+        if (e.target.closest("button")) return;
+        isMouseDown = true;
+        mouseStartX = e.clientX;
+        mouseStartY = e.clientY;
+        panStartTranslateX = translateX;
+        panStartTranslateY = translateY;
+        image.setAttribute("data-zoom", "drag");
+        e.preventDefault();
+      });
+
+      function onMouseMove(e) {
+        if (!isMouseDown || !overlay) return;
+        translateX =
+          panStartTranslateX + (e.clientX - mouseStartX) / currentScale;
+        translateY =
+          panStartTranslateY + (e.clientY - mouseStartY) / currentScale;
+        clampTranslate();
+        applyTransform();
+      }
+
+      function onMouseUp() {
+        if (!isMouseDown) return;
+        isMouseDown = false;
+        if (currentScale > 1) {
+          image.setAttribute("data-zoom", "in");
+        } else {
+          image.removeAttribute("data-zoom");
+        }
+      }
+
+      document.addEventListener("mousemove", onMouseMove);
+      document.addEventListener("mouseup", onMouseUp);
+      removeDragListeners = () => {
+        document.removeEventListener("mousemove", onMouseMove);
+        document.removeEventListener("mouseup", onMouseUp);
+      };
+
+      document.body.appendChild(overlay);
+      document.documentElement.style.overflow = "hidden";
+      document.addEventListener("keydown", onKeyDown);
+      window.__closeLightbox = close;
+
+      requestAnimationFrame(() => overlay?.classList.add("opacity-100"));
+      closeButton.focus();
+    }
+
+    function close() {
+      if (!overlay) return;
+      const el = overlay;
+      overlay = null;
+      el.classList.add("pointer-events-none");
+      window.__closeLightbox = null;
+
+      document.removeEventListener("keydown", onKeyDown);
+      removeDragListeners?.();
+      removeDragListeners = null;
+      document.documentElement.style.overflow = "";
+      lastFocused?.focus();
+      lastFocused = null;
+
+      if (prefersReducedMotion()) {
+        el.remove();
+        return;
+      }
+      const remove = () => el.remove();
+      el.addEventListener("transitionend", remove, { once: true });
+      setTimeout(remove, 250); // fallback in case transitionend never fires
+      el.classList.remove("opacity-100");
+    }
+
+    function onKeyDown(e) {
+      if (e.key === "Escape") {
+        close();
+      } else if (e.key === "Tab") {
+        trapFocus(e);
+      }
+    }
+
+    // Keep keyboard focus inside the open dialog.
+    function trapFocus(e) {
+      if (!overlay) return;
+      const focusables = overlay.querySelectorAll(
+        'a[href], button, [tabindex]:not([tabindex="-1"])'
+      );
+      if (focusables.length === 0) return;
+      const first = focusables[0];
+      const last = focusables[focusables.length - 1];
+      if (e.shiftKey && document.activeElement === first) {
+        e.preventDefault();
+        last.focus();
+      } else if (!e.shiftKey && document.activeElement === last) {
+        e.preventDefault();
+        first.focus();
+      }
+    }
+
+    function triggerFromEvent(e) {
+      const image = e.target.closest("img");
+      if (!image || !article.contains(image) || image.closest("a")) return null;
+      return image;
+    }
+
+    function activate(image) {
+      open(image.currentSrc || image.src, image.alt, image);
+    }
+
+    article.addEventListener("click", e => {
+      const image = triggerFromEvent(e);
+      if (!image) return;
+      e.preventDefault();
+      activate(image);
+    });
+
+    article.addEventListener("keydown", e => {
+      if (e.key !== "Enter" && e.key !== " " && e.key !== "Spacebar") return;
+      const image = triggerFromEvent(e);
+      if (!image) return;
+      e.preventDefault();
+      activate(image);
+    });
+  }
+  initLightbox();
+
+  if (!window.__lightboxSwapBound) {
+    window.__lightboxSwapBound = true;
+    document.addEventListener("astro:before-swap", () =>
+      window.__closeLightbox?.()
+    );
+  }
+
+  document.addEventListener("astro:after-swap", () =>
+    window.scrollTo({ left: 0, top: 0, behavior: "instant" })
+  );
+</script>

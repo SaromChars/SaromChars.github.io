@@ -1,0 +1,996 @@
+<!DOCTYPE html><html dir="ltr" lang="zh-CN" class="overflow-y-scroll scroll-smooth"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1"><link rel="icon" type="image/png" href="/images/favicon-32x32-next.png"><link rel="icon" href="/favicon.ico"><link rel="canonical" href="https://www.saromchars.tech/posts/llm-tool-use-loop/"><meta name="generator" content="Astro v7.4.5"><!-- Primary meta --><title>模型与程序的工具使用循环 | Sarom&#39;s Blog</title><meta name="title" content="模型与程序的工具使用循环 | Sarom's Blog"><meta name="description" content="从长文本开放问答的事实核验困境切入，深入剖析大语言模型如何通过文本化浏览器环境与离散动作空间接入外部搜索工具，解构基于人工演示的行为克隆、引用提取机制与人类偏好奖励模型，并基于 WebGPT 实验对比近端策略优化与测试期拒绝采样在动态环境下的优化边界与偏见风险。"><meta name="author" content="Sarom Chars"><link rel="sitemap" href="/sitemap-index.xml"><!-- Open Graph --><meta property="og:type" content="article"><meta property="og:site_name" content="Sarom's Blog"><meta property="og:title" content="模型与程序的工具使用循环 | Sarom's Blog"><meta property="og:description" content="从长文本开放问答的事实核验困境切入，深入剖析大语言模型如何通过文本化浏览器环境与离散动作空间接入外部搜索工具，解构基于人工演示的行为克隆、引用提取机制与人类偏好奖励模型，并基于 WebGPT 实验对比近端策略优化与测试期拒绝采样在动态环境下的优化边界与偏见风险。"><meta property="og:url" content="https://www.saromchars.tech/posts/llm-tool-use-loop/"><meta property="og:image" content="https://www.saromchars.tech/og.png"><!-- Twitter / X --><meta property="twitter:card" content="summary_large_image"><meta property="twitter:url" content="https://www.saromchars.tech/posts/llm-tool-use-loop/"><meta property="twitter:title" content="模型与程序的工具使用循环 | Sarom's Blog"><meta property="twitter:description" content="从长文本开放问答的事实核验困境切入，深入剖析大语言模型如何通过文本化浏览器环境与离散动作空间接入外部搜索工具，解构基于人工演示的行为克隆、引用提取机制与人类偏好奖励模型，并基于 WebGPT 实验对比近端策略优化与测试期拒绝采样在动态环境下的优化边界与偏见风险。"><meta property="twitter:image" content="https://www.saromchars.tech/og.png"><!-- RSS autodiscovery --><link rel="alternate" type="application/rss+xml" title="Sarom's Blog" href="https://www.saromchars.tech/rss.xml"><!-- Filled at runtime by theme.ts to match the current background colour --><meta name="theme-color" content=""><!-- Extra head content injected by child layouts (e.g. JSON-LD, article meta) --><meta property="article:published_time" content="2022-04-08T02:00:00.000Z"><script type="application/ld+json">{"@context":"https://schema.org","@type":"BlogPosting","headline":"模型与程序的工具使用循环","mainEntityOfPage":"https://www.saromchars.tech/posts/llm-tool-use-loop/","datePublished":"2022-04-08T02:00:00.000Z","author":[{"@type":"Person","name":"Sarom Chars","url":"https://github.com/SaromChars"}]}</script><!--
+      Inline FOUC-prevention script: sets data-theme on <html> before
+      the browser paints. Runs synchronously, no defer/async.
+    --><script>
+      (function () {
+        const stored = localStorage.getItem("theme");
+        const prefersDark = window.matchMedia(
+          "(prefers-color-scheme: dark)"
+        ).matches;
+        const theme = stored ?? (prefersDark ? "dark" : "light");
+        const root = document.firstElementChild;
+        root?.setAttribute("data-theme", theme);
+        root?.classList.toggle("dark", theme === "dark");
+        // Expose value so theme.ts can skip re-detection.
+        window.__theme = { value: theme };
+      })();
+    </script><meta name="robots" content="index, follow"><script async src="https://www.googletagmanager.com/gtag/js?id=G-WJJJTJ4FWX"></script><script>(function(){const measurementId = "G-WJJJTJ4FWX";
+
+    window.dataLayer = window.dataLayer || [];
+    function gtag(){ window.dataLayer.push(arguments); }
+    gtag('js', new Date());
+    gtag('config', measurementId);
+  })();</script><style>@keyframes astroFadeInOut{0%{opacity:1}to{opacity:0}}@keyframes astroFadeIn{0%{opacity:0;mix-blend-mode:plus-lighter}to{opacity:1;mix-blend-mode:plus-lighter}}@keyframes astroFadeOut{0%{opacity:1;mix-blend-mode:plus-lighter}to{opacity:0;mix-blend-mode:plus-lighter}}@keyframes astroSlideFromRight{0%{transform:translate(100%)}}@keyframes astroSlideFromLeft{0%{transform:translate(-100%)}}@keyframes astroSlideToRight{to{transform:translate(100%)}}@keyframes astroSlideToLeft{to{transform:translate(-100%)}}@media (prefers-reduced-motion){::view-transition-group(*),::view-transition-old(*),::view-transition-new(*),[data-astro-transition-scope]{animation:none!important}}
+</style><link rel="stylesheet" href="/_astro/Footer.DC6qDsIp.css"><style>[data-astro-transition-scope="astro-bztu2lml-1"] { view-transition-name: ai; }@layer astro { ::view-transition-old(ai) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }::view-transition-new(ai) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }[data-astro-transition=back]::view-transition-old(ai) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition=back]::view-transition-new(ai) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; } }[data-astro-transition-fallback="old"] [data-astro-transition-scope="astro-bztu2lml-1"],
+			[data-astro-transition-fallback="old"][data-astro-transition-scope="astro-bztu2lml-1"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition-fallback="new"] [data-astro-transition-scope="astro-bztu2lml-1"],
+			[data-astro-transition-fallback="new"][data-astro-transition-scope="astro-bztu2lml-1"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }[data-astro-transition=back][data-astro-transition-fallback="old"] [data-astro-transition-scope="astro-bztu2lml-1"],
+			[data-astro-transition=back][data-astro-transition-fallback="old"][data-astro-transition-scope="astro-bztu2lml-1"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition=back][data-astro-transition-fallback="new"] [data-astro-transition-scope="astro-bztu2lml-1"],
+			[data-astro-transition=back][data-astro-transition-fallback="new"][data-astro-transition-scope="astro-bztu2lml-1"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }</style><style>[data-astro-transition-scope="astro-bztu2lml-2"] { view-transition-name: llm; }@layer astro { ::view-transition-old(llm) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }::view-transition-new(llm) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }[data-astro-transition=back]::view-transition-old(llm) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition=back]::view-transition-new(llm) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; } }[data-astro-transition-fallback="old"] [data-astro-transition-scope="astro-bztu2lml-2"],
+			[data-astro-transition-fallback="old"][data-astro-transition-scope="astro-bztu2lml-2"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition-fallback="new"] [data-astro-transition-scope="astro-bztu2lml-2"],
+			[data-astro-transition-fallback="new"][data-astro-transition-scope="astro-bztu2lml-2"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }[data-astro-transition=back][data-astro-transition-fallback="old"] [data-astro-transition-scope="astro-bztu2lml-2"],
+			[data-astro-transition=back][data-astro-transition-fallback="old"][data-astro-transition-scope="astro-bztu2lml-2"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition=back][data-astro-transition-fallback="new"] [data-astro-transition-scope="astro-bztu2lml-2"],
+			[data-astro-transition=back][data-astro-transition-fallback="new"][data-astro-transition-scope="astro-bztu2lml-2"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }</style><style>[data-astro-transition-scope="astro-bztu2lml-3"] { view-transition-name: tooluse; }@layer astro { ::view-transition-old(tooluse) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }::view-transition-new(tooluse) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }[data-astro-transition=back]::view-transition-old(tooluse) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition=back]::view-transition-new(tooluse) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; } }[data-astro-transition-fallback="old"] [data-astro-transition-scope="astro-bztu2lml-3"],
+			[data-astro-transition-fallback="old"][data-astro-transition-scope="astro-bztu2lml-3"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition-fallback="new"] [data-astro-transition-scope="astro-bztu2lml-3"],
+			[data-astro-transition-fallback="new"][data-astro-transition-scope="astro-bztu2lml-3"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }[data-astro-transition=back][data-astro-transition-fallback="old"] [data-astro-transition-scope="astro-bztu2lml-3"],
+			[data-astro-transition=back][data-astro-transition-fallback="old"][data-astro-transition-scope="astro-bztu2lml-3"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition=back][data-astro-transition-fallback="new"] [data-astro-transition-scope="astro-bztu2lml-3"],
+			[data-astro-transition=back][data-astro-transition-fallback="new"][data-astro-transition-scope="astro-bztu2lml-3"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }</style><style>[data-astro-transition-scope="astro-bztu2lml-4"] { view-transition-name: webgpt; }@layer astro { ::view-transition-old(webgpt) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }::view-transition-new(webgpt) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }[data-astro-transition=back]::view-transition-old(webgpt) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition=back]::view-transition-new(webgpt) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; } }[data-astro-transition-fallback="old"] [data-astro-transition-scope="astro-bztu2lml-4"],
+			[data-astro-transition-fallback="old"][data-astro-transition-scope="astro-bztu2lml-4"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition-fallback="new"] [data-astro-transition-scope="astro-bztu2lml-4"],
+			[data-astro-transition-fallback="new"][data-astro-transition-scope="astro-bztu2lml-4"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }[data-astro-transition=back][data-astro-transition-fallback="old"] [data-astro-transition-scope="astro-bztu2lml-4"],
+			[data-astro-transition=back][data-astro-transition-fallback="old"][data-astro-transition-scope="astro-bztu2lml-4"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition=back][data-astro-transition-fallback="new"] [data-astro-transition-scope="astro-bztu2lml-4"],
+			[data-astro-transition=back][data-astro-transition-fallback="new"][data-astro-transition-scope="astro-bztu2lml-4"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }</style><style>[data-astro-transition-scope="astro-bztu2lml-5"] { view-transition-name: informationretrieval; }@layer astro { ::view-transition-old(informationretrieval) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }::view-transition-new(informationretrieval) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }[data-astro-transition=back]::view-transition-old(informationretrieval) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition=back]::view-transition-new(informationretrieval) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; } }[data-astro-transition-fallback="old"] [data-astro-transition-scope="astro-bztu2lml-5"],
+			[data-astro-transition-fallback="old"][data-astro-transition-scope="astro-bztu2lml-5"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition-fallback="new"] [data-astro-transition-scope="astro-bztu2lml-5"],
+			[data-astro-transition-fallback="new"][data-astro-transition-scope="astro-bztu2lml-5"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }[data-astro-transition=back][data-astro-transition-fallback="old"] [data-astro-transition-scope="astro-bztu2lml-5"],
+			[data-astro-transition=back][data-astro-transition-fallback="old"][data-astro-transition-scope="astro-bztu2lml-5"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition=back][data-astro-transition-fallback="new"] [data-astro-transition-scope="astro-bztu2lml-5"],
+			[data-astro-transition=back][data-astro-transition-fallback="new"][data-astro-transition-scope="astro-bztu2lml-5"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }</style><style>[data-astro-transition-scope="astro-bztu2lml-6"] { view-transition-name: reinforcementlearning; }@layer astro { ::view-transition-old(reinforcementlearning) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }::view-transition-new(reinforcementlearning) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }[data-astro-transition=back]::view-transition-old(reinforcementlearning) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition=back]::view-transition-new(reinforcementlearning) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; } }[data-astro-transition-fallback="old"] [data-astro-transition-scope="astro-bztu2lml-6"],
+			[data-astro-transition-fallback="old"][data-astro-transition-scope="astro-bztu2lml-6"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition-fallback="new"] [data-astro-transition-scope="astro-bztu2lml-6"],
+			[data-astro-transition-fallback="new"][data-astro-transition-scope="astro-bztu2lml-6"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }[data-astro-transition=back][data-astro-transition-fallback="old"] [data-astro-transition-scope="astro-bztu2lml-6"],
+			[data-astro-transition=back][data-astro-transition-fallback="old"][data-astro-transition-scope="astro-bztu2lml-6"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition=back][data-astro-transition-fallback="new"] [data-astro-transition-scope="astro-bztu2lml-6"],
+			[data-astro-transition=back][data-astro-transition-fallback="new"][data-astro-transition-scope="astro-bztu2lml-6"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }</style></head><body class="bg-background font-app text-foreground selection:bg-accent/75 selection:text-accent-foreground flex min-h-svh flex-col"><a id="skip-to-content" href="#main-content" class="bg-background text-accent absolute inset-s-16 -top-full z-50 px-3 py-2 backdrop-blur-lg transition-all focus:top-4">跳到正文</a><header class="app-layout flex flex-col items-center justify-between sm:flex-row"><div class="border-border bg-background relative flex w-full items-baseline justify-between border-b py-4 sm:items-center sm:py-6"><a href="/" class="absolute py-1 text-xl leading-8 font-semibold whitespace-nowrap sm:static sm:my-auto sm:text-2xl sm:leading-none">Sarom&#39;s Blog</a><nav id="nav-menu" class="flex w-full flex-col items-center sm:ms-2 sm:flex-row sm:justify-end sm:space-x-4 sm:py-0"><button id="menu-btn" class="focus-outline self-end p-2 sm:hidden" aria-label="展开菜单" aria-expanded="false" aria-controls="menu-items" data-label-open="展开菜单" data-label-close="收起菜单"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="hidden" viewBox="0 0 24 24" id="close-icon"><path stroke="none" d="M0 0h24v24H0z" /><path d="M18 6 6 18M6 6l12 12" /></svg><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="icon icon-tabler icons-tabler-outline icon-tabler-menu-deep" viewBox="0 0 24 24" id="menu-icon"><path stroke="none" d="M0 0h24v24H0z" /><path d="M4 6h16M7 12h13M10 18h10" /></svg></button><ul id="menu-items" class="[&amp;&gt;li&gt;a]:hover:text-accent mt-4 hidden w-44 grid-cols-2 place-content-center gap-2 sm:mt-0 sm:flex sm:w-auto sm:gap-x-5 sm:gap-y-0 sm:[&amp;&gt;li]:h-8 [&amp;&gt;li&gt;a]:block [&amp;&gt;li&gt;a]:px-4 [&amp;&gt;li&gt;a]:py-3 [&amp;&gt;li&gt;a]:text-center [&amp;&gt;li&gt;a]:font-medium sm:[&amp;&gt;li&gt;a]:px-2 sm:[&amp;&gt;li&gt;a]:py-1"><li class="col-span-2"><a href="/posts/" class="active-nav">文章</a></li><li class="col-span-2"><a href="/tags/">标签</a></li><li class="col-span-2"><a href="/about/">关于</a></li><li class="col-span-2"><a href="/archives/" title="归档" aria-label="归档" class="group inline-flex items-center gap-1 hover:text-accent focus-outline flex size-full justify-center p-3 sm:relative sm:size-8 sm:p-0"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="hidden sm:absolute sm:top-1/2 sm:left-1/2 sm:block sm:size-6 sm:-translate-x-1/2 sm:-translate-y-1/2" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M3 6a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2 2 2 0 0 1-2 2H5a2 2 0 0 1-2-2M5 8v10a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8M10 12h4" /></svg><span class="sm:sr-only">归档</span></a></li><li class="col-span-1 flex items-center justify-center"><a href="/search/" title="搜索" aria-label="搜索" class="group inline-flex items-center gap-1 hover:text-accent focus-outline relative size-8"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="absolute top-1/2 left-1/2 size-6 -translate-x-1/2 -translate-y-1/2" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M3 10a7 7 0 1 0 14 0 7 7 0 1 0-14 0M21 21l-6-6" /></svg><span class="sr-only">搜索</span></a></li><li class="col-span-1 flex items-center justify-center"><button id="theme-btn" class="focus-outline hover:[&amp;&gt;svg]:stroke-accent relative size-12 p-4 sm:size-8" title="切换主题" aria-label="auto" aria-live="polite"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="absolute top-[50%] left-[50%] translate-[-50%] scale-100 rotate-0 transition-all dark:scale-0 dark:-rotate-90" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M12 3h.393a7.5 7.5 0 0 0 7.92 12.446A9 9 0 1 1 12 2.992z" /></svg><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="absolute top-[50%] left-[50%] translate-[-50%] scale-0 rotate-90 transition-all dark:scale-100 dark:rotate-0" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M14.828 14.828a4 4 0 1 0-5.656-5.656 4 4 0 0 0 5.656 5.656M6.343 17.657l-1.414 1.414M6.343 6.343 4.929 4.929M17.657 6.343l1.414-1.414M17.657 17.657l1.414 1.414M4 12H2M12 4V2M20 12h2M12 20v2" /></svg></button></li></ul></nav></div></header><script type="module">function e(){let e=document.querySelector(`#menu-btn`),t=document.querySelector(`#menu-items`),n=document.querySelector(`#menu-icon`),r=document.querySelector(`#close-icon`);if(!e||!t||!n||!r)return;let i=e.dataset.labelOpen??`Open menu`,a=e.dataset.labelClose??`Close menu`;e.addEventListener(`click`,()=>{let o=e.getAttribute(`aria-expanded`)===`true`;e.setAttribute(`aria-expanded`,o?`false`:`true`),e.setAttribute(`aria-label`,o?i:a),t.classList.toggle(`hidden`),t.classList.toggle(`grid`),n.classList.toggle(`hidden`),r.classList.toggle(`hidden`)})}function t(){let e=document.getElementById(`skip-to-content`);e&&e.addEventListener(`click`,e=>{if(e.defaultPrevented||e.metaKey||e.ctrlKey||e.shiftKey||e.button!==0)return;e.preventDefault();let t=document.getElementById(`main-content`);t&&(t.setAttribute(`tabindex`,`-1`),t.addEventListener(`blur`,()=>t.removeAttribute(`tabindex`),{once:!0}),t.focus(),t.scrollIntoView({behavior:`smooth`}))})}e(),document.addEventListener(`astro:after-swap`,e),t(),document.addEventListener(`astro:after-swap`,t);</script><div class="app-layout flex items-center justify-start"><a id="back-button" href="/" class="group inline-flex items-center gap-1 hover:text-accent focus-outline hover:text-foreground/75 -ms-2 mt-8 mb-2"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="inline-block size-6 rtl:rotate-180" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="m15 6-6 6 6 6" /></svg><span>返回</span></a></div><script type="module">function e(){let e=document.querySelector(`#back-button`),t=sessionStorage.getItem(`backUrl`);t&&e&&(e.href=t)}document.addEventListener(`astro:page-load`,e),e();</script><main id="main-content" class="app-layout" data-pagefind-body><h1 style="view-transition-name:llm-tool-use-loop" class="text-accent inline-block text-2xl font-bold sm:text-3xl">模型与程序的工具使用循环</h1><div class="my-2 flex items-center gap-2"><div class="text-muted-foreground flex items-center gap-x-2"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="inline-block size-6 min-w-5.5" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M4 7a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2zM16 3v4M8 3v4M4 11h16M7 14h.013M10.01 14h.005M13.01 14h.005M16.015 14h.005M13.015 17h.005M7.01 17h.005M10.01 17h.005" /></svg><time class="text-sm sm:text-base" datetime="2022-04-08T02:00:00.000Z">2022年4月8日</time></div><span aria-hidden="true" class="text-muted-foreground max-sm:hidden hidden">|</span></div><article id="article" class="mt-8 w-full app-prose max-w-app prose-pre:bg-(--shiki-light-bg) dark:prose-pre:bg-(--shiki-dark-bg)"><p>在探讨大语言模型（large language model，LLM）的评测体系与参数化知识局限时，一个核心的工程痛点始终无法规避：预训练（pretraining）模型生成的长文本回答往往夹杂着难以察觉的事实性幻觉。在论文比较的 GPT-3 于 TruthfulQA 真实且有信息指标评测中，基座模型甚至表现出参数规模越大得分越低的逆向扩展趋势<a href="#ref-nakano-2021"><span id="citation-nakano-intro-truthfulqa">1 (§4.2)</span></a>。若仅依赖神经网络权重内部储存的静态记忆，模型既无法主动核验外部动态事实，也难以向读者或审核系统提供可追溯的证据链条。</p>
+<p>以往的问答研究方案多聚焦于针对给定查询改进文档检索本身。然而，现实世界中最强大的信息检索基础设施（如现代网络搜索引擎）包含了海量索引、动态排序、翻页浏览与页面跳转等离散流程，无法直接通过端到端梯度反向传播去微调（fine-tuning）。研究者转而探索一种<strong>模型与程序协同的交互循环（tool-use loop）</strong>：将网页检索外包给现成的搜索引擎，让宿主程序负责环境渲染与网络调用，让语言模型充当决策与阅读理解器，学会像人类用户一样阅读检索结果、导航页面并提取关键证据进行推理（inference）。</p>
+<p>本文基于 OpenAI 的 WebGPT 研究 Nakano et al. (2021)<a href="#ref-nakano-2021"><span id="citation-nakano-intro">1</span></a>，解析大语言模型接入文本化浏览器环境的交互协议、离散动作空间的设计边界、引文支持的事实核验机制，以及行为克隆、奖励模型与拒绝采样在工具交互中的实验结论。</p>
+<hr>
+<h2 id="1-交互循环架构与文本化环境设计">1. 交互循环架构与文本化环境设计</h2>
+<p>让自回归因果语言模型使用外部软件工具，通常需要将程序交互抽象为动作与观察的多轮轮询循环<a href="#ref-nakano-2021"><span id="citation-nakano-sec2">1 (§2)</span></a>。在该设计中，模型并非直接调用底层的操作系统图形界面，而是通过宿主程序生成的文本摘要进行标准化交互。</p>
+<svg viewBox="0 0 400 330" width="100%" style="max-width: 400px; display: block; margin: 1.5rem auto;" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="tool-loop-title tool-loop-desc">
+  <title id="tool-loop-title">模型与文本浏览器环境的交互循环流程图</title>
+  <desc id="tool-loop-desc">人工教学示意图：展示宿主程序组织状态文本、大语言模型生成控制动作、环境执行调用并扣除动作预算，以及生成新状态返回模型的闭环交互流程。</desc>
+  <defs>
+    <marker id="arrowhead" viewBox="0 0 10 10" refX="6" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M 0 1 L 8 5 L 0 9 z" fill="#475569"></path>
+    </marker>
+    <marker id="arrowhead-loop" viewBox="0 0 10 10" refX="6" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M 0 1 L 8 5 L 0 9 z" fill="#2563eb"></path>
+    </marker>
+  </defs>
+  <!-- 节点 1：宿主程序 -->
+  <rect x="65" y="15" width="320" height="65" rx="8" fill="#f8fafc" stroke="#64748b" stroke-width="2"></rect>
+  <text x="225" y="43" font-size="18" font-weight="bold" fill="#0f172a" text-anchor="middle">宿主程序：组织状态文本</text>
+  <text x="225" y="67" font-size="18" fill="#475569" text-anchor="middle">（视口文本、引文池与动作历史）</text>
+  <!-- 下行箭头 1 -->
+  <path d="M 225 80 V 115" stroke="#475569" stroke-width="2" marker-end="url(#arrowhead)"></path>
+  <text x="235" y="103" font-size="18" fill="#64748b">输入全新上下文</text>
+  <!-- 节点 2：模型策略 -->
+  <rect x="65" y="120" width="320" height="65" rx="8" fill="#f8fafc" stroke="#64748b" stroke-width="2"></rect>
+  <text x="225" y="148" font-size="18" font-weight="bold" fill="#0f172a" text-anchor="middle">模型策略：生成控制动作</text>
+  <text x="225" y="172" font-size="18" fill="#475569" text-anchor="middle">（自回归输出离散动作指令）</text>
+  <!-- 下行箭头 2 -->
+  <path d="M 225 185 V 220" stroke="#475569" stroke-width="2" marker-end="url(#arrowhead)"></path>
+  <text x="235" y="208" font-size="18" fill="#64748b">输出动作指令 a_t</text>
+  <!-- 节点 3：环境执行 -->
+  <rect x="65" y="225" width="320" height="65" rx="8" fill="#f8fafc" stroke="#64748b" stroke-width="2"></rect>
+  <text x="225" y="253" font-size="18" font-weight="bold" fill="#0f172a" text-anchor="middle">环境执行：调用与扣减预算</text>
+  <text x="225" y="277" font-size="18" fill="#475569" text-anchor="middle">（检索/跳转/摘录并扣减步数）</text>
+  <!-- 闭环循环箭头 -->
+  <path d="M 65 257 H 28 V 47 H 57" fill="none" stroke="#2563eb" stroke-width="2" stroke-dasharray="5 3" marker-end="url(#arrowhead-loop)"></path>
+  <text x="14" y="152" font-size="18" font-weight="bold" fill="#2563eb" text-anchor="middle" transform="rotate(-90 14 152)">返回新状态文本</text>
+</svg>
+<p>图 1：模型与文本浏览器环境的交互循环示意（人工教学图示）。宿主程序接收外部搜索结果与网页文本，经清洗后组装为包含当前问题、引文池、动作历史与视口文本的状态摘要；模型策略在全新上下文输入下推理并自回归生成离散控制指令；宿主环境执行系统调用、维护引文并扣除单步预算后，生成新状态文本返回模型，构成闭环交互。</p>
+<h3 id="11-状态空间的文本序列化协议">1.1 状态空间的文本序列化协议</h3>
+<p>因果语言模型在每个交互时间步接收到的输入并非图形界面截图，而是一份由宿主程序动态渲染的<strong>环境状态文本摘要（Environment State Summary）</strong><a href="#ref-nakano-2021"><span id="citation-nakano-sec2-summary">1 (§2)</span></a>。该文本主要由以下核心字段串联而成：</p>
+<ol>
+<li><strong>核心问题（Question）</strong>：当前需要回答的用户提问；</li>
+<li><strong>已收集引文（Quotes）</strong>：此前步骤中由模型通过摘录指令保存的网页段落、标题与来源域名；</li>
+<li><strong>历史动作轨迹（Past actions）</strong>：此前所执行的动作名称列表（如搜索、点击、回退等）；</li>
+<li><strong>当前视口标题与滚动位置（Title &#x26; Scrollbar）</strong>：当前所在页面的标题、域名以及滚动条所处的文本行范围；</li>
+<li><strong>当前视口文本（Text）</strong>：当前网页在该滚动位置呈现的具体文字内容；</li>
+<li><strong>剩余可用动作步数（Actions left）</strong>：限制单次交互的最大预算（评测中上限通常设为 100 步）。</li>
+</ol>
+<p>在 WebGPT 的设计中，模型每步接收一个包含提问、已收集引文、动作历史与当前视口的全新上下文（fresh context），前序步骤的信息完全依赖该文本摘要得以保留，而无其他跨时间步的隐层记忆传递<a href="#ref-nakano-2021"><span id="citation-nakano-sec2-context">1 (§2)</span></a>。每一次决策均是对当前状态摘要的上下文自回归前向推导。</p>
+<h3 id="12-离散动作空间与语法指令集">1.2 离散动作空间与语法指令集</h3>
+<p>在每一个交互步，模型必须在词表概率分布中自回归采样输出符合预设语法的控制字符串。Nakano et al. (2021) 在论文表 1 中列出了 10 条交互命令模板<a href="#ref-nakano-2021"><span id="citation-nakano-table1">1 (Table 1)</span></a>：</p>
+<div class="table-wrapper" tabindex="0">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<table><thead><tr><th align="left">动作命令模板</th><th align="left">动作语义与环境响应</th><th align="left">参数与边界约束</th></tr></thead><tbody><tr><td align="left"><code>Search &#x3C;query></code></td><td align="left">调用 Bing API 发送检索词</td><td align="left">返回简化版搜索结果页</td></tr><tr><td align="left"><code>Clicked on link &#x3C;link ID></code></td><td align="left">跟随指定编号的超链接跳转</td><td align="left">解析并渲染对应新页面</td></tr><tr><td align="left"><code>Find in page: &#x3C;text></code></td><td align="left">在当前页面检索该文本</td><td align="left">视口自动滚动至下一个匹配项</td></tr><tr><td align="left"><code>Quote: &#x3C;text></code></td><td align="left">摘录当前页面匹配文本存为引文</td><td align="left">记录来源标题与域名作依据</td></tr><tr><td align="left"><code>Scrolled down &#x3C;1, 2, 3></code></td><td align="left">向下滚动指定次数</td><td align="left">调整视口所渲染文本切片</td></tr><tr><td align="left"><code>Scrolled up &#x3C;1, 2, 3></code></td><td align="left">向上滚动指定次数</td><td align="left">调整视口所渲染文本切片</td></tr><tr><td align="left"><code>Top</code> / <code>Back</code></td><td align="left">滚动至页首或返回上一页面</td><td align="left">维护浏览历史栈结构</td></tr><tr><td align="left"><code>End: Answer</code></td><td align="left">主动结束浏览并尝试进入回答阶段</td><td align="left">需已收集至少 1 条引文才进入回答</td></tr><tr><td align="left"><code>End: &#x3C;Nonsense, Controversial></code></td><td align="left">标记问题无意义或有争议并终止</td><td align="left">跳过回答合成阶段</td></tr></tbody></table></div>
+<p>若模型生成了无法匹配上述任何语法的字符序列，宿主环境将其判定为<strong>非法动作（invalid action）</strong>。环境会忽略该指令的操作效果，但仍会扣除 1 次剩余动作预算，避免模型陷入无消耗死循环解码。</p>
+<h3 id="13-确定性文本清洗与防作弊机制">1.3 确定性文本清洗与防作弊机制</h3>
+<p>外部互联网网页包含大量的 HTML 标签、样式脚本、广告弹窗及多媒体元素。由于模型上下文窗口容量存在刚性上限，宿主环境在底层集成了确定性预处理流水线<a href="#ref-nakano-2021"><span id="citation-nakano-appa">1 (Appendix A)</span></a>：</p>
+<ul>
+<li><strong>正文提取与降噪</strong>：点击链接后，调用 Mozilla Readability.js 提取网页正文骨架，随后通过 <code>html2text</code> 转换为纯文本；PDF 文档则调用 <code>pdfminer.six</code> 提取文本；</li>
+<li><strong>结构化链接编码</strong>：跨域链接编码为链接编号、链接文本与目的域名三个字段 <code>【&#x3C;link ID>†&#x3C;link text>†&#x3C;destination domain>】</code>；若目的域名与当前页面域名相同，则省略目的域名，简写为 <code>【&#x3C;link ID>†&#x3C;link text>】</code>；</li>
+<li><strong>防泄露与防作弊审查</strong>：环境屏蔽了来自 <code>reddit.com</code> 与 <code>quora.com</code> 的所有搜索结果与链接跳转，防止模型在 ELI5 问答任务中直接抄袭社区原生回答；同时，若抓取页面包含与当前问题或所给参考答案重叠的 10-gram 片段，环境会强制遮蔽该页面并返回错误提示。</li>
+</ul>
+<hr>
+<h2 id="2-浏览与回答两个阶段">2. 浏览与回答两个阶段</h2>
+<p>在系统流转上，任务被清晰划分为<strong>浏览阶段（browsing phase）</strong>与<strong>回答阶段（answering phase）</strong>两个主要阶段<a href="#ref-nakano-2021"><span id="citation-nakano-sec2c">1 (§2)</span></a>：</p>
+<ol>
+<li><strong>浏览阶段（browsing phase）</strong>：模型在每一个交互步自回归生成离散动作指令，触发搜索引擎检索、超链接跳转、页面滚动或通过 <code>Quote:</code> 摘录关键事实；</li>
+<li><strong>浏览终止分支判断</strong>：
+<ul>
+<li>若模型执行 <code>End: &#x3C;Nonsense, Controversial></code> 指令，系统直接提前终止，跳过回答阶段；</li>
+<li>若动作步数预算耗尽（action budget reached）或达到引文长度上限，且此时已收集引文数量为 0，系统由于缺乏事实依据同样跳过回答阶段；</li>
+<li>若模型发出 <code>End: Answer</code> 指令（或达到上述步数/长度上限终止条件），且已收集引文数量至少为 1 条，系统方可进入回答阶段；</li>
+</ul>
+</li>
+<li><strong>回答阶段（answering phase）</strong>：宿主环境将用户提问与此前收集的编号引文拼接为最终提示词（<code>&#x3C;Question>◼</code> 加上若干形如 <code>[序号] 标题 (域名) \n\n 摘录内容◼</code> 的文本块），模型在此上下文下自回归生成带有对应引文角标（如 <code>[1]</code>、<code>[2]</code>）的长文本回答。</li>
+</ol>
+<h3 id="21-引用机制与评估噪声控制">2.1 引用机制与评估噪声控制</h3>
+<p>在长文本问答（Long-Form Question-Answering，LFQA）任务中，评估模型生成内容的事实准确性极为困难。若让标注员在开放互联网上独立查证任意主张，流程耗时漫长且主观方差极大。</p>
+<p>Nakano et al. (2021) 引入的引用机制（References/Quotes）重构了人工评估的作业模式：</p>
+<ol>
+<li><strong>主张的引文支撑</strong>：需要外部材料支持的主张应给出相应引文编号（例如标注 <code>[2]</code>）<a href="#ref-nakano-2021"><span id="citation-nakano-table2">1 (Table 2)</span></a>；</li>
+<li><strong>核验任务形式转化</strong>：标注员无须开展耗时的事实再考证，而是判断该主张是否由给定的可信引用充分支撑，或属于公认常识（common knowledge），并结合整体相关性与连贯性进行评价<a href="#ref-nakano-2021"><span id="citation-nakano-sec64">1 (§6.4)</span></a>；</li>
+<li><strong>一致率度量基准</strong>：在针对最终回答成对比较的评估中，研究人员与标注员之间的一致率测得为 74%，标注员之间的一致率为 73%（中立与非中立标签之间的分歧按 50% 折算）<a href="#ref-nakano-2021"><span id="citation-nakano-appc">1 (Appendix C)</span></a>。作者认为，依据给定来源判断支持程度比独立事实核查更容易、有助于降低评估噪声，为训练偏好模型提供了更具一致性的数据基础。</li>
+</ol>
+<hr>
+<h2 id="3-策略优化方法行为克隆奖励模型与拒绝采样">3. 策略优化方法：行为克隆、奖励模型与拒绝采样</h2>
+<p>预训练的大语言模型由于未见过特定浏览环境的语法指令，无法开箱即用发出规范的控制命令。为此，研究团队设计了四种主要训练与采样方法以优化该循环<a href="#ref-nakano-2021"><span id="citation-nakano-sec3">1 (§3)</span></a>。</p>
+<p>优化方法的核心分工与关系：</p>
+<ul>
+<li><strong>行为克隆（behavior cloning，BC）基准</strong>：以人工演示数据为监督信号微调基座模型，使模型掌握浏览器环境的基本操作语法；</li>
+<li><strong>奖励模型（reward model，RM）训练</strong>：利用成对回答对比数据学习人类偏好，输出标量评分；</li>
+<li><strong>优化路径选择</strong>：训练完成的奖励模型既可用于近端策略优化（proximal policy optimization，PPO）算法的在线强化学习（reinforcement learning，RL），也可直接用于测试期拒绝采样（rejection sampling，此处指 best-of-n 选择）以评估择优；</li>
+<li><strong>采样来源灵活性</strong>：在进行拒绝采样时，候选轨迹既可直接采样自行为克隆策略，也可采样自经强化学习优化后的策略。</li>
+</ul>
+<h3 id="31-行为克隆behavior-cloningbc">3.1 行为克隆（Behavior Cloning，BC）</h3>
+<p>研究团队开发了图形化演示界面，雇佣标注员通过文本浏览器解答开放问题，收集了约 6,000 条完整的人工交互演示（Demonstrations，其中 92% 源自 ELI5）<a href="#ref-nakano-2021"><span id="citation-nakano-sec31">1 (§3.1)</span></a>。</p>
+<p>在有监督微调（supervised fine-tuning，SFT）阶段，模型以环境状态文本为输入，学习预测人类演示者发出的动作命令。针对浏览阶段的动作预测，其目标可示意表示为对数条件概率的最大化：</p>
+<pre class="astro-code astro-code-themes min-light night-owl" style="--shiki-light:#24292eff;--shiki-dark:#d6deeb;--shiki-light-bg:#ffffff;--shiki-dark-bg:#011627; overflow-x: auto;--file-name-offset: -0.75rem;" tabindex="0" data-language="text"><code><span class="line"><span>L_{BC}(θ) = - ∑_{t=1}^T log P_θ(a_t^* | s_t)</span></span></code></pre>
+<p>需要说明的是，实际有监督训练不仅涵盖浏览阶段的动作，也包括后续回答阶段的文本生成。行为克隆使模型迅速掌握了指令格式与翻页逻辑，但单纯模仿演示并不直接以人类对最终回答的偏好为优化目标<a href="#ref-nakano-2021"><span id="citation-nakano-sec31-bc-objective">1 (§3.1)</span></a>。</p>
+<h3 id="32-奖励模型reward-modelrm">3.2 奖励模型（reward model，RM）</h3>
+<p>为评估回答质量，研究团队收集了约 21,500 对模型生成的同题回答对比数据（Comparisons，其中 98% 来自 ELI5）<a href="#ref-nakano-2021"><span id="citation-nakano-sec31b">1 (§3.1)</span></a>。最终的奖励模型在其中约 16,000 对样本上进行训练，其余约 5,500 对保留用于评估<a href="#ref-nakano-2021"><span id="citation-nakano-sec32">1 (§3.2)</span></a>。</p>
+<p>奖励模型以行为克隆模型为起点，移除了最终的词表输出投影层（unembedding layer），替换为输出标量数值的线性层。给定问题 <code>x</code> 与带引文回答 <code>y</code>，模型输出标量评分 <code>r(x, y)</code>。该评分映射为 Elo 积分体系，两项评分差值代表人类偏好的对数几率：</p>
+<pre class="astro-code astro-code-themes min-light night-owl" style="--shiki-light:#24292eff;--shiki-dark:#d6deeb;--shiki-light-bg:#ffffff;--shiki-dark-bg:#011627; overflow-x: auto;--file-name-offset: -0.75rem;" tabindex="0" data-language="text"><code><span class="line"><span>P(y_A ≻ y_B | x) = σ(r(x, y_A) - r(x, y_B)) = 1 / (1 + exp(-(r(x, y_A) - r(x, y_B))))</span></span></code></pre>
+<p>模型采用交叉熵损失函数进行训练，平局按 0.5 软标签处理<a href="#ref-nakano-2021"><span id="citation-nakano-sec32-rm-loss">1 (§3.2)</span></a>。</p>
+<h3 id="33-强化学习与拒绝采样的实验表现">3.3 强化学习与拒绝采样的实验表现</h3>
+<p>获得标量奖励模型后，研究探讨了两种主要的优化方式：</p>
+<ol>
+<li><strong>强化学习（reinforcement learning，RL）</strong>：基于近端策略优化（proximal policy optimization，PPO）算法在线更新策略网络。奖励信号在回合结束时由奖励模型给出，并在每个 token（模型处理的基本序列单位，词元）上施加相对于行为克隆模型的 Kullback-Leibler 散度（KL 散度）惩罚以缓解过度优化；</li>
+<li><strong>测试期拒绝采样（rejection sampling，此处指 best-of-n 选择）</strong>：在推理（inference）阶段从策略模型中独立采样 <code>n</code> 条完整的交互与回答序列，由奖励模型打分并选出得分最高的样本输出<a href="#ref-nakano-2021"><span id="citation-nakano-sec32b">1 (§3.2)</span></a>。</li>
+</ol>
+<p>在针对 175B 模型的消融实验中，Nakano et al. (2021) 观察到了清晰的方法效能差异<a href="#ref-nakano-2021"><span id="citation-nakano-sec51">1 (§5.1)</span></a>：</p>
+<div class="table-wrapper" tabindex="0">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<table><thead><tr><th align="left">优化方案</th><th align="left">相对 175B BC 基线偏好率</th><th align="left">算力与交互特征</th></tr></thead><tbody><tr><td align="left">175B PPO 强化学习</td><td align="left">58% 胜率（Figure 4）</td><td align="left">单次推理采样，需调优超参数与 KL 系数</td></tr><tr><td align="left">175B 拒绝采样（Best-of-64）</td><td align="left">68% 胜率（Figure 5）</td><td align="left">采样 64 条完整轨迹，RM 打分挑选最优</td></tr></tbody></table></div>
+<p>对于拒绝采样为何在该实验设置下显著超越纯 RL 的问题，作者在论文 §5.1 中提出了<strong>四种可能的解释（several possible reasons）</strong>：</p>
+<ul>
+<li><strong>尝试更多回答</strong>：拒绝采样直接投入了更多的推理期算力，增加了生成优质回答的机会；</li>
+<li><strong>环境的不可预测性</strong>：多次采样让系统能够探索不同的搜索词与网页，并在多次尝试后，对已找到的材料作事后评估；</li>
+<li><strong>奖励模型分布特性</strong>：奖励模型主要基于 BC 和拒绝采样策略生成的数据训练，对拒绝采样的过度优化可能比对 RL 的过度优化更为稳健；</li>
+<li><strong>超参数调优难度</strong>：RL 依赖复杂的超参数调试，而拒绝采样无需额外的训练超参数调节。</li>
+</ul>
+<p>此外，论文指出 RL 会降低策略的动作熵（entropy），可能由此削弱了探索多样化搜索路径的能力。实验同时表明，若在经过 RL 训练的策略上再施加拒绝采样，其相对纯 BC 策略做拒绝采样并未展现出显著的额外增益（如图 4 所示）<a href="#ref-nakano-2021"><span id="citation-nakano-sec51c">1 (§5.1)</span></a>。这并不保证采样越多越可靠；附录 I 提醒，当采样数量 n 足够大时，仍可能过度优化奖励模型<a href="#ref-nakano-2021"><span id="citation-nakano-appi">1 (Appendix I)</span></a>。</p>
+<p>鉴于上述权衡，Nakano et al. (2021) 在主评测模型中排除了 RL，确定了三套能效前沿配置：<strong>760M Best-of-4</strong>、<strong>13B Best-of-16</strong> 与 <strong>175B Best-of-64</strong><a href="#ref-nakano-2021"><span id="citation-nakano-sec52">1 (§5.2)</span></a>。在 ELI5 测试集上（平局按 50% 折算），175B Best-of-64 生成的回答在 56% 的比较中优于人类演示者，并在去除引用（with references stripped）后以 69% 的偏好率胜过 Reddit 社区的高赞原生回答<a href="#ref-nakano-2021"><span id="citation-nakano-sec41">1 (§4.1)</span></a>。而在 TruthfulQA 评测中（输出截断至 50 token 并由人工评价），该模型真实且具信息量的比率达到 54%，优于无检索工具的 GPT-3 基座模型<a href="#ref-nakano-2021"><span id="citation-nakano-sec42">1 (§4.2)</span></a>。</p>
+<hr>
+<h2 id="4-工具使用循环的失效边界与偏见机制">4. 工具使用循环的失效边界与偏见机制</h2>
+<p>尽管工具调用循环能够实时获取外部信息并提供引文支持，但外部工具的介入并未彻底消除偏差，反而暴露出若干独特的脆弱性。</p>
+<h3 id="41-投机摘录与片面证据cherry-picking-references">4.1 投机摘录与片面证据（Cherry-Picking References）</h3>
+<p>引文支撑机制将评测转化为“主张是否被引文支持”，但这同时产生了一种反向激励：<strong>模型倾向于摘录那些容易让标注员信服的单方面证据，而非展现平衡客观的事实全貌</strong><a href="#ref-nakano-2021"><span id="citation-nakano-sec64b">1 (§6.4)</span></a>。</p>
+<p>在面对存在争议或充斥伪科学的提问时，模型可能通过搜索引擎定位并摘录语言看似权威但信誉低下的边缘站点内容。在 TruthfulQA 评测中，尽管 WebGPT 的整体真实率显著提升，但在部分对抗性问题上依然出现引用不可靠信源以佐证错误主张的现象<a href="#ref-nakano-2021"><span id="citation-nakano-sec61">1 (§6.1)</span></a>。</p>
+<h3 id="42-题干立场迎合与文化基准点偏差">4.2 题干立场迎合与文化基准点偏差</h3>
+<p>Nakano et al. (2021) 在附录 H 中记录了工具循环在问题倾向与文化背景方面的脆弱性：</p>
+<ul>
+<li><strong>题干立场迎合（Question Stance Bias）</strong>：
+研究针对 10 个阴谋论和 10 个常见误区设计了 60 道具有不同倾向性的题目（怀疑、中立与肯定态度）<a href="#ref-nakano-2021"><span id="citation-nakano-apph1">1 (Appendix H.1)</span></a>。实验观察到，当题干采用肯定态度引导时（例如“为什么政府要伪造登月？”），模型生成的回答更容易顺应题目的错误假设，从而向提问者强化错误的先验偏见；</li>
+<li><strong>文化基准点默认（Reference Point Bias）</strong>：
+在针对文化中立问题“一场婚礼通常是什么样的？”的 64 次独立采样分析中，有 20 次回答主动出现了 America 或 American 词汇，且大部分回答默认描述西方美式婚礼习俗<a href="#ref-nakano-2021"><span id="citation-nakano-apph2">1 (Appendix H.2)</span></a>。作者推测，这一文化偏差可能是预训练数据分布、网络搜索结果、标注员群体背景以及研究团队视角共同作用的结果。</li>
+</ul>
+<h3 id="43-实时工具访问的安全边界">4.3 实时工具访问的安全边界</h3>
+<p>在实时网络访问环境中，作者认为当时 WebGPT 利用动作副作用的风险很低，原因是环境只暴露以下交互<a href="#ref-nakano-2021"><span id="citation-nakano-sec65">1 (§6.5)</span></a>：</p>
+<ul>
+<li>环境暴露的外部交互仅限于向 Bing API 发送查询和跟随已有的网页超链接，不直接向模型提供网络表单填写、登录或维基百科编辑功能；</li>
+<li>论文仍提醒，能力足够强的系统可能提升这些权限（escalate these privileges），当时 WebGPT 被认为尚远不足以做到；</li>
+<li>作为风险假设，若模型具备网络表单提交等写入权限，在强化学习奖励的驱动下，模型有可能学会通过网络表单主动篡改外部页面（如编辑维基百科词条）以伪造证据支持自身回答<a href="#ref-nakano-2021"><span id="citation-nakano-sec65b">1 (§6.5)</span></a>。</li>
+</ul>
+<p>据此可作的一项工程归纳是：在接入外部工具时应坚持最小动作特权，并随着模型能力增强重新评估权限范围与滥用风险。</p>
+<hr>
+<h2 id="5-总结">5. 总结</h2>
+<p>WebGPT 的探索表明，大语言模型与外部离散程序的结合能够突破封闭静态参数的局限，在开放问答任务中实现可追溯的证据引用与高质量文本合成。然而，这一实验范式同时也揭示出：测试期的多样化搜索探索对黑盒动态环境尤为重要，引文支持并不等同于全貌客观性，而外部工具接口的设计更需严格限定动作权限与安全边界。</p>
+<hr>
+<h2 id="参考资料">参考资料</h2>
+<ol>
+  <li>
+    Nakano, R., Hilton, J., Balaji, S., Wu, J., Ouyang, L., Kim, C., Hesse, C., Jain, S., Kosaraju, V., Saunders, W., Jiang, X., Cobbe, K., Eloundou, T., Krueger, G., Button, K., Knight, M., Chess, B., &#x26; Schulman, J. (2021). <i>WebGPT: Browser-assisted question-answering with human feedback</i>. arXiv:2112.09332v1 [cs.CL].
+    <br>
+    首次提交日期：2021-12-17；本篇依据版本：2021-12-17 (arXiv:2112.09332v1).
+    <br>
+    原文链接：<a id="ref-nakano-2021" href="https://arxiv.org/abs/2112.09332v1" target="_blank" rel="noopener noreferrer">https://arxiv.org/abs/2112.09332v1</a>
+  </li>
+</ol></article><hr class="my-8 border-dashed"><div id="btt-btn-container" class="fixed inset-e-4 bottom-8 z-50 md:sticky md:inset-e-auto md:float-end md:me-1 translate-y-14 opacity-0 transition duration-500"><button data-button="back-to-top" class="group bg-background relative px-2 py-1 size-14 rounded-full shadow-xl md:h-8 md:w-fit md:rounded-md md:shadow-none md:focus-visible:rounded-none md:bg-background/35 md:bg-clip-padding md:backdrop-blur-lg"><span id="progress-indicator" class="absolute inset-0 -z-10 block size-14 scale-110 rounded-full bg-transparent md:hidden md:h-8 md:rounded-md"></span><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="inline-block rotate-90 md:hidden" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M5 12h14M5 12l6 6M5 12l6-6" /></svg><span class="group-hover:text-accent sr-only text-sm md:not-sr-only"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="inline-block size-4" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M12 5v14M16 9l-4-4M8 9l4-4" /></svg> 回到顶部</span></button></div><script data-astro-rerun>
+  function backToTop() {
+    const rootElement = document.documentElement;
+    const btnContainer = document.querySelector("#btt-btn-container");
+    const backToTopBtn = document.querySelector("[data-button='back-to-top']");
+    const progressIndicator = document.querySelector("#progress-indicator");
+
+    if (!rootElement || !btnContainer || !backToTopBtn || !progressIndicator)
+      return;
+
+    backToTopBtn.addEventListener("click", () => {
+      document.body.scrollTop = 0;
+      document.documentElement.scrollTop = 0;
+    });
+
+    let lastVisible = null;
+    function handleScroll() {
+      const scrollTotal = rootElement.scrollHeight - rootElement.clientHeight;
+      const scrollTop = rootElement.scrollTop;
+      const scrollPercent = Math.floor((scrollTop / scrollTotal) * 100);
+
+      progressIndicator.style.setProperty(
+        "background-image",
+        `conic-gradient(var(--accent), var(--accent) ${scrollPercent}%, transparent ${scrollPercent}%)`
+      );
+
+      const isVisible = scrollTop / scrollTotal > 0.3;
+
+      if (isVisible !== lastVisible) {
+        btnContainer.classList.toggle("opacity-100", isVisible);
+        btnContainer.classList.toggle("translate-y-0", isVisible);
+        btnContainer.classList.toggle("opacity-0", !isVisible);
+        btnContainer.classList.toggle("translate-y-14", !isVisible);
+        lastVisible = isVisible;
+      }
+    }
+
+    let ticking = false;
+    document.addEventListener("scroll", () => {
+      if (!ticking) {
+        window.requestAnimationFrame(() => {
+          handleScroll();
+          ticking = false;
+        });
+        ticking = true;
+      }
+    });
+  }
+  backToTop();
+</script><ul class="mt-4 mb-8 flex flex-wrap gap-4 sm:my-8"><li><a data-astro-transition-scope="astro-bztu2lml-1" href="/tags/ai/" class="flex items-center gap-0.5 border-foreground border-b-2 border-dashed hover:border-accent hover:text-accent hover:-mt-0.5 focus-visible:text-accent focus-visible:border-none text-sm"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="opacity-80 size-4" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M5 9h14M5 15h14M11 4 7 20M17 4l-4 16" /></svg>AI</a></li><li><a data-astro-transition-scope="astro-bztu2lml-2" href="/tags/llm/" class="flex items-center gap-0.5 border-foreground border-b-2 border-dashed hover:border-accent hover:text-accent hover:-mt-0.5 focus-visible:text-accent focus-visible:border-none text-sm"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="opacity-80 size-4" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M5 9h14M5 15h14M11 4 7 20M17 4l-4 16" /></svg>LLM</a></li><li><a data-astro-transition-scope="astro-bztu2lml-3" href="/tags/tooluse/" class="flex items-center gap-0.5 border-foreground border-b-2 border-dashed hover:border-accent hover:text-accent hover:-mt-0.5 focus-visible:text-accent focus-visible:border-none text-sm"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="opacity-80 size-4" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M5 9h14M5 15h14M11 4 7 20M17 4l-4 16" /></svg>ToolUse</a></li><li><a data-astro-transition-scope="astro-bztu2lml-4" href="/tags/webgpt/" class="flex items-center gap-0.5 border-foreground border-b-2 border-dashed hover:border-accent hover:text-accent hover:-mt-0.5 focus-visible:text-accent focus-visible:border-none text-sm"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="opacity-80 size-4" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M5 9h14M5 15h14M11 4 7 20M17 4l-4 16" /></svg>WebGPT</a></li><li><a data-astro-transition-scope="astro-bztu2lml-5" href="/tags/informationretrieval/" class="flex items-center gap-0.5 border-foreground border-b-2 border-dashed hover:border-accent hover:text-accent hover:-mt-0.5 focus-visible:text-accent focus-visible:border-none text-sm"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="opacity-80 size-4" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M5 9h14M5 15h14M11 4 7 20M17 4l-4 16" /></svg>InformationRetrieval</a></li><li><a data-astro-transition-scope="astro-bztu2lml-6" href="/tags/reinforcementlearning/" class="flex items-center gap-0.5 border-foreground border-b-2 border-dashed hover:border-accent hover:text-accent hover:-mt-0.5 focus-visible:text-accent focus-visible:border-none text-sm"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="opacity-80 size-4" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M5 9h14M5 15h14M11 4 7 20M17 4l-4 16" /></svg>ReinforcementLearning</a></li></ul><hr class="my-8 border-dashed"><div data-pagefind-ignore class="my-8 grid grid-cols-1 gap-6 sm:grid-cols-2"><a href="/posts/llm-evaluation-quality-cost/" class="flex w-full gap-1 hover:opacity-75"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="inline-block flex-none rtl:rotate-180" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M5 12h14M5 12l6 6M5 12l6-6" /></svg><div><span>上一篇</span><div class="text-accent/85 text-sm">大语言模型的质量、成本与延迟评测</div></div></a><a href="/posts/llm-multimodal-alignment/" class="flex w-full justify-end gap-1 text-end hover:opacity-75 sm:col-start-2"><div><span>下一篇</span><div class="text-accent/85 text-sm">多模态文本与图像的表征对齐</div></div><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="inline-block flex-none rtl:rotate-180" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M5 12h14M13 18l6-6M13 6l6 6" /></svg></a></div></main><footer class="app-layout mt-auto"><div class="border-border flex flex-col items-center justify-between border-t py-6 sm:flex-row-reverse sm:py-4"><div class="flex flex-wrap items-center gap-1"><a href="https://github.com/SaromChars" title="Sarom Chars 的 GitHub" class="group inline-flex items-center gap-1 hover:text-accent p-2 hover:rotate-6 sm:p-1"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="inline-block size-6 scale-125 fill-transparent stroke-current stroke-2 opacity-90 group-hover:fill-transparent sm:scale-110" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M9 19c-4.3 1.4-4.3-2.5-6-3m12 5v-3.5c0-1 .1-1.4-.5-2 2.8-.3 5.5-1.4 5.5-6a4.6 4.6 0 0 0-1.3-3.2 4.2 4.2 0 0 0-.1-3.2s-1.1-.3-3.5 1.3a12.3 12.3 0 0 0-6.2 0C6.5 2.8 5.4 3.1 5.4 3.1a4.2 4.2 0 0 0-.1 3.2A4.6 4.6 0 0 0 4 9.5c0 4.6 2.7 5.7 5.5 6-.6.6-.6 1.2-.5 2V21" /></svg><span class="sr-only">Sarom Chars 的 GitHub</span></a></div><div class="my-2 flex flex-col items-center whitespace-nowrap sm:flex-row"><span>版权 &#169; 2026</span><span class="hidden sm:inline">&nbsp;|&nbsp;</span><span>保留所有权利。</span></div></div></footer><script type="module">var e=`theme`,t=`light`,n=`dark`;function r(){return localStorage.getItem(e)||(window.matchMedia(`(prefers-color-scheme: dark)`).matches?n:t)}var i=window.__theme?.value??r();function a(){localStorage.setItem(e,i),o()}function o(){let e=document.firstElementChild;e?.setAttribute(`data-theme`,i),e?.classList.toggle(`dark`,i===n),document.querySelector(`#theme-btn`)?.setAttribute(`aria-label`,i);let t=window.getComputedStyle(document.body).backgroundColor;document.querySelector(`meta[name='theme-color']`)?.setAttribute(`content`,t)}function s(){o(),document.querySelector(`#theme-btn`)?.addEventListener(`click`,()=>{i=i===t?n:t,a()})}s(),document.addEventListener(`astro:after-swap`,s),document.addEventListener(`astro:before-swap`,e=>{let t=document.querySelector(`meta[name='theme-color']`)?.getAttribute(`content`);t&&e.newDocument.querySelector(`meta[name='theme-color']`)?.setAttribute(`content`,t)}),window.matchMedia(`(prefers-color-scheme: dark)`).addEventListener(`change`,({matches:e})=>{i=e?n:t,a()});</script></body></html><script type="module">var e=document.querySelector(`#article`);if(e?.querySelector(`a[href^="#ref-"]`)){let t=null,n=!1,r=document.createElement(`button`);r.type=`button`,r.className=`citation-return`,r.textContent=`返回阅读位置`,r.setAttribute(`data-pagefind-ignore`,``),e.addEventListener(`click`,n=>{if(n.button!==0||n.metaKey||n.ctrlKey||n.shiftKey||n.altKey)return;let i=n.target instanceof Element?n.target.closest(`a[href^="#ref-"]`):null;if(!i||!e.contains(i))return;let a=i.hash,o=document.getElementById(decodeURIComponent(a.slice(1)));o&&e.contains(o)&&(t={source:i,url:window.location.href,top:window.scrollY,left:window.scrollX,targetHash:a},o.insertAdjacentElement(`afterend`,r))}),r.addEventListener(`click`,()=>{if(!t||n)return;let e=t,i=i=>{r.remove(),window.requestAnimationFrame(()=>{window.requestAnimationFrame(()=>{e.source.focus({preventScroll:!0}),window.scrollTo({top:e.top,left:e.left,behavior:`instant`}),t=null,n=!1,i?.()})})};window.location.href===e.url?i():(n=!0,window.addEventListener(`popstate`,()=>{let e=window.history.scrollRestoration;window.history.scrollRestoration=`manual`,window.setTimeout(()=>{i(()=>{window.history.scrollRestoration=e})},0)},{once:!0}),window.history.back())}),window.addEventListener(`hashchange`,()=>{!n&&t&&window.location.hash!==t.targetHash&&(r.remove(),t=null)})}</script><script data-astro-rerun>
+  function createProgressBar() {
+    const progressContainer = document.createElement("div");
+    progressContainer.className =
+      "progress-container fixed top-0 z-10 h-1 w-full bg-background";
+
+    const progressBar = document.createElement("div");
+    progressBar.className = "progress-bar h-1 w-0 bg-accent";
+    progressBar.id = "myBar";
+
+    progressContainer.appendChild(progressBar);
+    document.body.appendChild(progressContainer);
+  }
+  createProgressBar();
+
+  function updateScrollProgress() {
+    document.addEventListener("scroll", () => {
+      const winScroll =
+        document.body.scrollTop || document.documentElement.scrollTop;
+      const height =
+        document.documentElement.scrollHeight -
+        document.documentElement.clientHeight;
+      const scrolled = (winScroll / height) * 100;
+      if (document) {
+        const myBar = document.getElementById("myBar");
+        if (myBar) {
+          myBar.style.width = scrolled + "%";
+        }
+      }
+    });
+  }
+  updateScrollProgress();
+
+  function addHeadingLinks() {
+    const headings = Array.from(
+      document.querySelectorAll("h2, h3, h4, h5, h6")
+    );
+    for (const heading of headings) {
+      heading.classList.add("group");
+      const link = document.createElement("a");
+      link.className =
+        "heading-link ms-2 no-underline opacity-75 md:opacity-0 md:group-hover:opacity-100 md:focus:opacity-100";
+      link.href = "#" + heading.id;
+
+      const span = document.createElement("span");
+      span.ariaHidden = "true";
+      span.innerText = "#";
+      link.appendChild(span);
+      heading.appendChild(link);
+    }
+  }
+  addHeadingLinks();
+
+  function attachCopyButtons() {
+    const copyButtonLabel = "Copy";
+    const codeBlocks = Array.from(document.querySelectorAll("pre"));
+
+    for (const codeBlock of codeBlocks) {
+      const wrapper = document.createElement("div");
+      wrapper.style.position = "relative";
+
+      const computedStyle = getComputedStyle(codeBlock);
+      const hasFileNameOffset =
+        computedStyle.getPropertyValue("--file-name-offset").trim() !== "";
+
+      const topClass = hasFileNameOffset
+        ? "top-(--file-name-offset)"
+        : "-top-3";
+
+      const copyButton = document.createElement("button");
+      copyButton.className = `copy-code absolute end-3 ${topClass} rounded bg-muted border border-muted px-2 py-1 text-xs leading-4 text-foreground font-medium`;
+      copyButton.innerHTML = copyButtonLabel;
+      codeBlock.setAttribute("tabindex", "0");
+      codeBlock.appendChild(copyButton);
+
+      codeBlock?.parentNode?.insertBefore(wrapper, codeBlock);
+      wrapper.appendChild(codeBlock);
+
+      copyButton.addEventListener("click", async () => {
+        await copyCode(codeBlock, copyButton);
+      });
+    }
+
+    async function copyCode(block, button) {
+      const code = block.querySelector("code");
+      const text = code?.innerText;
+
+      await navigator.clipboard.writeText(text ?? "");
+
+      button.innerText = "Copied";
+
+      setTimeout(() => {
+        button.innerText = copyButtonLabel;
+      }, 700);
+    }
+  }
+  attachCopyButtons();
+
+  /** Accessible image lightbox for article images. */
+  function initLightbox() {
+    const article = document.getElementById("article");
+    if (!article) return;
+
+    const prefersReducedMotion = () =>
+      window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+    let overlay = null;
+    let lastFocused = null;
+    let removeDragListeners = null;
+
+    // Defer attribute mutations so they don't push the LCP timestamp.
+    // Event listeners below use delegation and don't need the attributes to exist yet.
+    requestAnimationFrame(() => {
+      const images = Array.from(article.querySelectorAll("img"));
+      for (const image of images) {
+        if (image.closest("a")) continue;
+        image.setAttribute("role", "button");
+        image.setAttribute("tabindex", "0");
+        image.setAttribute("aria-haspopup", "dialog");
+        image.setAttribute(
+          "aria-label",
+          image.alt ? `Zoom image: ${image.alt}` : "Zoom image"
+        );
+      }
+    });
+
+    function open(src, alt, trigger) {
+      if (overlay) return;
+      lastFocused = trigger ?? document.activeElement;
+
+      overlay = document.createElement("div");
+      overlay.setAttribute("role", "dialog");
+      overlay.setAttribute("aria-modal", "true");
+      overlay.setAttribute(
+        "aria-label",
+        alt ? `Image preview: ${alt}` : "Image preview"
+      );
+      overlay.className =
+        "fixed inset-0 z-50 flex cursor-zoom-out items-center justify-center bg-black/70 backdrop-blur-sm opacity-0 transition-opacity duration-200 motion-reduce:transition-none";
+
+      const closeButton = document.createElement("button");
+      closeButton.type = "button";
+      closeButton.setAttribute("aria-label", "Close image preview");
+      closeButton.className =
+        "absolute end-4 top-4 z-1 flex size-11 items-center justify-center rounded bg-black/50 text-3xl leading-none text-white";
+      closeButton.innerHTML = "&#10005;";
+      closeButton.addEventListener("click", close);
+
+      const image = document.createElement("img");
+      image.src = src;
+      image.alt = "";
+      image.className =
+        "max-h-[90dvh] max-w-[90dvw] cursor-default object-contain transition-transform duration-100 ease-out motion-reduce:transition-none data-[zoom=drag]:cursor-grabbing data-[zoom=drag]:transition-none data-[zoom=in]:cursor-grab";
+
+      overlay.append(closeButton, image);
+      overlay.addEventListener("click", e => {
+        if (e.target === overlay && currentScale <= 1) close();
+      });
+
+      let currentScale = 1;
+      let translateX = 0;
+      let translateY = 0;
+      let initialDist = 0;
+      let initialScale = 1;
+      let panStartX = 0;
+      let panStartY = 0;
+      let panStartTranslateX = 0;
+      let panStartTranslateY = 0;
+      let lastTapTime = 0;
+
+      function applyTransform() {
+        image.style.transform = `scale(${currentScale}) translate(${translateX}px, ${translateY}px)`;
+        // A backdrop click only closes at fit size, so drop the zoom-out cursor while zoomed.
+        overlay?.classList.toggle("cursor-zoom-out", currentScale <= 1);
+      }
+
+      function resetTransform() {
+        currentScale = 1;
+        translateX = 0;
+        translateY = 0;
+        image.style.transform = "";
+        image.removeAttribute("data-zoom");
+        overlay?.classList.add("cursor-zoom-out");
+      }
+
+      // Keep the zoomed image from being panned past its edges.
+      function clampTranslate() {
+        if (!overlay) return;
+        const maxX = Math.max(
+          0,
+          (image.clientWidth - overlay.clientWidth / currentScale) / 2
+        );
+        const maxY = Math.max(
+          0,
+          (image.clientHeight - overlay.clientHeight / currentScale) / 2
+        );
+        translateX = Math.min(maxX, Math.max(-maxX, translateX));
+        translateY = Math.min(maxY, Math.max(-maxY, translateY));
+      }
+
+      overlay.addEventListener(
+        "touchstart",
+        e => {
+          const t = e.touches;
+          if (t.length === 2) {
+            image.setAttribute("data-zoom", "drag");
+            initialDist = Math.hypot(
+              t[1].clientX - t[0].clientX,
+              t[1].clientY - t[0].clientY
+            );
+            initialScale = currentScale;
+          } else if (t.length === 1) {
+            const now = Date.now();
+            if (now - lastTapTime < 300) {
+              e.preventDefault();
+              if (currentScale > 1) {
+                resetTransform();
+              } else {
+                currentScale = 2;
+                translateX = 0;
+                translateY = 0;
+                applyTransform();
+                image.setAttribute("data-zoom", "in");
+              }
+              lastTapTime = 0;
+              panStartX = t[0].clientX;
+              panStartY = t[0].clientY;
+              panStartTranslateX = translateX;
+              panStartTranslateY = translateY;
+            } else {
+              lastTapTime = now;
+              if (currentScale > 1) {
+                image.setAttribute("data-zoom", "drag");
+                panStartX = t[0].clientX;
+                panStartY = t[0].clientY;
+                panStartTranslateX = translateX;
+                panStartTranslateY = translateY;
+              }
+            }
+          }
+        },
+        { passive: false }
+      );
+
+      overlay.addEventListener(
+        "touchmove",
+        e => {
+          const t = e.touches;
+          if (t.length === 2) {
+            e.preventDefault();
+            const dist = Math.hypot(
+              t[1].clientX - t[0].clientX,
+              t[1].clientY - t[0].clientY
+            );
+            const oldScale = currentScale;
+            currentScale = Math.min(
+              4,
+              Math.max(1, initialScale * (dist / initialDist))
+            );
+
+            // Zoom to the geometric center of the two fingers
+            const midX = (t[0].clientX + t[1].clientX) / 2;
+            const midY = (t[0].clientY + t[1].clientY) / 2;
+            const ox = overlay.clientWidth / 2;
+            const oy = overlay.clientHeight / 2;
+            translateX =
+              (midX - ox) * (1 / currentScale - 1 / oldScale) + translateX;
+            translateY =
+              (midY - oy) * (1 / currentScale - 1 / oldScale) + translateY;
+            clampTranslate();
+            applyTransform();
+          } else if (t.length === 1) {
+            if (currentScale > 1) {
+              e.preventDefault();
+              image.setAttribute("data-zoom", "drag");
+              translateX =
+                panStartTranslateX + (t[0].clientX - panStartX) / currentScale;
+              translateY =
+                panStartTranslateY + (t[0].clientY - panStartY) / currentScale;
+              clampTranslate();
+              applyTransform();
+            } else {
+              e.preventDefault();
+            }
+          }
+        },
+        { passive: false }
+      );
+
+      overlay.addEventListener("touchend", e => {
+        if (e.touches.length === 0) {
+          if (currentScale > 1) {
+            image.setAttribute("data-zoom", "in");
+          } else {
+            image.removeAttribute("data-zoom");
+          }
+          if (currentScale <= 1.05) resetTransform();
+        }
+      });
+
+      overlay.addEventListener("touchcancel", e => {
+        if (e.touches.length === 0) {
+          if (currentScale > 1) {
+            image.setAttribute("data-zoom", "in");
+          } else {
+            image.removeAttribute("data-zoom");
+          }
+          if (currentScale <= 1.05) resetTransform();
+        }
+      });
+
+      overlay.addEventListener(
+        "wheel",
+        e => {
+          e.preventDefault();
+          const oldScale = currentScale;
+          const delta = -e.deltaY * 0.001;
+          currentScale = Math.min(4, Math.max(1, currentScale * (1 + delta)));
+
+          if (currentScale <= 1.05) {
+            resetTransform();
+          } else {
+            image.setAttribute("data-zoom", "in");
+            // Zoom to cursor: adjust translate so the point under cursor stays fixed
+            const ox = overlay.clientWidth / 2;
+            const oy = overlay.clientHeight / 2;
+            translateX =
+              (e.clientX - ox) * (1 / currentScale - 1 / oldScale) + translateX;
+            translateY =
+              (e.clientY - oy) * (1 / currentScale - 1 / oldScale) + translateY;
+            clampTranslate();
+            applyTransform();
+          }
+        },
+        { passive: false }
+      );
+
+      let isMouseDown = false;
+      let mouseStartX = 0;
+      let mouseStartY = 0;
+
+      overlay.addEventListener("mousedown", e => {
+        if (e.button !== 0 || currentScale <= 1) return;
+        if (e.target.closest("button")) return;
+        isMouseDown = true;
+        mouseStartX = e.clientX;
+        mouseStartY = e.clientY;
+        panStartTranslateX = translateX;
+        panStartTranslateY = translateY;
+        image.setAttribute("data-zoom", "drag");
+        e.preventDefault();
+      });
+
+      function onMouseMove(e) {
+        if (!isMouseDown || !overlay) return;
+        translateX =
+          panStartTranslateX + (e.clientX - mouseStartX) / currentScale;
+        translateY =
+          panStartTranslateY + (e.clientY - mouseStartY) / currentScale;
+        clampTranslate();
+        applyTransform();
+      }
+
+      function onMouseUp() {
+        if (!isMouseDown) return;
+        isMouseDown = false;
+        if (currentScale > 1) {
+          image.setAttribute("data-zoom", "in");
+        } else {
+          image.removeAttribute("data-zoom");
+        }
+      }
+
+      document.addEventListener("mousemove", onMouseMove);
+      document.addEventListener("mouseup", onMouseUp);
+      removeDragListeners = () => {
+        document.removeEventListener("mousemove", onMouseMove);
+        document.removeEventListener("mouseup", onMouseUp);
+      };
+
+      document.body.appendChild(overlay);
+      document.documentElement.style.overflow = "hidden";
+      document.addEventListener("keydown", onKeyDown);
+      window.__closeLightbox = close;
+
+      requestAnimationFrame(() => overlay?.classList.add("opacity-100"));
+      closeButton.focus();
+    }
+
+    function close() {
+      if (!overlay) return;
+      const el = overlay;
+      overlay = null;
+      el.classList.add("pointer-events-none");
+      window.__closeLightbox = null;
+
+      document.removeEventListener("keydown", onKeyDown);
+      removeDragListeners?.();
+      removeDragListeners = null;
+      document.documentElement.style.overflow = "";
+      lastFocused?.focus();
+      lastFocused = null;
+
+      if (prefersReducedMotion()) {
+        el.remove();
+        return;
+      }
+      const remove = () => el.remove();
+      el.addEventListener("transitionend", remove, { once: true });
+      setTimeout(remove, 250); // fallback in case transitionend never fires
+      el.classList.remove("opacity-100");
+    }
+
+    function onKeyDown(e) {
+      if (e.key === "Escape") {
+        close();
+      } else if (e.key === "Tab") {
+        trapFocus(e);
+      }
+    }
+
+    // Keep keyboard focus inside the open dialog.
+    function trapFocus(e) {
+      if (!overlay) return;
+      const focusables = overlay.querySelectorAll(
+        'a[href], button, [tabindex]:not([tabindex="-1"])'
+      );
+      if (focusables.length === 0) return;
+      const first = focusables[0];
+      const last = focusables[focusables.length - 1];
+      if (e.shiftKey && document.activeElement === first) {
+        e.preventDefault();
+        last.focus();
+      } else if (!e.shiftKey && document.activeElement === last) {
+        e.preventDefault();
+        first.focus();
+      }
+    }
+
+    function triggerFromEvent(e) {
+      const image = e.target.closest("img");
+      if (!image || !article.contains(image) || image.closest("a")) return null;
+      return image;
+    }
+
+    function activate(image) {
+      open(image.currentSrc || image.src, image.alt, image);
+    }
+
+    article.addEventListener("click", e => {
+      const image = triggerFromEvent(e);
+      if (!image) return;
+      e.preventDefault();
+      activate(image);
+    });
+
+    article.addEventListener("keydown", e => {
+      if (e.key !== "Enter" && e.key !== " " && e.key !== "Spacebar") return;
+      const image = triggerFromEvent(e);
+      if (!image) return;
+      e.preventDefault();
+      activate(image);
+    });
+  }
+  initLightbox();
+
+  if (!window.__lightboxSwapBound) {
+    window.__lightboxSwapBound = true;
+    document.addEventListener("astro:before-swap", () =>
+      window.__closeLightbox?.()
+    );
+  }
+
+  document.addEventListener("astro:after-swap", () =>
+    window.scrollTo({ left: 0, top: 0, behavior: "instant" })
+  );
+</script>

@@ -1,0 +1,951 @@
+<!DOCTYPE html><html dir="ltr" lang="zh-CN" class="overflow-y-scroll scroll-smooth"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1"><link rel="icon" type="image/png" href="/images/favicon-32x32-next.png"><link rel="icon" href="/favicon.ico"><link rel="canonical" href="https://www.saromchars.tech/posts/llm-lora-adaptation/"><meta name="generator" content="Astro v7.4.5"><!-- Primary meta --><title>LoRA 的低秩适配 | Sarom&#39;s Blog</title><meta name="title" content="LoRA 的低秩适配 | Sarom's Blog"><meta name="description" content="冻结预训练基础权重，引入低秩分解矩阵旁路训练 Transformer 自注意力参数；阐明训练缩放系数与静态权重合并机制，结合实验分析低秩更新在特定下游任务的有效性与适用条件。"><meta name="author" content="Sarom Chars"><link rel="sitemap" href="/sitemap-index.xml"><!-- Open Graph --><meta property="og:type" content="article"><meta property="og:site_name" content="Sarom's Blog"><meta property="og:title" content="LoRA 的低秩适配 | Sarom's Blog"><meta property="og:description" content="冻结预训练基础权重，引入低秩分解矩阵旁路训练 Transformer 自注意力参数；阐明训练缩放系数与静态权重合并机制，结合实验分析低秩更新在特定下游任务的有效性与适用条件。"><meta property="og:url" content="https://www.saromchars.tech/posts/llm-lora-adaptation/"><meta property="og:image" content="https://www.saromchars.tech/og.png"><!-- Twitter / X --><meta property="twitter:card" content="summary_large_image"><meta property="twitter:url" content="https://www.saromchars.tech/posts/llm-lora-adaptation/"><meta property="twitter:title" content="LoRA 的低秩适配 | Sarom's Blog"><meta property="twitter:description" content="冻结预训练基础权重，引入低秩分解矩阵旁路训练 Transformer 自注意力参数；阐明训练缩放系数与静态权重合并机制，结合实验分析低秩更新在特定下游任务的有效性与适用条件。"><meta property="twitter:image" content="https://www.saromchars.tech/og.png"><!-- RSS autodiscovery --><link rel="alternate" type="application/rss+xml" title="Sarom's Blog" href="https://www.saromchars.tech/rss.xml"><!-- Filled at runtime by theme.ts to match the current background colour --><meta name="theme-color" content=""><!-- Extra head content injected by child layouts (e.g. JSON-LD, article meta) --><meta property="article:published_time" content="2022-04-22T02:00:00.000Z"><script type="application/ld+json">{"@context":"https://schema.org","@type":"BlogPosting","headline":"LoRA 的低秩适配","mainEntityOfPage":"https://www.saromchars.tech/posts/llm-lora-adaptation/","datePublished":"2022-04-22T02:00:00.000Z","author":[{"@type":"Person","name":"Sarom Chars","url":"https://github.com/SaromChars"}]}</script><!--
+      Inline FOUC-prevention script: sets data-theme on <html> before
+      the browser paints. Runs synchronously, no defer/async.
+    --><script>
+      (function () {
+        const stored = localStorage.getItem("theme");
+        const prefersDark = window.matchMedia(
+          "(prefers-color-scheme: dark)"
+        ).matches;
+        const theme = stored ?? (prefersDark ? "dark" : "light");
+        const root = document.firstElementChild;
+        root?.setAttribute("data-theme", theme);
+        root?.classList.toggle("dark", theme === "dark");
+        // Expose value so theme.ts can skip re-detection.
+        window.__theme = { value: theme };
+      })();
+    </script><meta name="robots" content="index, follow"><script async src="https://www.googletagmanager.com/gtag/js?id=G-WJJJTJ4FWX"></script><script>(function(){const measurementId = "G-WJJJTJ4FWX";
+
+    window.dataLayer = window.dataLayer || [];
+    function gtag(){ window.dataLayer.push(arguments); }
+    gtag('js', new Date());
+    gtag('config', measurementId);
+  })();</script><style>@keyframes astroFadeInOut{0%{opacity:1}to{opacity:0}}@keyframes astroFadeIn{0%{opacity:0;mix-blend-mode:plus-lighter}to{opacity:1;mix-blend-mode:plus-lighter}}@keyframes astroFadeOut{0%{opacity:1;mix-blend-mode:plus-lighter}to{opacity:0;mix-blend-mode:plus-lighter}}@keyframes astroSlideFromRight{0%{transform:translate(100%)}}@keyframes astroSlideFromLeft{0%{transform:translate(-100%)}}@keyframes astroSlideToRight{to{transform:translate(100%)}}@keyframes astroSlideToLeft{to{transform:translate(-100%)}}@media (prefers-reduced-motion){::view-transition-group(*),::view-transition-old(*),::view-transition-new(*),[data-astro-transition-scope]{animation:none!important}}
+</style><link rel="stylesheet" href="/_astro/Footer.DC6qDsIp.css"><style>[data-astro-transition-scope="astro-bztu2lml-1"] { view-transition-name: ai; }@layer astro { ::view-transition-old(ai) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }::view-transition-new(ai) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }[data-astro-transition=back]::view-transition-old(ai) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition=back]::view-transition-new(ai) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; } }[data-astro-transition-fallback="old"] [data-astro-transition-scope="astro-bztu2lml-1"],
+			[data-astro-transition-fallback="old"][data-astro-transition-scope="astro-bztu2lml-1"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition-fallback="new"] [data-astro-transition-scope="astro-bztu2lml-1"],
+			[data-astro-transition-fallback="new"][data-astro-transition-scope="astro-bztu2lml-1"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }[data-astro-transition=back][data-astro-transition-fallback="old"] [data-astro-transition-scope="astro-bztu2lml-1"],
+			[data-astro-transition=back][data-astro-transition-fallback="old"][data-astro-transition-scope="astro-bztu2lml-1"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition=back][data-astro-transition-fallback="new"] [data-astro-transition-scope="astro-bztu2lml-1"],
+			[data-astro-transition=back][data-astro-transition-fallback="new"][data-astro-transition-scope="astro-bztu2lml-1"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }</style><style>[data-astro-transition-scope="astro-bztu2lml-2"] { view-transition-name: llm; }@layer astro { ::view-transition-old(llm) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }::view-transition-new(llm) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }[data-astro-transition=back]::view-transition-old(llm) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition=back]::view-transition-new(llm) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; } }[data-astro-transition-fallback="old"] [data-astro-transition-scope="astro-bztu2lml-2"],
+			[data-astro-transition-fallback="old"][data-astro-transition-scope="astro-bztu2lml-2"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition-fallback="new"] [data-astro-transition-scope="astro-bztu2lml-2"],
+			[data-astro-transition-fallback="new"][data-astro-transition-scope="astro-bztu2lml-2"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }[data-astro-transition=back][data-astro-transition-fallback="old"] [data-astro-transition-scope="astro-bztu2lml-2"],
+			[data-astro-transition=back][data-astro-transition-fallback="old"][data-astro-transition-scope="astro-bztu2lml-2"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition=back][data-astro-transition-fallback="new"] [data-astro-transition-scope="astro-bztu2lml-2"],
+			[data-astro-transition=back][data-astro-transition-fallback="new"][data-astro-transition-scope="astro-bztu2lml-2"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }</style><style>[data-astro-transition-scope="astro-bztu2lml-3"] { view-transition-name: lora; }@layer astro { ::view-transition-old(lora) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }::view-transition-new(lora) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }[data-astro-transition=back]::view-transition-old(lora) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition=back]::view-transition-new(lora) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; } }[data-astro-transition-fallback="old"] [data-astro-transition-scope="astro-bztu2lml-3"],
+			[data-astro-transition-fallback="old"][data-astro-transition-scope="astro-bztu2lml-3"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition-fallback="new"] [data-astro-transition-scope="astro-bztu2lml-3"],
+			[data-astro-transition-fallback="new"][data-astro-transition-scope="astro-bztu2lml-3"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }[data-astro-transition=back][data-astro-transition-fallback="old"] [data-astro-transition-scope="astro-bztu2lml-3"],
+			[data-astro-transition=back][data-astro-transition-fallback="old"][data-astro-transition-scope="astro-bztu2lml-3"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition=back][data-astro-transition-fallback="new"] [data-astro-transition-scope="astro-bztu2lml-3"],
+			[data-astro-transition=back][data-astro-transition-fallback="new"][data-astro-transition-scope="astro-bztu2lml-3"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }</style><style>[data-astro-transition-scope="astro-bztu2lml-4"] { view-transition-name: parameterefficientfinetuning; }@layer astro { ::view-transition-old(parameterefficientfinetuning) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }::view-transition-new(parameterefficientfinetuning) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }[data-astro-transition=back]::view-transition-old(parameterefficientfinetuning) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition=back]::view-transition-new(parameterefficientfinetuning) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; } }[data-astro-transition-fallback="old"] [data-astro-transition-scope="astro-bztu2lml-4"],
+			[data-astro-transition-fallback="old"][data-astro-transition-scope="astro-bztu2lml-4"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition-fallback="new"] [data-astro-transition-scope="astro-bztu2lml-4"],
+			[data-astro-transition-fallback="new"][data-astro-transition-scope="astro-bztu2lml-4"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }[data-astro-transition=back][data-astro-transition-fallback="old"] [data-astro-transition-scope="astro-bztu2lml-4"],
+			[data-astro-transition=back][data-astro-transition-fallback="old"][data-astro-transition-scope="astro-bztu2lml-4"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition=back][data-astro-transition-fallback="new"] [data-astro-transition-scope="astro-bztu2lml-4"],
+			[data-astro-transition=back][data-astro-transition-fallback="new"][data-astro-transition-scope="astro-bztu2lml-4"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }</style></head><body class="bg-background font-app text-foreground selection:bg-accent/75 selection:text-accent-foreground flex min-h-svh flex-col"><a id="skip-to-content" href="#main-content" class="bg-background text-accent absolute inset-s-16 -top-full z-50 px-3 py-2 backdrop-blur-lg transition-all focus:top-4">跳到正文</a><header class="app-layout flex flex-col items-center justify-between sm:flex-row"><div class="border-border bg-background relative flex w-full items-baseline justify-between border-b py-4 sm:items-center sm:py-6"><a href="/" class="absolute py-1 text-xl leading-8 font-semibold whitespace-nowrap sm:static sm:my-auto sm:text-2xl sm:leading-none">Sarom&#39;s Blog</a><nav id="nav-menu" class="flex w-full flex-col items-center sm:ms-2 sm:flex-row sm:justify-end sm:space-x-4 sm:py-0"><button id="menu-btn" class="focus-outline self-end p-2 sm:hidden" aria-label="展开菜单" aria-expanded="false" aria-controls="menu-items" data-label-open="展开菜单" data-label-close="收起菜单"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="hidden" viewBox="0 0 24 24" id="close-icon"><path stroke="none" d="M0 0h24v24H0z" /><path d="M18 6 6 18M6 6l12 12" /></svg><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="icon icon-tabler icons-tabler-outline icon-tabler-menu-deep" viewBox="0 0 24 24" id="menu-icon"><path stroke="none" d="M0 0h24v24H0z" /><path d="M4 6h16M7 12h13M10 18h10" /></svg></button><ul id="menu-items" class="[&amp;&gt;li&gt;a]:hover:text-accent mt-4 hidden w-44 grid-cols-2 place-content-center gap-2 sm:mt-0 sm:flex sm:w-auto sm:gap-x-5 sm:gap-y-0 sm:[&amp;&gt;li]:h-8 [&amp;&gt;li&gt;a]:block [&amp;&gt;li&gt;a]:px-4 [&amp;&gt;li&gt;a]:py-3 [&amp;&gt;li&gt;a]:text-center [&amp;&gt;li&gt;a]:font-medium sm:[&amp;&gt;li&gt;a]:px-2 sm:[&amp;&gt;li&gt;a]:py-1"><li class="col-span-2"><a href="/posts/" class="active-nav">文章</a></li><li class="col-span-2"><a href="/tags/">标签</a></li><li class="col-span-2"><a href="/about/">关于</a></li><li class="col-span-2"><a href="/archives/" title="归档" aria-label="归档" class="group inline-flex items-center gap-1 hover:text-accent focus-outline flex size-full justify-center p-3 sm:relative sm:size-8 sm:p-0"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="hidden sm:absolute sm:top-1/2 sm:left-1/2 sm:block sm:size-6 sm:-translate-x-1/2 sm:-translate-y-1/2" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M3 6a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2 2 2 0 0 1-2 2H5a2 2 0 0 1-2-2M5 8v10a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8M10 12h4" /></svg><span class="sm:sr-only">归档</span></a></li><li class="col-span-1 flex items-center justify-center"><a href="/search/" title="搜索" aria-label="搜索" class="group inline-flex items-center gap-1 hover:text-accent focus-outline relative size-8"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="absolute top-1/2 left-1/2 size-6 -translate-x-1/2 -translate-y-1/2" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M3 10a7 7 0 1 0 14 0 7 7 0 1 0-14 0M21 21l-6-6" /></svg><span class="sr-only">搜索</span></a></li><li class="col-span-1 flex items-center justify-center"><button id="theme-btn" class="focus-outline hover:[&amp;&gt;svg]:stroke-accent relative size-12 p-4 sm:size-8" title="切换主题" aria-label="auto" aria-live="polite"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="absolute top-[50%] left-[50%] translate-[-50%] scale-100 rotate-0 transition-all dark:scale-0 dark:-rotate-90" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M12 3h.393a7.5 7.5 0 0 0 7.92 12.446A9 9 0 1 1 12 2.992z" /></svg><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="absolute top-[50%] left-[50%] translate-[-50%] scale-0 rotate-90 transition-all dark:scale-100 dark:rotate-0" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M14.828 14.828a4 4 0 1 0-5.656-5.656 4 4 0 0 0 5.656 5.656M6.343 17.657l-1.414 1.414M6.343 6.343 4.929 4.929M17.657 6.343l1.414-1.414M17.657 17.657l1.414 1.414M4 12H2M12 4V2M20 12h2M12 20v2" /></svg></button></li></ul></nav></div></header><script type="module">function e(){let e=document.querySelector(`#menu-btn`),t=document.querySelector(`#menu-items`),n=document.querySelector(`#menu-icon`),r=document.querySelector(`#close-icon`);if(!e||!t||!n||!r)return;let i=e.dataset.labelOpen??`Open menu`,a=e.dataset.labelClose??`Close menu`;e.addEventListener(`click`,()=>{let o=e.getAttribute(`aria-expanded`)===`true`;e.setAttribute(`aria-expanded`,o?`false`:`true`),e.setAttribute(`aria-label`,o?i:a),t.classList.toggle(`hidden`),t.classList.toggle(`grid`),n.classList.toggle(`hidden`),r.classList.toggle(`hidden`)})}function t(){let e=document.getElementById(`skip-to-content`);e&&e.addEventListener(`click`,e=>{if(e.defaultPrevented||e.metaKey||e.ctrlKey||e.shiftKey||e.button!==0)return;e.preventDefault();let t=document.getElementById(`main-content`);t&&(t.setAttribute(`tabindex`,`-1`),t.addEventListener(`blur`,()=>t.removeAttribute(`tabindex`),{once:!0}),t.focus(),t.scrollIntoView({behavior:`smooth`}))})}e(),document.addEventListener(`astro:after-swap`,e),t(),document.addEventListener(`astro:after-swap`,t);</script><div class="app-layout flex items-center justify-start"><a id="back-button" href="/" class="group inline-flex items-center gap-1 hover:text-accent focus-outline hover:text-foreground/75 -ms-2 mt-8 mb-2"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="inline-block size-6 rtl:rotate-180" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="m15 6-6 6 6 6" /></svg><span>返回</span></a></div><script type="module">function e(){let e=document.querySelector(`#back-button`),t=sessionStorage.getItem(`backUrl`);t&&e&&(e.href=t)}document.addEventListener(`astro:page-load`,e),e();</script><main id="main-content" class="app-layout" data-pagefind-body><h1 style="view-transition-name:llm-lora-adaptation" class="text-accent inline-block text-2xl font-bold sm:text-3xl">LoRA 的低秩适配</h1><div class="my-2 flex items-center gap-2"><div class="text-muted-foreground flex items-center gap-x-2"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="inline-block size-6 min-w-5.5" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M4 7a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2zM16 3v4M8 3v4M4 11h16M7 14h.013M10.01 14h.005M13.01 14h.005M16.015 14h.005M13.015 17h.005M7.01 17h.005M10.01 17h.005" /></svg><time class="text-sm sm:text-base" datetime="2022-04-22T02:00:00.000Z">2022年4月22日</time></div><span aria-hidden="true" class="text-muted-foreground max-sm:hidden hidden">|</span></div><article id="article" class="mt-8 w-full app-prose max-w-app prose-pre:bg-(--shiki-light-bg) dark:prose-pre:bg-(--shiki-dark-bg)"><p>在预训练大语言模型（large language model，LLM）的工程落地中，主流范式通常是在通用文本语料上完成大规模预训练（pretraining），再面向下游特定任务执行微调（fine-tuning）<a href="#ref-hu-2021"><span id="citation-hu-sec1">1 (§1)</span></a>。然而，随着模型规模跃升至百亿乃至千亿参数（例如具备 1750 亿参数的 GPT-3 175B），传统的<strong>全量微调（full fine-tuning）</strong>遭遇了严苛的开销瓶颈<a href="#ref-hu-2021"><span id="citation-hu-sec1-2">1 (§1)</span></a>：</p>
+<ol>
+<li><strong>训练显存开销居高不下</strong>：在反向传播与参数更新过程中，自适应优化器（如 AdamW）需要为每个可训练参数维护对应的一阶动量与二阶方差状态。在千亿规模模型上，优化器状态占用的显存（VRAM）往往达到静态模型权重的数倍，通常需要借助大规模 GPU 集群进行分布式切分<a href="#ref-hu-2021"><span id="citation-hu-sec31">1 (§3.1)</span></a>；</li>
+<li><strong>多任务独立副本存储与部署负担重</strong>：全量微调会改动模型的全部权重。若业务需要同时服务多个下游独立任务，每个定制化模型都需要保存一份完整的模型权重副本（如 GPT-3 175B 半精度权重约 350GB），带来庞大的存储需求与模型切换 I/O 成本<a href="#ref-hu-2021"><span id="citation-hu-sec1-3">1 (§1)</span></a>。</li>
+</ol>
+<p>为了缓解参数存储与服务部署的压力，Hu et al. (2021) 提出了<strong>低秩适配（low-rank adaptation，LoRA）</strong><a href="#ref-hu-2021"><span id="citation-hu-abs">1 (Abstract, §1)</span></a>。本文基于该论文的固定版本（arXiv:2106.09685v1），分析 LoRA 的数学构造、与早期参数高效微调方案的差异、低秩有效性的实验分析，以及在部署中的适用条件与物理边界。</p>
+<hr>
+<h2 id="1-现有参数高效方案的折衷与缺陷">1. 现有参数高效方案的折衷与缺陷</h2>
+<p>在 LoRA 提出之前，针对大模型的参数高效微调主要有两条探索路径，但它们各自伴随着特定的系统折衷<a href="#ref-hu-2021"><span id="citation-hu-sec1-4">1 (§1)</span></a>：</p>
+<h3 id="11-串联适配器adapter-tuning与推理延迟">1.1 串联适配器（Adapter Tuning）与推理延迟</h3>
+<p>以 Houlsby et al. (2019) 为代表的 Adapter 方案，在 Transformer 架构（一种基于自注意力机制与前馈网络的序列建模架构）的自注意力（self-attention）模块与前馈网络（feed-forward network，FFN）后串联插入紧凑的瓶颈模块，通常包含降维线性变换、非线性激活函数与升维线性变换<a href="#ref-hu-2021"><span id="citation-hu-sec4">1 (§4)</span></a>。</p>
+<p>虽然 Adapter 减少了待训练参数量，但这种<strong>人为增加网络深度</strong>的设计延长了前向传播路径。由于包含非线性激活函数，这些外置模块在部署时无法与原权重矩阵合并，导致每次推理（inference）都必须执行额外的串行计算，引入了不可忽视的推理延迟<a href="#ref-hu-2021"><span id="citation-hu-sec1-5">1 (§1)</span></a>。</p>
+<h3 id="12-前缀微调prefix-tuning与上下文窗口的挤占">1.2 前缀微调（Prefix-Tuning）与上下文窗口的挤占</h3>
+<p>以 Li &#x26; Liang (2021) 为代表的前缀微调（prefix-tuning）方案，选择在输入嵌入（embedding）层或各层激活状态中加入连续的可学习虚拟 token（词元，模型处理的基本序列单位）<a href="#ref-hu-2021"><span id="citation-hu-sec4-2">1 (§4)</span></a>。</p>
+<p>该方案虽然冻结了主干模型，但存在两处局限：</p>
+<ul>
+<li><strong>挤占有效上下文长度</strong>：虚拟 token 占用固定的位置编码（positional encoding），减少了模型原本用于承载下游提示词与长文档的可用序列长度<a href="#ref-hu-2021"><span id="citation-hu-sec1-6">1 (§1)</span></a>；</li>
+<li><strong>扩展性受限</strong>：论文实证显示，单纯增加虚拟前缀 token 数量（例如在 GPT-3 上超过 32 或 256 时），模型性能会出现下降。作者推测这可能是因为过多人工连续 token 导致输入表征分布偏离了预训练数据分布<a href="#ref-hu-2021"><span id="citation-hu-sec52">1 (§5.2, Figure 2)</span></a>。</li>
+</ul>
+<hr>
+<h2 id="2-lora-的核心思想内在秩假设与旁路分解">2. LoRA 的核心思想：内在秩假设与旁路分解</h2>
+<p>Aghajanyan et al. (2020) 指出，预训练语言模型具有较低的“内在维度（intrinsic dimension）”，在低维子空间中重参数化仍能有效学习<a href="#ref-hu-2021"><span id="citation-hu-sec1-7">1 (§1)</span>, <span id="citation-hu-sec3">1 (§3)</span></a>。Hu et al. (2021) 据此推测：<strong>语言模型在适应下游任务时的权重更新量同样具有较低的“内在秩（intrinsic rank）”</strong><a href="#ref-hu-2021"><span id="citation-hu-sec1-8">1 (§1)</span></a>。</p>
+<h3 id="21-低秩分解与参数量对比">2.1 低秩分解与参数量对比</h3>
+<p>设预训练模型中某一密集权重矩阵为 <code>W0</code>，其维度为 <code>d × k</code>。</p>
+<p>在传统微调中，参数更新量 <code>ΔW</code> 具有同形状 <code>d × k</code>，且不施加低秩约束，全量更新需要为所有元素计算并保存梯度与优化器状态。</p>
+<p>LoRA 则保持原始权重矩阵 <code>W0</code> 冻结，不更新 <code>W0</code>，也不维护其参数梯度和优化器状态（反向传播中输入梯度仍需经由 <code>W0</code> 传递）；同时将更新量约束为低秩矩阵乘积<a href="#ref-hu-2021"><span id="citation-hu-sec3b">1 (§3)</span></a>：</p>
+<pre class="astro-code astro-code-themes min-light night-owl" style="--shiki-light:#24292eff;--shiki-dark:#d6deeb;--shiki-light-bg:#ffffff;--shiki-dark-bg:#011627; overflow-x: auto;--file-name-offset: -0.75rem;" tabindex="0" data-language="text"><code><span class="line"><span>ΔW = B · A</span></span></code></pre>
+<p>其中：</p>
+<ul>
+<li><code>A</code> 的维度为 <code>r × k</code>；</li>
+<li><code>B</code> 的维度为 <code>d × r</code>；</li>
+<li>秩（rank）<code>r</code> 为超参数，满足 <code>r ≪ min(d, k)</code>。</li>
+</ul>
+<p>在此定义下，待训练参数量从单个权重的 <code>d × k</code> 缩减为两矩阵之和 <code>r × (d + k)</code>，单层参数规模比例为：</p>
+<pre class="astro-code astro-code-themes min-light night-owl" style="--shiki-light:#24292eff;--shiki-dark:#d6deeb;--shiki-light-bg:#ffffff;--shiki-dark-bg:#011627; overflow-x: auto;--file-name-offset: -0.75rem;" tabindex="0" data-language="text"><code><span class="line"><span>参数比例 = [r · (d + k)] / (d · k)</span></span></code></pre>
+<p>以一个人工构造的教学参数为例：若某层权重维度为 <code>d = k = 1024</code>，设定 <code>r = 4</code>，原矩阵包含 <code>1024 × 1024 = 1,048,576</code> 个参数，而低秩分解仅需训练 <code>4 × (1024 + 1024) = 8,192</code> 个参数，仅占原权重的约 0.78%（约 1/128）。该比例对应被适配的具体矩阵，并非全模型固定比例。</p>
+<h3 id="22-训练缩放与前向计算">2.2 训练缩放与前向计算</h3>
+<p>依据 arXiv:2106.09685v1 原文 §3，LoRA 在训练时引入固定缩放系数 <code>s = 1/r</code>，有效权重增量为 <code>s · ΔW = s · B · A</code>，将增量乘积乘以 <code>s</code> 以保持输出量级相对稳定<a href="#ref-hu-2021"><span id="citation-hu-sec3-scale">1 (§3)</span></a>。修改后的前向计算公式为：</p>
+<pre class="astro-code astro-code-themes min-light night-owl" style="--shiki-light:#24292eff;--shiki-dark:#d6deeb;--shiki-light-bg:#ffffff;--shiki-dark-bg:#011627; overflow-x: auto;--file-name-offset: -0.75rem;" tabindex="0" data-language="text"><code><span class="line"><span>h = W0 · x + s · B · A · x</span></span></code></pre>
+<p>在训练中，输入向量 <code>x</code> 分别送入主干冻结路径与旁路分解路径。旁路分支经过低维瓶颈投影与缩放后，与主干输出按坐标逐项相加（coordinate-wise sum）。</p>
+<h3 id="23-旁路架构图解">2.3 旁路架构图解</h3>
+<p>下图展示了单个密集权重上的 LoRA 计算路径：</p>
+<svg viewBox="0 0 420 310" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="LoRA 低秩矩阵分解前向计算架构图">
+  <title>LoRA 低秩矩阵分解前向计算结构</title>
+  <desc>展示输入向量分别进入冻结权重主干与旁路低秩矩阵 A 和 B，经缩放后在输出端逐坐标相加的数据流</desc>
+  <style>
+    .node-box { fill: #f8fafc; stroke: #334155; stroke-width: 2; rx: 6; }
+    .frozen-box { fill: #f1f5f9; stroke: #64748b; stroke-width: 2; stroke-dasharray: 4 4; rx: 6; }
+    .trainable-box { fill: #eff6ff; stroke: #2563eb; stroke-width: 2; rx: 6; }
+    .scale-box { fill: #f3e8ff; stroke: #9333ea; stroke-width: 2; rx: 4; }
+    .sum-box { fill: #fef08a; stroke: #ca8a04; stroke-width: 2; }
+    .title-text { font-family: system-ui, -apple-system, sans-serif; font-size: 19px; font-weight: bold; fill: #0f172a; text-anchor: middle; }
+    .desc-text { font-family: system-ui, -apple-system, sans-serif; font-size: 18px; fill: #334155; text-anchor: middle; }
+    .tag-text { font-family: monospace; font-size: 18px; fill: #2563eb; font-weight: bold; text-anchor: middle; }
+    .scale-text { font-family: monospace; font-size: 18px; fill: #9333ea; font-weight: bold; text-anchor: middle; }
+    .line-arrow { stroke: #0f172a; stroke-width: 2; marker-end: url(#arrow); fill: none; }
+  </style>
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="6" refY="5" markerWidth="6" markerHeight="6" orient="auto-reverse">
+      <path d="M 0 1 L 8 5 L 0 9 z" fill="#0f172a"></path>
+    </marker>
+  </defs>
+  <!-- 输入节点 -->
+  <rect x="130" y="245" width="160" height="42" class="node-box"></rect>
+  <text x="210" y="272" class="title-text">输入向量 x</text>
+  <!-- 左侧：主干冻结矩阵 -->
+  <rect x="30" y="130" width="145" height="65" class="frozen-box"></rect>
+  <text x="102" y="157" class="title-text">冻结权重 W0</text>
+  <text x="102" y="182" class="desc-text">(d × k, 保持不变)</text>
+  <!-- 右侧：旁路低秩矩阵 A 和 B -->
+  <rect x="235" y="185" width="155" height="42" class="trainable-box"></rect>
+  <text x="312" y="212" class="tag-text">矩阵 A (r × k)</text>
+  <rect x="235" y="125" width="155" height="42" class="trainable-box"></rect>
+  <text x="312" y="152" class="tag-text">矩阵 B (d × r)</text>
+  <!-- 旁路缩放 -->
+  <rect x="255" y="70" width="115" height="35" class="scale-box"></rect>
+  <text x="312" y="94" class="scale-text">× s (1/r)</text>
+  <!-- 顶部：逐坐标相加 -->
+  <circle cx="102" cy="45" r="18" class="sum-box"></circle>
+  <text x="102" y="52" class="title-text">+</text>
+  <!-- 输出节点 -->
+  <rect x="175" y="25" width="170" height="42" class="node-box"></rect>
+  <text x="260" y="52" class="title-text">输出向量 h</text>
+  <!-- 连线 -->
+  <path d="M 160 245 L 102 200" class="line-arrow"></path>
+  <path d="M 260 245 L 312 232" class="line-arrow"></path>
+  <path d="M 312 185 L 312 172" class="line-arrow"></path>
+  <path d="M 312 125 L 312 110" class="line-arrow"></path>
+  <path d="M 102 130 L 102 68" class="line-arrow"></path>
+  <path d="M 255 87 L 160 87 L 125 50" class="line-arrow"></path>
+  <path d="M 120 45 L 170 45" class="line-arrow"></path>
+</svg>
+<p>教学示意说明：上图针对单个权重展示了两条并行计算路径，主干权重与旁路低秩分解解耦运行，经缩放后在输出端逐坐标相加。</p>
+<h3 id="24-初始化设计与权重衰减">2.4 初始化设计与权重衰减</h3>
+<p>参数初始化设计如下<a href="#ref-hu-2021"><span id="citation-hu-sec3c">1 (§3)</span></a>：</p>
+<ul>
+<li>矩阵 <code>A</code>：采用均值为 0 的高斯分布随机初始化；</li>
+<li>矩阵 <code>B</code>：初始化为全零矩阵（<code>B = 0</code>）。</li>
+</ul>
+<p>因此在训练第 0 步，由于 <code>B = 0</code>，未缩放增量 <code>ΔW = B · A = 0</code>，有效增量满足 <code>s · B · A = 0</code>，模型初始输出与原始预训练模型一致。这种初始化避免了初始随机增量对既有输出的扰动，但零更新本身不构成对后续训练收敛性或泛化能力的保证。</p>
+<p>此外，作者指出对 <code>A</code> 和 <code>B</code> 施加常规权重衰减（weight decay）类似于把更新拉回预训练权重，并推测这与受限参数空间可能带来正则化优势；但该论文并未开展隔离实验来系统验证其对灾难性遗忘的具体防范效果<a href="#ref-hu-2021"><span id="citation-hu-sec3-wd">1 (§3)</span></a>。</p>
+<hr>
+<h2 id="3-合并后的推理与任务权重存储">3. 合并后的推理与任务权重存储</h2>
+<p>LoRA 的线性分解特性在部署与存储中具备以下特征：</p>
+<h3 id="31-离线权重合并消除推理延迟">3.1 离线权重合并消除推理延迟</h3>
+<p>由于旁路矩阵之间未插入非线性激活函数，在部署单一固定任务时，可将训练所得的增量在离线阶段直接合并入基础权重<a href="#ref-hu-2021"><span id="citation-hu-sec3-lat">1 (§3)</span></a>：</p>
+<pre class="astro-code astro-code-themes min-light night-owl" style="--shiki-light:#24292eff;--shiki-dark:#d6deeb;--shiki-light-bg:#ffffff;--shiki-dark-bg:#011627; overflow-x: auto;--file-name-offset: -0.75rem;" tabindex="0" data-language="text"><code><span class="line"><span>W_deployed = W0 + s · B · A</span></span></code></pre>
+<p>合并后的矩阵 <code>W_deployed</code> 维度依然为 <code>d × k</code>。在模型服务执行前向推理时，计算图结构与原生模型完全一致，不包含任何外置旁路分支，因此在稳态推理中不会引入额外的层间延迟或显存访存开销。</p>
+<h3 id="32-任务因子存储与动态切换">3.2 任务因子存储与动态切换</h3>
+<p>需要注意，虽然稠密乘积 <code>B · A</code> 的维度仍为 <code>d × k</code>，但磁盘与显存传输中仅需保存低维分解因子 <code>A</code> 与 <code>B</code><a href="#ref-hu-2021"><span id="citation-hu-sec31b">1 (§3.1)</span></a>。</p>
+<p>以下为论文在 GPT-3 175B 上适配注意力矩阵 <code>Wq</code> 与 <code>Wv</code>（半精度 FP16）时的资源对比与算例：</p>
+<div class="table-wrapper" tabindex="0">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<table><thead><tr><th>方案与配置</th><th>待训练参数量</th><th>存储文件体积</th></tr></thead><tbody><tr><td>全量微调 (Full FT)</td><td>175,255.8 M (~175B)</td><td>约 350 GB / 任务</td></tr><tr><td>LoRA (r = 4)</td><td>18.8 M (约 0.011%)</td><td>约 35 MB / 任务</td></tr><tr><td>LoRA (r = 8)</td><td>37.7 M (约 0.022%)</td><td>约 70 MB / 任务</td></tr></tbody></table></div>
+<p>条件说明：论文实验在训练全量微调与 LoRA 时分别使用了 96 块与 24 块 NVIDIA Tesla V100 GPU；论文报告的训练显存占用分别约为 1.2 TB 与 350 GB。对于 100 个下游任务，LoRA 在该算例下的总存储需求为 <code>350GB + 100 × 35MB ≈ 354GB</code>，显著低于全量微调所需的 <code>100 × 350GB = 35,000GB</code>。</p>
+<p>当在多个下游任务间动态切换时，服务端可保留基础模型，通过减去旧任务增量并加上新任务增量实现切换：</p>
+<pre class="astro-code astro-code-themes min-light night-owl" style="--shiki-light:#24292eff;--shiki-dark:#d6deeb;--shiki-light-bg:#ffffff;--shiki-dark-bg:#011627; overflow-x: auto;--file-name-offset: -0.75rem;" tabindex="0" data-language="text"><code><span class="line"><span>W_taskB = W_taskA - s_A · B_A · A_A + s_B · B_B · A_B</span></span></code></pre>
+<p>切换过程涉及矩阵乘法与完整权重的加减，会小幅增加峰值显存占用；论文将该切换开销描述为不超过一次模型前向传递<a href="#ref-hu-2021"><span id="citation-hu-sec3-lat2">1 (§3)</span></a>。</p>
+<hr>
+<h2 id="4-适配位置与秩的实验">4. 适配位置与秩的实验</h2>
+<p>在 Transformer 的自注意力模块中，存在查询（query，<code>Wq</code>）、键（key，<code>Wk</code>）、值（value，<code>Wv</code>）与输出投影（<code>Wo</code>）四个权重矩阵。</p>
+<h3 id="41-适配权重组合的实验">4.1 适配权重组合的实验</h3>
+<p>论文在 GPT-3 175B 上固定 18M（约 35MB）的参数预算，测试了适配不同注意力矩阵的效果<a href="#ref-hu-2021"><span id="citation-hu-sec61">1 (§6.1, Table 3)</span></a>：</p>
+<div class="table-wrapper" tabindex="0">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<table><thead><tr><th>适配权重与秩配置</th><th>WikiSQL 验证准确率 (%)</th><th>MultiNLI-m 验证准确率 (%)</th></tr></thead><tbody><tr><td>仅 Wq (r = 8)</td><td>70.4</td><td>91.0</td></tr><tr><td>仅 Wk (r = 8)</td><td>70.0</td><td>90.8</td></tr><tr><td>仅 Wv (r = 8)</td><td>73.0</td><td>91.0</td></tr><tr><td>仅 Wo (r = 8)</td><td>73.2</td><td>91.3</td></tr><tr><td>同时适配 Wq, Wk (r = 4)</td><td>71.4</td><td>91.3</td></tr><tr><td>同时适配 Wq, Wv (r = 4)</td><td>73.7</td><td>91.3</td></tr></tbody></table></div>
+<p>条件说明：实验基于 GPT-3 175B，96 层全层适配，参数预算均为 18M；WikiSQL 评估指标为逻辑形式验证准确率（标准差约 ±0.3%），MultiNLI-m 为匹配验证集准确率（标准差约 ±0.1%）。</p>
+<p>实验显示，在相同参数预算下，同时适配 <code>Wq</code> 与 <code>Wv</code>（各分配 <code>r = 4</code>）在两个数据集上取得了最佳或并列最佳的结果。这表明在此类任务中，将参数预算分散到多个关键注意力投影矩阵比单独给某一个矩阵分配较大秩更为有利。</p>
+<h3 id="42-不同秩的子空间分析">4.2 不同秩的子空间分析</h3>
+<p>论文在固定适配 <code>Wq</code> 与 <code>Wv</code> 的前提下，对比了不同秩 <code>r</code> 对任务效果的影响<a href="#ref-hu-2021"><span id="citation-hu-sec62">1 (§6.2, Table 4)</span></a>：</p>
+<div class="table-wrapper" tabindex="0">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<table><thead><tr><th>设定秩 r</th><th>WikiSQL 验证准确率 (%)</th><th>MultiNLI-m 验证准确率 (%)</th></tr></thead><tbody><tr><td>r = 1</td><td>73.4</td><td>91.3</td></tr><tr><td>r = 2</td><td>73.3</td><td>91.4</td></tr><tr><td>r = 4</td><td>73.7</td><td>91.3</td></tr><tr><td>r = 8</td><td>73.8</td><td>91.7</td></tr><tr><td>r = 64</td><td>73.5</td><td>91.4</td></tr></tbody></table></div>
+<p>条件说明：适配对象为 GPT-3 175B 的 <code>Wq</code> 与 <code>Wv</code>，评估标准与上述标准差一致。</p>
+<p>数据表明，在测试的下游任务中，即使将秩压缩至 <code>r = 1</code> 或 <code>r = 2</code>，模型依然取得了与更大秩相当的准确率。为探究该现象的内在机制，作者开展了子空间分析<a href="#ref-hu-2021"><span id="citation-hu-sec62-sub">1 (§6.2, Eq. 4)</span></a>：</p>
+<ul>
+<li><strong>奇异值分解与子空间重叠</strong>：对不同秩（<code>r = 8</code> 与 <code>r = 64</code>）训练得到的矩阵 <code>A</code> 进行奇异值分解（singular value decomposition，SVD），再用其右奇异向量计算基于格拉斯曼距离的归一化子空间相似度。以第 48 层为例，<code>r = 8</code> 与 <code>r = 64</code> 共享了相似度大于 0.5 的 1 维子空间，而其余维度的重合度显著偏低。作者推测这些方向包含了较多训练积累的噪声，支持了低秩更新足以表达任务所需信息的假设<a href="#ref-hu-2021"><span id="citation-hu-sec62-sub2">1 (§6.2)</span></a>；</li>
+<li><strong>特征放大效应假说</strong>：将 <code>W0</code> 投影至 <code>ΔW</code> 的低秩子空间（计算 <code>U^T · W0 · V^T</code>，其中 <code>U</code> 与 <code>V</code> 为奇异向量矩阵），通过弗罗贝尼乌斯范数（Frobenius norm，用于度量矩阵整体数值规模的范数）进行对比。在 GPT-3 第 48 层 <code>Wq</code>、<code>r = 4</code> 的配置下，范数比值 <code>||ΔW||_F / ||U^T · W0 · V^T||_F</code> 达到约 21.5（6.91 / 0.32）。作者据此提出一种可能解释：低秩增量矩阵并非重复 <code>W0</code> 中的主导奇异方向，而是选择性放大了预训练模型中原本存在但未被强调的下游任务特征<a href="#ref-hu-2021"><span id="citation-hu-sec63b">1 (§6.3, §G.4)</span></a>。</li>
+</ul>
+<hr>
+<h2 id="5-适用条件与物理边界">5. 适用条件与物理边界</h2>
+<p>在工程应用中，LoRA 存在明确的适用范围与边界：</p>
+<ol>
+<li><strong>多任务混合批处理的实现约束</strong>：
+LoRA 的零推理延迟依赖于将 <code>s · B · A</code> 离线合并入 <code>W0</code>。如果线上同一批次（batch）中混合了针对不同下游任务的请求，由于各任务的 <code>A</code> 和 <code>B</code> 矩阵各不相同，在常规矩阵乘法算子下无法直接共用同一次标准前向计算，需采用分批前向或针对性开发的专用推理内核<a href="#ref-hu-2021"><span id="citation-hu-sec3-lim">1 (§3)</span></a>；</li>
+<li><strong>领域与语言差异的边界思考</strong>：
+小秩 <code>r</code> 不一定适用于所有任务或数据集。论文作者在 §6.2 脚注 4 中给出了思考实验：若下游任务采用与预训练语料完全不同的语言，更新整个模型参数的表现可能会优于极小秩的 LoRA<a href="#ref-hu-2021"><span id="citation-hu-sec62-fn4">1 (§6.2, Footnote 4)</span></a>；</li>
+<li><strong>基础模型前向显存依然不可省略</strong>：
+LoRA 削减的是训练更新阶段优化器状态和梯度占用的显存，并在存储上降低了多任务的检查点体积。但在实际推理部署时，基础权重 <code>W0</code>（如 GPT-3 175B 的 350GB 静态权重）仍需完整加载进显存中，该方案并不改变基底模型本身的参数量与精度要求。</li>
+</ol>
+<hr>
+<h2 id="6-总结">6. 总结</h2>
+<p>LoRA 通过将参数更新量分解为两个低秩矩阵的乘积，并引入固定的训练缩放因子，显著减少了下游任务的待训练参数量与检查点存储体积。其线性结构支持在部署阶段将低秩增量静态合并入基础权重，从而在稳态推理中避免了外置模块引入的额外延迟。</p>
+<p>然而，LoRA 所需的秩与实际效果仍需在具体模型和任务上验证；在服务运行中，基础模型的常驻显存开销依然存在，且多任务混合批处理受限于矩阵合并机制。合理评估任务特征、选择适配矩阵与秩超参数，是应用低秩适配的关键考量。</p>
+<hr>
+<h2 id="参考资料">参考资料</h2>
+<ol>
+  <li>
+    Hu, E. J., Shen, Y., Wallis, P., Allen-Zhu, Z., Li, Y., Wang, S., &#x26; Chen, W. (2021). <i>LoRA: Low-Rank Adaptation of Large Language Models</i>. arXiv:2106.09685v1 [cs.CL].
+    <br>
+    首次提交日期：2021-06-17；本篇依据版本：2021-06-17 (arXiv:2106.09685v1).
+    <br>
+    原文链接：<a id="ref-hu-2021" href="https://arxiv.org/abs/2106.09685v1" target="_blank" rel="noopener noreferrer">https://arxiv.org/abs/2106.09685v1</a>
+  </li>
+</ol></article><hr class="my-8 border-dashed"><div id="btt-btn-container" class="fixed inset-e-4 bottom-8 z-50 md:sticky md:inset-e-auto md:float-end md:me-1 translate-y-14 opacity-0 transition duration-500"><button data-button="back-to-top" class="group bg-background relative px-2 py-1 size-14 rounded-full shadow-xl md:h-8 md:w-fit md:rounded-md md:shadow-none md:focus-visible:rounded-none md:bg-background/35 md:bg-clip-padding md:backdrop-blur-lg"><span id="progress-indicator" class="absolute inset-0 -z-10 block size-14 scale-110 rounded-full bg-transparent md:hidden md:h-8 md:rounded-md"></span><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="inline-block rotate-90 md:hidden" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M5 12h14M5 12l6 6M5 12l6-6" /></svg><span class="group-hover:text-accent sr-only text-sm md:not-sr-only"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="inline-block size-4" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M12 5v14M16 9l-4-4M8 9l4-4" /></svg> 回到顶部</span></button></div><script data-astro-rerun>
+  function backToTop() {
+    const rootElement = document.documentElement;
+    const btnContainer = document.querySelector("#btt-btn-container");
+    const backToTopBtn = document.querySelector("[data-button='back-to-top']");
+    const progressIndicator = document.querySelector("#progress-indicator");
+
+    if (!rootElement || !btnContainer || !backToTopBtn || !progressIndicator)
+      return;
+
+    backToTopBtn.addEventListener("click", () => {
+      document.body.scrollTop = 0;
+      document.documentElement.scrollTop = 0;
+    });
+
+    let lastVisible = null;
+    function handleScroll() {
+      const scrollTotal = rootElement.scrollHeight - rootElement.clientHeight;
+      const scrollTop = rootElement.scrollTop;
+      const scrollPercent = Math.floor((scrollTop / scrollTotal) * 100);
+
+      progressIndicator.style.setProperty(
+        "background-image",
+        `conic-gradient(var(--accent), var(--accent) ${scrollPercent}%, transparent ${scrollPercent}%)`
+      );
+
+      const isVisible = scrollTop / scrollTotal > 0.3;
+
+      if (isVisible !== lastVisible) {
+        btnContainer.classList.toggle("opacity-100", isVisible);
+        btnContainer.classList.toggle("translate-y-0", isVisible);
+        btnContainer.classList.toggle("opacity-0", !isVisible);
+        btnContainer.classList.toggle("translate-y-14", !isVisible);
+        lastVisible = isVisible;
+      }
+    }
+
+    let ticking = false;
+    document.addEventListener("scroll", () => {
+      if (!ticking) {
+        window.requestAnimationFrame(() => {
+          handleScroll();
+          ticking = false;
+        });
+        ticking = true;
+      }
+    });
+  }
+  backToTop();
+</script><ul class="mt-4 mb-8 flex flex-wrap gap-4 sm:my-8"><li><a data-astro-transition-scope="astro-bztu2lml-1" href="/tags/ai/" class="flex items-center gap-0.5 border-foreground border-b-2 border-dashed hover:border-accent hover:text-accent hover:-mt-0.5 focus-visible:text-accent focus-visible:border-none text-sm"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="opacity-80 size-4" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M5 9h14M5 15h14M11 4 7 20M17 4l-4 16" /></svg>AI</a></li><li><a data-astro-transition-scope="astro-bztu2lml-2" href="/tags/llm/" class="flex items-center gap-0.5 border-foreground border-b-2 border-dashed hover:border-accent hover:text-accent hover:-mt-0.5 focus-visible:text-accent focus-visible:border-none text-sm"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="opacity-80 size-4" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M5 9h14M5 15h14M11 4 7 20M17 4l-4 16" /></svg>LLM</a></li><li><a data-astro-transition-scope="astro-bztu2lml-3" href="/tags/lora/" class="flex items-center gap-0.5 border-foreground border-b-2 border-dashed hover:border-accent hover:text-accent hover:-mt-0.5 focus-visible:text-accent focus-visible:border-none text-sm"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="opacity-80 size-4" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M5 9h14M5 15h14M11 4 7 20M17 4l-4 16" /></svg>LoRA</a></li><li><a data-astro-transition-scope="astro-bztu2lml-4" href="/tags/parameterefficientfinetuning/" class="flex items-center gap-0.5 border-foreground border-b-2 border-dashed hover:border-accent hover:text-accent hover:-mt-0.5 focus-visible:text-accent focus-visible:border-none text-sm"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="opacity-80 size-4" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M5 9h14M5 15h14M11 4 7 20M17 4l-4 16" /></svg>ParameterEfficientFineTuning</a></li></ul><hr class="my-8 border-dashed"><div data-pagefind-ignore class="my-8 grid grid-cols-1 gap-6 sm:grid-cols-2"><a href="/posts/llm-reasoning-verification/" class="flex w-full gap-1 hover:opacity-75"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="inline-block flex-none rtl:rotate-180" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M5 12h14M5 12l6 6M5 12l6-6" /></svg><div><span>上一篇</span><div class="text-accent/85 text-sm">思维链与自洽性</div></div></a><a href="/posts/transformer-attention-is-all-you-need/" class="flex w-full justify-end gap-1 text-end hover:opacity-75 sm:col-start-2"><div><span>下一篇</span><div class="text-accent/85 text-sm">Transformer为什么需要Attention？从《Attention Is All You Need》读起</div></div><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="inline-block flex-none rtl:rotate-180" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M5 12h14M13 18l6-6M13 6l6 6" /></svg></a></div></main><footer class="app-layout mt-auto"><div class="border-border flex flex-col items-center justify-between border-t py-6 sm:flex-row-reverse sm:py-4"><div class="flex flex-wrap items-center gap-1"><a href="https://github.com/SaromChars" title="Sarom Chars 的 GitHub" class="group inline-flex items-center gap-1 hover:text-accent p-2 hover:rotate-6 sm:p-1"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="inline-block size-6 scale-125 fill-transparent stroke-current stroke-2 opacity-90 group-hover:fill-transparent sm:scale-110" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M9 19c-4.3 1.4-4.3-2.5-6-3m12 5v-3.5c0-1 .1-1.4-.5-2 2.8-.3 5.5-1.4 5.5-6a4.6 4.6 0 0 0-1.3-3.2 4.2 4.2 0 0 0-.1-3.2s-1.1-.3-3.5 1.3a12.3 12.3 0 0 0-6.2 0C6.5 2.8 5.4 3.1 5.4 3.1a4.2 4.2 0 0 0-.1 3.2A4.6 4.6 0 0 0 4 9.5c0 4.6 2.7 5.7 5.5 6-.6.6-.6 1.2-.5 2V21" /></svg><span class="sr-only">Sarom Chars 的 GitHub</span></a></div><div class="my-2 flex flex-col items-center whitespace-nowrap sm:flex-row"><span>版权 &#169; 2026</span><span class="hidden sm:inline">&nbsp;|&nbsp;</span><span>保留所有权利。</span></div></div></footer><script type="module">var e=`theme`,t=`light`,n=`dark`;function r(){return localStorage.getItem(e)||(window.matchMedia(`(prefers-color-scheme: dark)`).matches?n:t)}var i=window.__theme?.value??r();function a(){localStorage.setItem(e,i),o()}function o(){let e=document.firstElementChild;e?.setAttribute(`data-theme`,i),e?.classList.toggle(`dark`,i===n),document.querySelector(`#theme-btn`)?.setAttribute(`aria-label`,i);let t=window.getComputedStyle(document.body).backgroundColor;document.querySelector(`meta[name='theme-color']`)?.setAttribute(`content`,t)}function s(){o(),document.querySelector(`#theme-btn`)?.addEventListener(`click`,()=>{i=i===t?n:t,a()})}s(),document.addEventListener(`astro:after-swap`,s),document.addEventListener(`astro:before-swap`,e=>{let t=document.querySelector(`meta[name='theme-color']`)?.getAttribute(`content`);t&&e.newDocument.querySelector(`meta[name='theme-color']`)?.setAttribute(`content`,t)}),window.matchMedia(`(prefers-color-scheme: dark)`).addEventListener(`change`,({matches:e})=>{i=e?n:t,a()});</script></body></html><script type="module">var e=document.querySelector(`#article`);if(e?.querySelector(`a[href^="#ref-"]`)){let t=null,n=!1,r=document.createElement(`button`);r.type=`button`,r.className=`citation-return`,r.textContent=`返回阅读位置`,r.setAttribute(`data-pagefind-ignore`,``),e.addEventListener(`click`,n=>{if(n.button!==0||n.metaKey||n.ctrlKey||n.shiftKey||n.altKey)return;let i=n.target instanceof Element?n.target.closest(`a[href^="#ref-"]`):null;if(!i||!e.contains(i))return;let a=i.hash,o=document.getElementById(decodeURIComponent(a.slice(1)));o&&e.contains(o)&&(t={source:i,url:window.location.href,top:window.scrollY,left:window.scrollX,targetHash:a},o.insertAdjacentElement(`afterend`,r))}),r.addEventListener(`click`,()=>{if(!t||n)return;let e=t,i=i=>{r.remove(),window.requestAnimationFrame(()=>{window.requestAnimationFrame(()=>{e.source.focus({preventScroll:!0}),window.scrollTo({top:e.top,left:e.left,behavior:`instant`}),t=null,n=!1,i?.()})})};window.location.href===e.url?i():(n=!0,window.addEventListener(`popstate`,()=>{let e=window.history.scrollRestoration;window.history.scrollRestoration=`manual`,window.setTimeout(()=>{i(()=>{window.history.scrollRestoration=e})},0)},{once:!0}),window.history.back())}),window.addEventListener(`hashchange`,()=>{!n&&t&&window.location.hash!==t.targetHash&&(r.remove(),t=null)})}</script><script data-astro-rerun>
+  function createProgressBar() {
+    const progressContainer = document.createElement("div");
+    progressContainer.className =
+      "progress-container fixed top-0 z-10 h-1 w-full bg-background";
+
+    const progressBar = document.createElement("div");
+    progressBar.className = "progress-bar h-1 w-0 bg-accent";
+    progressBar.id = "myBar";
+
+    progressContainer.appendChild(progressBar);
+    document.body.appendChild(progressContainer);
+  }
+  createProgressBar();
+
+  function updateScrollProgress() {
+    document.addEventListener("scroll", () => {
+      const winScroll =
+        document.body.scrollTop || document.documentElement.scrollTop;
+      const height =
+        document.documentElement.scrollHeight -
+        document.documentElement.clientHeight;
+      const scrolled = (winScroll / height) * 100;
+      if (document) {
+        const myBar = document.getElementById("myBar");
+        if (myBar) {
+          myBar.style.width = scrolled + "%";
+        }
+      }
+    });
+  }
+  updateScrollProgress();
+
+  function addHeadingLinks() {
+    const headings = Array.from(
+      document.querySelectorAll("h2, h3, h4, h5, h6")
+    );
+    for (const heading of headings) {
+      heading.classList.add("group");
+      const link = document.createElement("a");
+      link.className =
+        "heading-link ms-2 no-underline opacity-75 md:opacity-0 md:group-hover:opacity-100 md:focus:opacity-100";
+      link.href = "#" + heading.id;
+
+      const span = document.createElement("span");
+      span.ariaHidden = "true";
+      span.innerText = "#";
+      link.appendChild(span);
+      heading.appendChild(link);
+    }
+  }
+  addHeadingLinks();
+
+  function attachCopyButtons() {
+    const copyButtonLabel = "Copy";
+    const codeBlocks = Array.from(document.querySelectorAll("pre"));
+
+    for (const codeBlock of codeBlocks) {
+      const wrapper = document.createElement("div");
+      wrapper.style.position = "relative";
+
+      const computedStyle = getComputedStyle(codeBlock);
+      const hasFileNameOffset =
+        computedStyle.getPropertyValue("--file-name-offset").trim() !== "";
+
+      const topClass = hasFileNameOffset
+        ? "top-(--file-name-offset)"
+        : "-top-3";
+
+      const copyButton = document.createElement("button");
+      copyButton.className = `copy-code absolute end-3 ${topClass} rounded bg-muted border border-muted px-2 py-1 text-xs leading-4 text-foreground font-medium`;
+      copyButton.innerHTML = copyButtonLabel;
+      codeBlock.setAttribute("tabindex", "0");
+      codeBlock.appendChild(copyButton);
+
+      codeBlock?.parentNode?.insertBefore(wrapper, codeBlock);
+      wrapper.appendChild(codeBlock);
+
+      copyButton.addEventListener("click", async () => {
+        await copyCode(codeBlock, copyButton);
+      });
+    }
+
+    async function copyCode(block, button) {
+      const code = block.querySelector("code");
+      const text = code?.innerText;
+
+      await navigator.clipboard.writeText(text ?? "");
+
+      button.innerText = "Copied";
+
+      setTimeout(() => {
+        button.innerText = copyButtonLabel;
+      }, 700);
+    }
+  }
+  attachCopyButtons();
+
+  /** Accessible image lightbox for article images. */
+  function initLightbox() {
+    const article = document.getElementById("article");
+    if (!article) return;
+
+    const prefersReducedMotion = () =>
+      window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+    let overlay = null;
+    let lastFocused = null;
+    let removeDragListeners = null;
+
+    // Defer attribute mutations so they don't push the LCP timestamp.
+    // Event listeners below use delegation and don't need the attributes to exist yet.
+    requestAnimationFrame(() => {
+      const images = Array.from(article.querySelectorAll("img"));
+      for (const image of images) {
+        if (image.closest("a")) continue;
+        image.setAttribute("role", "button");
+        image.setAttribute("tabindex", "0");
+        image.setAttribute("aria-haspopup", "dialog");
+        image.setAttribute(
+          "aria-label",
+          image.alt ? `Zoom image: ${image.alt}` : "Zoom image"
+        );
+      }
+    });
+
+    function open(src, alt, trigger) {
+      if (overlay) return;
+      lastFocused = trigger ?? document.activeElement;
+
+      overlay = document.createElement("div");
+      overlay.setAttribute("role", "dialog");
+      overlay.setAttribute("aria-modal", "true");
+      overlay.setAttribute(
+        "aria-label",
+        alt ? `Image preview: ${alt}` : "Image preview"
+      );
+      overlay.className =
+        "fixed inset-0 z-50 flex cursor-zoom-out items-center justify-center bg-black/70 backdrop-blur-sm opacity-0 transition-opacity duration-200 motion-reduce:transition-none";
+
+      const closeButton = document.createElement("button");
+      closeButton.type = "button";
+      closeButton.setAttribute("aria-label", "Close image preview");
+      closeButton.className =
+        "absolute end-4 top-4 z-1 flex size-11 items-center justify-center rounded bg-black/50 text-3xl leading-none text-white";
+      closeButton.innerHTML = "&#10005;";
+      closeButton.addEventListener("click", close);
+
+      const image = document.createElement("img");
+      image.src = src;
+      image.alt = "";
+      image.className =
+        "max-h-[90dvh] max-w-[90dvw] cursor-default object-contain transition-transform duration-100 ease-out motion-reduce:transition-none data-[zoom=drag]:cursor-grabbing data-[zoom=drag]:transition-none data-[zoom=in]:cursor-grab";
+
+      overlay.append(closeButton, image);
+      overlay.addEventListener("click", e => {
+        if (e.target === overlay && currentScale <= 1) close();
+      });
+
+      let currentScale = 1;
+      let translateX = 0;
+      let translateY = 0;
+      let initialDist = 0;
+      let initialScale = 1;
+      let panStartX = 0;
+      let panStartY = 0;
+      let panStartTranslateX = 0;
+      let panStartTranslateY = 0;
+      let lastTapTime = 0;
+
+      function applyTransform() {
+        image.style.transform = `scale(${currentScale}) translate(${translateX}px, ${translateY}px)`;
+        // A backdrop click only closes at fit size, so drop the zoom-out cursor while zoomed.
+        overlay?.classList.toggle("cursor-zoom-out", currentScale <= 1);
+      }
+
+      function resetTransform() {
+        currentScale = 1;
+        translateX = 0;
+        translateY = 0;
+        image.style.transform = "";
+        image.removeAttribute("data-zoom");
+        overlay?.classList.add("cursor-zoom-out");
+      }
+
+      // Keep the zoomed image from being panned past its edges.
+      function clampTranslate() {
+        if (!overlay) return;
+        const maxX = Math.max(
+          0,
+          (image.clientWidth - overlay.clientWidth / currentScale) / 2
+        );
+        const maxY = Math.max(
+          0,
+          (image.clientHeight - overlay.clientHeight / currentScale) / 2
+        );
+        translateX = Math.min(maxX, Math.max(-maxX, translateX));
+        translateY = Math.min(maxY, Math.max(-maxY, translateY));
+      }
+
+      overlay.addEventListener(
+        "touchstart",
+        e => {
+          const t = e.touches;
+          if (t.length === 2) {
+            image.setAttribute("data-zoom", "drag");
+            initialDist = Math.hypot(
+              t[1].clientX - t[0].clientX,
+              t[1].clientY - t[0].clientY
+            );
+            initialScale = currentScale;
+          } else if (t.length === 1) {
+            const now = Date.now();
+            if (now - lastTapTime < 300) {
+              e.preventDefault();
+              if (currentScale > 1) {
+                resetTransform();
+              } else {
+                currentScale = 2;
+                translateX = 0;
+                translateY = 0;
+                applyTransform();
+                image.setAttribute("data-zoom", "in");
+              }
+              lastTapTime = 0;
+              panStartX = t[0].clientX;
+              panStartY = t[0].clientY;
+              panStartTranslateX = translateX;
+              panStartTranslateY = translateY;
+            } else {
+              lastTapTime = now;
+              if (currentScale > 1) {
+                image.setAttribute("data-zoom", "drag");
+                panStartX = t[0].clientX;
+                panStartY = t[0].clientY;
+                panStartTranslateX = translateX;
+                panStartTranslateY = translateY;
+              }
+            }
+          }
+        },
+        { passive: false }
+      );
+
+      overlay.addEventListener(
+        "touchmove",
+        e => {
+          const t = e.touches;
+          if (t.length === 2) {
+            e.preventDefault();
+            const dist = Math.hypot(
+              t[1].clientX - t[0].clientX,
+              t[1].clientY - t[0].clientY
+            );
+            const oldScale = currentScale;
+            currentScale = Math.min(
+              4,
+              Math.max(1, initialScale * (dist / initialDist))
+            );
+
+            // Zoom to the geometric center of the two fingers
+            const midX = (t[0].clientX + t[1].clientX) / 2;
+            const midY = (t[0].clientY + t[1].clientY) / 2;
+            const ox = overlay.clientWidth / 2;
+            const oy = overlay.clientHeight / 2;
+            translateX =
+              (midX - ox) * (1 / currentScale - 1 / oldScale) + translateX;
+            translateY =
+              (midY - oy) * (1 / currentScale - 1 / oldScale) + translateY;
+            clampTranslate();
+            applyTransform();
+          } else if (t.length === 1) {
+            if (currentScale > 1) {
+              e.preventDefault();
+              image.setAttribute("data-zoom", "drag");
+              translateX =
+                panStartTranslateX + (t[0].clientX - panStartX) / currentScale;
+              translateY =
+                panStartTranslateY + (t[0].clientY - panStartY) / currentScale;
+              clampTranslate();
+              applyTransform();
+            } else {
+              e.preventDefault();
+            }
+          }
+        },
+        { passive: false }
+      );
+
+      overlay.addEventListener("touchend", e => {
+        if (e.touches.length === 0) {
+          if (currentScale > 1) {
+            image.setAttribute("data-zoom", "in");
+          } else {
+            image.removeAttribute("data-zoom");
+          }
+          if (currentScale <= 1.05) resetTransform();
+        }
+      });
+
+      overlay.addEventListener("touchcancel", e => {
+        if (e.touches.length === 0) {
+          if (currentScale > 1) {
+            image.setAttribute("data-zoom", "in");
+          } else {
+            image.removeAttribute("data-zoom");
+          }
+          if (currentScale <= 1.05) resetTransform();
+        }
+      });
+
+      overlay.addEventListener(
+        "wheel",
+        e => {
+          e.preventDefault();
+          const oldScale = currentScale;
+          const delta = -e.deltaY * 0.001;
+          currentScale = Math.min(4, Math.max(1, currentScale * (1 + delta)));
+
+          if (currentScale <= 1.05) {
+            resetTransform();
+          } else {
+            image.setAttribute("data-zoom", "in");
+            // Zoom to cursor: adjust translate so the point under cursor stays fixed
+            const ox = overlay.clientWidth / 2;
+            const oy = overlay.clientHeight / 2;
+            translateX =
+              (e.clientX - ox) * (1 / currentScale - 1 / oldScale) + translateX;
+            translateY =
+              (e.clientY - oy) * (1 / currentScale - 1 / oldScale) + translateY;
+            clampTranslate();
+            applyTransform();
+          }
+        },
+        { passive: false }
+      );
+
+      let isMouseDown = false;
+      let mouseStartX = 0;
+      let mouseStartY = 0;
+
+      overlay.addEventListener("mousedown", e => {
+        if (e.button !== 0 || currentScale <= 1) return;
+        if (e.target.closest("button")) return;
+        isMouseDown = true;
+        mouseStartX = e.clientX;
+        mouseStartY = e.clientY;
+        panStartTranslateX = translateX;
+        panStartTranslateY = translateY;
+        image.setAttribute("data-zoom", "drag");
+        e.preventDefault();
+      });
+
+      function onMouseMove(e) {
+        if (!isMouseDown || !overlay) return;
+        translateX =
+          panStartTranslateX + (e.clientX - mouseStartX) / currentScale;
+        translateY =
+          panStartTranslateY + (e.clientY - mouseStartY) / currentScale;
+        clampTranslate();
+        applyTransform();
+      }
+
+      function onMouseUp() {
+        if (!isMouseDown) return;
+        isMouseDown = false;
+        if (currentScale > 1) {
+          image.setAttribute("data-zoom", "in");
+        } else {
+          image.removeAttribute("data-zoom");
+        }
+      }
+
+      document.addEventListener("mousemove", onMouseMove);
+      document.addEventListener("mouseup", onMouseUp);
+      removeDragListeners = () => {
+        document.removeEventListener("mousemove", onMouseMove);
+        document.removeEventListener("mouseup", onMouseUp);
+      };
+
+      document.body.appendChild(overlay);
+      document.documentElement.style.overflow = "hidden";
+      document.addEventListener("keydown", onKeyDown);
+      window.__closeLightbox = close;
+
+      requestAnimationFrame(() => overlay?.classList.add("opacity-100"));
+      closeButton.focus();
+    }
+
+    function close() {
+      if (!overlay) return;
+      const el = overlay;
+      overlay = null;
+      el.classList.add("pointer-events-none");
+      window.__closeLightbox = null;
+
+      document.removeEventListener("keydown", onKeyDown);
+      removeDragListeners?.();
+      removeDragListeners = null;
+      document.documentElement.style.overflow = "";
+      lastFocused?.focus();
+      lastFocused = null;
+
+      if (prefersReducedMotion()) {
+        el.remove();
+        return;
+      }
+      const remove = () => el.remove();
+      el.addEventListener("transitionend", remove, { once: true });
+      setTimeout(remove, 250); // fallback in case transitionend never fires
+      el.classList.remove("opacity-100");
+    }
+
+    function onKeyDown(e) {
+      if (e.key === "Escape") {
+        close();
+      } else if (e.key === "Tab") {
+        trapFocus(e);
+      }
+    }
+
+    // Keep keyboard focus inside the open dialog.
+    function trapFocus(e) {
+      if (!overlay) return;
+      const focusables = overlay.querySelectorAll(
+        'a[href], button, [tabindex]:not([tabindex="-1"])'
+      );
+      if (focusables.length === 0) return;
+      const first = focusables[0];
+      const last = focusables[focusables.length - 1];
+      if (e.shiftKey && document.activeElement === first) {
+        e.preventDefault();
+        last.focus();
+      } else if (!e.shiftKey && document.activeElement === last) {
+        e.preventDefault();
+        first.focus();
+      }
+    }
+
+    function triggerFromEvent(e) {
+      const image = e.target.closest("img");
+      if (!image || !article.contains(image) || image.closest("a")) return null;
+      return image;
+    }
+
+    function activate(image) {
+      open(image.currentSrc || image.src, image.alt, image);
+    }
+
+    article.addEventListener("click", e => {
+      const image = triggerFromEvent(e);
+      if (!image) return;
+      e.preventDefault();
+      activate(image);
+    });
+
+    article.addEventListener("keydown", e => {
+      if (e.key !== "Enter" && e.key !== " " && e.key !== "Spacebar") return;
+      const image = triggerFromEvent(e);
+      if (!image) return;
+      e.preventDefault();
+      activate(image);
+    });
+  }
+  initLightbox();
+
+  if (!window.__lightboxSwapBound) {
+    window.__lightboxSwapBound = true;
+    document.addEventListener("astro:before-swap", () =>
+      window.__closeLightbox?.()
+    );
+  }
+
+  document.addEventListener("astro:after-swap", () =>
+    window.scrollTo({ left: 0, top: 0, behavior: "instant" })
+  );
+</script>

@@ -1,0 +1,954 @@
+<!DOCTYPE html><html dir="ltr" lang="zh-CN" class="overflow-y-scroll scroll-smooth"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1"><link rel="icon" type="image/png" href="/images/favicon-32x32-next.png"><link rel="icon" href="/favicon.ico"><link rel="canonical" href="https://www.saromchars.tech/posts/llm-multimodal-alignment/"><meta name="generator" content="Astro v7.4.5"><!-- Primary meta --><title>多模态文本与图像的表征对齐 | Sarom&#39;s Blog</title><meta name="title" content="多模态文本与图像的表征对齐 | Sarom's Blog"><meta name="description" content="系统解构多模态表征对齐机制：通过视觉与文本双编码器分别提取特征，利用对比学习在联合嵌入空间中拉近配对图文并推开非配对样本，下游分类则转化为图像与候选文本权重的相似度比较。本文讨论的CLIP零样本分类在预设候选文本中进行排序，其在几何推理与分布外数据上的表现仍有限制。"><meta name="author" content="Sarom Chars"><link rel="sitemap" href="/sitemap-index.xml"><!-- Open Graph --><meta property="og:type" content="article"><meta property="og:site_name" content="Sarom's Blog"><meta property="og:title" content="多模态文本与图像的表征对齐 | Sarom's Blog"><meta property="og:description" content="系统解构多模态表征对齐机制：通过视觉与文本双编码器分别提取特征，利用对比学习在联合嵌入空间中拉近配对图文并推开非配对样本，下游分类则转化为图像与候选文本权重的相似度比较。本文讨论的CLIP零样本分类在预设候选文本中进行排序，其在几何推理与分布外数据上的表现仍有限制。"><meta property="og:url" content="https://www.saromchars.tech/posts/llm-multimodal-alignment/"><meta property="og:image" content="https://www.saromchars.tech/og.png"><!-- Twitter / X --><meta property="twitter:card" content="summary_large_image"><meta property="twitter:url" content="https://www.saromchars.tech/posts/llm-multimodal-alignment/"><meta property="twitter:title" content="多模态文本与图像的表征对齐 | Sarom's Blog"><meta property="twitter:description" content="系统解构多模态表征对齐机制：通过视觉与文本双编码器分别提取特征，利用对比学习在联合嵌入空间中拉近配对图文并推开非配对样本，下游分类则转化为图像与候选文本权重的相似度比较。本文讨论的CLIP零样本分类在预设候选文本中进行排序，其在几何推理与分布外数据上的表现仍有限制。"><meta property="twitter:image" content="https://www.saromchars.tech/og.png"><!-- RSS autodiscovery --><link rel="alternate" type="application/rss+xml" title="Sarom's Blog" href="https://www.saromchars.tech/rss.xml"><!-- Filled at runtime by theme.ts to match the current background colour --><meta name="theme-color" content=""><!-- Extra head content injected by child layouts (e.g. JSON-LD, article meta) --><meta property="article:published_time" content="2022-04-11T02:00:00.000Z"><script type="application/ld+json">{"@context":"https://schema.org","@type":"BlogPosting","headline":"多模态文本与图像的表征对齐","mainEntityOfPage":"https://www.saromchars.tech/posts/llm-multimodal-alignment/","datePublished":"2022-04-11T02:00:00.000Z","author":[{"@type":"Person","name":"Sarom Chars","url":"https://github.com/SaromChars"}]}</script><!--
+      Inline FOUC-prevention script: sets data-theme on <html> before
+      the browser paints. Runs synchronously, no defer/async.
+    --><script>
+      (function () {
+        const stored = localStorage.getItem("theme");
+        const prefersDark = window.matchMedia(
+          "(prefers-color-scheme: dark)"
+        ).matches;
+        const theme = stored ?? (prefersDark ? "dark" : "light");
+        const root = document.firstElementChild;
+        root?.setAttribute("data-theme", theme);
+        root?.classList.toggle("dark", theme === "dark");
+        // Expose value so theme.ts can skip re-detection.
+        window.__theme = { value: theme };
+      })();
+    </script><meta name="robots" content="index, follow"><script async src="https://www.googletagmanager.com/gtag/js?id=G-WJJJTJ4FWX"></script><script>(function(){const measurementId = "G-WJJJTJ4FWX";
+
+    window.dataLayer = window.dataLayer || [];
+    function gtag(){ window.dataLayer.push(arguments); }
+    gtag('js', new Date());
+    gtag('config', measurementId);
+  })();</script><style>@keyframes astroFadeInOut{0%{opacity:1}to{opacity:0}}@keyframes astroFadeIn{0%{opacity:0;mix-blend-mode:plus-lighter}to{opacity:1;mix-blend-mode:plus-lighter}}@keyframes astroFadeOut{0%{opacity:1;mix-blend-mode:plus-lighter}to{opacity:0;mix-blend-mode:plus-lighter}}@keyframes astroSlideFromRight{0%{transform:translate(100%)}}@keyframes astroSlideFromLeft{0%{transform:translate(-100%)}}@keyframes astroSlideToRight{to{transform:translate(100%)}}@keyframes astroSlideToLeft{to{transform:translate(-100%)}}@media (prefers-reduced-motion){::view-transition-group(*),::view-transition-old(*),::view-transition-new(*),[data-astro-transition-scope]{animation:none!important}}
+</style><link rel="stylesheet" href="/_astro/Footer.DC6qDsIp.css"><style>[data-astro-transition-scope="astro-bztu2lml-1"] { view-transition-name: ai; }@layer astro { ::view-transition-old(ai) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }::view-transition-new(ai) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }[data-astro-transition=back]::view-transition-old(ai) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition=back]::view-transition-new(ai) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; } }[data-astro-transition-fallback="old"] [data-astro-transition-scope="astro-bztu2lml-1"],
+			[data-astro-transition-fallback="old"][data-astro-transition-scope="astro-bztu2lml-1"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition-fallback="new"] [data-astro-transition-scope="astro-bztu2lml-1"],
+			[data-astro-transition-fallback="new"][data-astro-transition-scope="astro-bztu2lml-1"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }[data-astro-transition=back][data-astro-transition-fallback="old"] [data-astro-transition-scope="astro-bztu2lml-1"],
+			[data-astro-transition=back][data-astro-transition-fallback="old"][data-astro-transition-scope="astro-bztu2lml-1"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition=back][data-astro-transition-fallback="new"] [data-astro-transition-scope="astro-bztu2lml-1"],
+			[data-astro-transition=back][data-astro-transition-fallback="new"][data-astro-transition-scope="astro-bztu2lml-1"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }</style><style>[data-astro-transition-scope="astro-bztu2lml-2"] { view-transition-name: llm; }@layer astro { ::view-transition-old(llm) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }::view-transition-new(llm) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }[data-astro-transition=back]::view-transition-old(llm) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition=back]::view-transition-new(llm) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; } }[data-astro-transition-fallback="old"] [data-astro-transition-scope="astro-bztu2lml-2"],
+			[data-astro-transition-fallback="old"][data-astro-transition-scope="astro-bztu2lml-2"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition-fallback="new"] [data-astro-transition-scope="astro-bztu2lml-2"],
+			[data-astro-transition-fallback="new"][data-astro-transition-scope="astro-bztu2lml-2"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }[data-astro-transition=back][data-astro-transition-fallback="old"] [data-astro-transition-scope="astro-bztu2lml-2"],
+			[data-astro-transition=back][data-astro-transition-fallback="old"][data-astro-transition-scope="astro-bztu2lml-2"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition=back][data-astro-transition-fallback="new"] [data-astro-transition-scope="astro-bztu2lml-2"],
+			[data-astro-transition=back][data-astro-transition-fallback="new"][data-astro-transition-scope="astro-bztu2lml-2"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }</style><style>[data-astro-transition-scope="astro-bztu2lml-3"] { view-transition-name: multimodal; }@layer astro { ::view-transition-old(multimodal) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }::view-transition-new(multimodal) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }[data-astro-transition=back]::view-transition-old(multimodal) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition=back]::view-transition-new(multimodal) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; } }[data-astro-transition-fallback="old"] [data-astro-transition-scope="astro-bztu2lml-3"],
+			[data-astro-transition-fallback="old"][data-astro-transition-scope="astro-bztu2lml-3"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition-fallback="new"] [data-astro-transition-scope="astro-bztu2lml-3"],
+			[data-astro-transition-fallback="new"][data-astro-transition-scope="astro-bztu2lml-3"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }[data-astro-transition=back][data-astro-transition-fallback="old"] [data-astro-transition-scope="astro-bztu2lml-3"],
+			[data-astro-transition=back][data-astro-transition-fallback="old"][data-astro-transition-scope="astro-bztu2lml-3"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition=back][data-astro-transition-fallback="new"] [data-astro-transition-scope="astro-bztu2lml-3"],
+			[data-astro-transition=back][data-astro-transition-fallback="new"][data-astro-transition-scope="astro-bztu2lml-3"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }</style><style>[data-astro-transition-scope="astro-bztu2lml-4"] { view-transition-name: clip; }@layer astro { ::view-transition-old(clip) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }::view-transition-new(clip) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }[data-astro-transition=back]::view-transition-old(clip) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition=back]::view-transition-new(clip) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; } }[data-astro-transition-fallback="old"] [data-astro-transition-scope="astro-bztu2lml-4"],
+			[data-astro-transition-fallback="old"][data-astro-transition-scope="astro-bztu2lml-4"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition-fallback="new"] [data-astro-transition-scope="astro-bztu2lml-4"],
+			[data-astro-transition-fallback="new"][data-astro-transition-scope="astro-bztu2lml-4"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }[data-astro-transition=back][data-astro-transition-fallback="old"] [data-astro-transition-scope="astro-bztu2lml-4"],
+			[data-astro-transition=back][data-astro-transition-fallback="old"][data-astro-transition-scope="astro-bztu2lml-4"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition=back][data-astro-transition-fallback="new"] [data-astro-transition-scope="astro-bztu2lml-4"],
+			[data-astro-transition=back][data-astro-transition-fallback="new"][data-astro-transition-scope="astro-bztu2lml-4"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }</style><style>[data-astro-transition-scope="astro-bztu2lml-5"] { view-transition-name: contrastivelearning; }@layer astro { ::view-transition-old(contrastivelearning) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }::view-transition-new(contrastivelearning) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }[data-astro-transition=back]::view-transition-old(contrastivelearning) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition=back]::view-transition-new(contrastivelearning) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; } }[data-astro-transition-fallback="old"] [data-astro-transition-scope="astro-bztu2lml-5"],
+			[data-astro-transition-fallback="old"][data-astro-transition-scope="astro-bztu2lml-5"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition-fallback="new"] [data-astro-transition-scope="astro-bztu2lml-5"],
+			[data-astro-transition-fallback="new"][data-astro-transition-scope="astro-bztu2lml-5"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }[data-astro-transition=back][data-astro-transition-fallback="old"] [data-astro-transition-scope="astro-bztu2lml-5"],
+			[data-astro-transition=back][data-astro-transition-fallback="old"][data-astro-transition-scope="astro-bztu2lml-5"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition=back][data-astro-transition-fallback="new"] [data-astro-transition-scope="astro-bztu2lml-5"],
+			[data-astro-transition=back][data-astro-transition-fallback="new"][data-astro-transition-scope="astro-bztu2lml-5"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }</style><style>[data-astro-transition-scope="astro-bztu2lml-6"] { view-transition-name: representationalignment; }@layer astro { ::view-transition-old(representationalignment) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }::view-transition-new(representationalignment) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }[data-astro-transition=back]::view-transition-old(representationalignment) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition=back]::view-transition-new(representationalignment) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; } }[data-astro-transition-fallback="old"] [data-astro-transition-scope="astro-bztu2lml-6"],
+			[data-astro-transition-fallback="old"][data-astro-transition-scope="astro-bztu2lml-6"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition-fallback="new"] [data-astro-transition-scope="astro-bztu2lml-6"],
+			[data-astro-transition-fallback="new"][data-astro-transition-scope="astro-bztu2lml-6"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }[data-astro-transition=back][data-astro-transition-fallback="old"] [data-astro-transition-scope="astro-bztu2lml-6"],
+			[data-astro-transition=back][data-astro-transition-fallback="old"][data-astro-transition-scope="astro-bztu2lml-6"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition=back][data-astro-transition-fallback="new"] [data-astro-transition-scope="astro-bztu2lml-6"],
+			[data-astro-transition=back][data-astro-transition-fallback="new"][data-astro-transition-scope="astro-bztu2lml-6"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }</style></head><body class="bg-background font-app text-foreground selection:bg-accent/75 selection:text-accent-foreground flex min-h-svh flex-col"><a id="skip-to-content" href="#main-content" class="bg-background text-accent absolute inset-s-16 -top-full z-50 px-3 py-2 backdrop-blur-lg transition-all focus:top-4">跳到正文</a><header class="app-layout flex flex-col items-center justify-between sm:flex-row"><div class="border-border bg-background relative flex w-full items-baseline justify-between border-b py-4 sm:items-center sm:py-6"><a href="/" class="absolute py-1 text-xl leading-8 font-semibold whitespace-nowrap sm:static sm:my-auto sm:text-2xl sm:leading-none">Sarom&#39;s Blog</a><nav id="nav-menu" class="flex w-full flex-col items-center sm:ms-2 sm:flex-row sm:justify-end sm:space-x-4 sm:py-0"><button id="menu-btn" class="focus-outline self-end p-2 sm:hidden" aria-label="展开菜单" aria-expanded="false" aria-controls="menu-items" data-label-open="展开菜单" data-label-close="收起菜单"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="hidden" viewBox="0 0 24 24" id="close-icon"><path stroke="none" d="M0 0h24v24H0z" /><path d="M18 6 6 18M6 6l12 12" /></svg><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="icon icon-tabler icons-tabler-outline icon-tabler-menu-deep" viewBox="0 0 24 24" id="menu-icon"><path stroke="none" d="M0 0h24v24H0z" /><path d="M4 6h16M7 12h13M10 18h10" /></svg></button><ul id="menu-items" class="[&amp;&gt;li&gt;a]:hover:text-accent mt-4 hidden w-44 grid-cols-2 place-content-center gap-2 sm:mt-0 sm:flex sm:w-auto sm:gap-x-5 sm:gap-y-0 sm:[&amp;&gt;li]:h-8 [&amp;&gt;li&gt;a]:block [&amp;&gt;li&gt;a]:px-4 [&amp;&gt;li&gt;a]:py-3 [&amp;&gt;li&gt;a]:text-center [&amp;&gt;li&gt;a]:font-medium sm:[&amp;&gt;li&gt;a]:px-2 sm:[&amp;&gt;li&gt;a]:py-1"><li class="col-span-2"><a href="/posts/" class="active-nav">文章</a></li><li class="col-span-2"><a href="/tags/">标签</a></li><li class="col-span-2"><a href="/about/">关于</a></li><li class="col-span-2"><a href="/archives/" title="归档" aria-label="归档" class="group inline-flex items-center gap-1 hover:text-accent focus-outline flex size-full justify-center p-3 sm:relative sm:size-8 sm:p-0"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="hidden sm:absolute sm:top-1/2 sm:left-1/2 sm:block sm:size-6 sm:-translate-x-1/2 sm:-translate-y-1/2" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M3 6a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2 2 2 0 0 1-2 2H5a2 2 0 0 1-2-2M5 8v10a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8M10 12h4" /></svg><span class="sm:sr-only">归档</span></a></li><li class="col-span-1 flex items-center justify-center"><a href="/search/" title="搜索" aria-label="搜索" class="group inline-flex items-center gap-1 hover:text-accent focus-outline relative size-8"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="absolute top-1/2 left-1/2 size-6 -translate-x-1/2 -translate-y-1/2" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M3 10a7 7 0 1 0 14 0 7 7 0 1 0-14 0M21 21l-6-6" /></svg><span class="sr-only">搜索</span></a></li><li class="col-span-1 flex items-center justify-center"><button id="theme-btn" class="focus-outline hover:[&amp;&gt;svg]:stroke-accent relative size-12 p-4 sm:size-8" title="切换主题" aria-label="auto" aria-live="polite"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="absolute top-[50%] left-[50%] translate-[-50%] scale-100 rotate-0 transition-all dark:scale-0 dark:-rotate-90" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M12 3h.393a7.5 7.5 0 0 0 7.92 12.446A9 9 0 1 1 12 2.992z" /></svg><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="absolute top-[50%] left-[50%] translate-[-50%] scale-0 rotate-90 transition-all dark:scale-100 dark:rotate-0" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M14.828 14.828a4 4 0 1 0-5.656-5.656 4 4 0 0 0 5.656 5.656M6.343 17.657l-1.414 1.414M6.343 6.343 4.929 4.929M17.657 6.343l1.414-1.414M17.657 17.657l1.414 1.414M4 12H2M12 4V2M20 12h2M12 20v2" /></svg></button></li></ul></nav></div></header><script type="module">function e(){let e=document.querySelector(`#menu-btn`),t=document.querySelector(`#menu-items`),n=document.querySelector(`#menu-icon`),r=document.querySelector(`#close-icon`);if(!e||!t||!n||!r)return;let i=e.dataset.labelOpen??`Open menu`,a=e.dataset.labelClose??`Close menu`;e.addEventListener(`click`,()=>{let o=e.getAttribute(`aria-expanded`)===`true`;e.setAttribute(`aria-expanded`,o?`false`:`true`),e.setAttribute(`aria-label`,o?i:a),t.classList.toggle(`hidden`),t.classList.toggle(`grid`),n.classList.toggle(`hidden`),r.classList.toggle(`hidden`)})}function t(){let e=document.getElementById(`skip-to-content`);e&&e.addEventListener(`click`,e=>{if(e.defaultPrevented||e.metaKey||e.ctrlKey||e.shiftKey||e.button!==0)return;e.preventDefault();let t=document.getElementById(`main-content`);t&&(t.setAttribute(`tabindex`,`-1`),t.addEventListener(`blur`,()=>t.removeAttribute(`tabindex`),{once:!0}),t.focus(),t.scrollIntoView({behavior:`smooth`}))})}e(),document.addEventListener(`astro:after-swap`,e),t(),document.addEventListener(`astro:after-swap`,t);</script><div class="app-layout flex items-center justify-start"><a id="back-button" href="/" class="group inline-flex items-center gap-1 hover:text-accent focus-outline hover:text-foreground/75 -ms-2 mt-8 mb-2"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="inline-block size-6 rtl:rotate-180" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="m15 6-6 6 6 6" /></svg><span>返回</span></a></div><script type="module">function e(){let e=document.querySelector(`#back-button`),t=sessionStorage.getItem(`backUrl`);t&&e&&(e.href=t)}document.addEventListener(`astro:page-load`,e),e();</script><main id="main-content" class="app-layout" data-pagefind-body><h1 style="view-transition-name:llm-multimodal-alignment" class="text-accent inline-block text-2xl font-bold sm:text-3xl">多模态文本与图像的表征对齐</h1><div class="my-2 flex items-center gap-2"><div class="text-muted-foreground flex items-center gap-x-2"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="inline-block size-6 min-w-5.5" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M4 7a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2zM16 3v4M8 3v4M4 11h16M7 14h.013M10.01 14h.005M13.01 14h.005M16.015 14h.005M13.015 17h.005M7.01 17h.005M10.01 17h.005" /></svg><time class="text-sm sm:text-base" datetime="2022-04-11T02:00:00.000Z">2022年4月11日</time></div><span aria-hidden="true" class="text-muted-foreground max-sm:hidden hidden">|</span></div><article id="article" class="mt-8 w-full app-prose max-w-app prose-pre:bg-(--shiki-light-bg) dark:prose-pre:bg-(--shiki-dark-bg)"><p>承接此前关于大语言模型（large language model，LLM）通过自回归生成预测下一 token（模型处理的基本序列单位，词元，可对应子词、字符或字节等单位）以及接入外部程序的讨论，系统如何进一步跨越文本边界，将离散字符与连续图像等其他输入连接起来？</p>
+<p>在传统的计算机视觉体系中，模型通常依赖预设的离散类别标签进行有监督训练（training）；若要适配新概念，系统通常需要针对新标签重新组织训练或调整分类头。要让计算机直接比较图像内容与自然语言描述，核心在于建立文本与视觉之间的跨模态表征对应关系。</p>
+<p>2021 年，Radford et al. 提出了 CLIP（Contrastive Language-Image Pre-training）架构<a href="#ref-radford-2021"><span id="citation-radford-intro">1</span></a>。该研究通过在 4 亿图文对的大规模互联网数据集上进行双编码器对比预训练（pretraining），展示了利用自然语言监督直接学习可迁移视觉表征的可行路径。本文基于该论文的固定版本，系统解构多模态如何连接文本与视觉输入、对比学习与生成预测在该研究中的计算能效权衡、零样本分类的向量检索本质，以及跨模态对齐在抽象推理与分布外数据上的局限与边界。</p>
+<hr>
+<h2 id="1-跨模态表征映射与方案选择">1. 跨模态表征映射与方案选择</h2>
+<p>要让计算机系统同时理解图像与文本，最直观的挑战在于两种模态的数据结构存在根本差异：文本是由分词器（tokenizer，通常处理子词、字符或字节）切分出的离散符号序列，而图像是由连续像素网格构成的密集多维张量。连接两者的核心任务，是在隐层空间中找到一种<strong>联合嵌入空间（joint embedding space）</strong>，使得语义相近的图像嵌入（embedding）与文本嵌入在向量空间中距离接近。</p>
+<svg viewBox="0 0 400 370" width="100%" style="max-width: 400px; height: auto; display: block; margin: 1.5rem auto;" role="img" aria-labelledby="clip-arch-title clip-arch-desc">
+  <title id="clip-arch-title">双编码器跨模态表征对齐流程</title>
+  <desc id="clip-arch-desc">图像经视觉编码器与线性投影得到视觉特征向量，文本经文本编码器与线性投影得到文本特征向量，两者汇入联合嵌入空间计算余弦相似度标量积。</desc>
+  <rect x="2" y="2" width="396" height="366" rx="8" fill="#fafafa" stroke="#e2e8f0" stroke-width="2"></rect>
+  <!-- Image Branch -->
+  <rect x="20" y="20" width="165" height="60" rx="6" fill="#edf2f7" stroke="#cbd5e0" stroke-width="2"></rect>
+  <text x="102" y="45" font-size="18" font-family="sans-serif" text-anchor="middle" fill="#2d3748">图像输入</text>
+  <text x="102" y="68" font-size="18" font-family="sans-serif" text-anchor="middle" fill="#4a5568">视觉编码器</text>
+  <line x1="102" y1="80" x2="102" y2="120" stroke="#718096" stroke-width="2" marker-end="url(#arrow)"></line>
+  <rect x="20" y="125" width="165" height="60" rx="6" fill="#edf2f7" stroke="#cbd5e0" stroke-width="2"></rect>
+  <text x="102" y="150" font-size="18" font-family="sans-serif" text-anchor="middle" fill="#2d3748">图像特征 v</text>
+  <text x="102" y="173" font-size="18" font-family="sans-serif" text-anchor="middle" fill="#4a5568">线性投影归一化</text>
+  <!-- Text Branch -->
+  <rect x="215" y="20" width="165" height="60" rx="6" fill="#edf2f7" stroke="#cbd5e0" stroke-width="2"></rect>
+  <text x="297" y="45" font-size="18" font-family="sans-serif" text-anchor="middle" fill="#2d3748">文本输入</text>
+  <text x="297" y="68" font-size="18" font-family="sans-serif" text-anchor="middle" fill="#4a5568">文本编码器</text>
+  <line x1="297" y1="80" x2="297" y2="120" stroke="#718096" stroke-width="2" marker-end="url(#arrow)"></line>
+  <rect x="215" y="125" width="165" height="60" rx="6" fill="#edf2f7" stroke="#cbd5e0" stroke-width="2"></rect>
+  <text x="297" y="150" font-size="18" font-family="sans-serif" text-anchor="middle" fill="#2d3748">文本特征 t</text>
+  <text x="297" y="173" font-size="18" font-family="sans-serif" text-anchor="middle" fill="#4a5568">线性投影归一化</text>
+  <!-- Converge to Shared Space -->
+  <line x1="102" y1="185" x2="160" y2="245" stroke="#718096" stroke-width="2" marker-end="url(#arrow)"></line>
+  <line x1="297" y1="185" x2="240" y2="245" stroke="#718096" stroke-width="2" marker-end="url(#arrow)"></line>
+  <rect x="40" y="255" width="320" height="95" rx="6" fill="#ebf8ff" stroke="#bee3f8" stroke-width="2"></rect>
+  <text x="200" y="285" font-size="19" font-family="sans-serif" font-weight="bold" text-anchor="middle" fill="#2b6cb0">联合嵌入空间</text>
+  <text x="200" y="312" font-size="18" font-family="sans-serif" text-anchor="middle" fill="#2d3748">余弦相似度标量积</text>
+  <text x="200" y="337" font-size="18" font-family="sans-serif" text-anchor="middle" fill="#4a5568">对齐配对图文表征</text>
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="6" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M 0 1 L 8 5 L 0 9 z" fill="#718096"></path>
+    </marker>
+  </defs>
+</svg>
+<p>图外说明与技术路线对比：</p>
+<ul>
+<li><strong>方案 A（自回归生成式描述，如 VirTex）</strong>：图像经视觉编码器提取特征后，由解码器逐词自回归生成文本；论文指出图文描述多样使精确词预测更困难，且该组基线算力消耗显著高于对比目标。</li>
+<li><strong>方案 B（双编码器对比对齐，CLIP 范式）</strong>：图像与文本分别经独立编码器和线性投影映射到同一联合嵌入空间，直接计算标量积；在论文实验中，仅判断图文是否成对匹配，零样本迁移效率较词袋预测基线提升 4 倍。</li>
+</ul>
+<h3 id="11-自回归文本生成的效率瓶颈">1.1 自回归文本生成的效率瓶颈</h3>
+<p>在探索自然语言监督时，早期工作（如 VirTex）通常采用编码器—解码器（encoder-decoder）架构：利用卷积神经网络提取图像特征，再由基于 Transformer（一种基于自注意力机制的模型架构）的解码器逐个预测图像的对应文本描述（Image Captioning）<a href="#ref-radford-2021"><span id="citation-radford-sec23">1 (§2.3)</span></a>。</p>
+<p>然而，Radford et al. 在实验中发现，这种生成式目标在规模化扩展时遭遇了计算效率瓶颈：</p>
+<ol>
+<li><strong>模型算力开销</strong>：一个拥有 6300 万参数的 Transformer 语言模型，其算力消耗已经是 ResNet-50 视觉编码器的 2 倍；</li>
+<li><strong>文本表述的多样性</strong>：论文指出，互联网图像附带的旁注文本存在大量主观修饰与风格差异，强迫模型精确预测具体的每个词会使预测任务格外困难。</li>
+</ol>
+<p>实验数据显示，在该研究测试的基线上，仅预测文本中词袋（Bag-of-Words）编码的简化模型，在 ImageNet 零样本识别上的学习速度比自回归逐词生成快 3 倍；而如果将预测词袋的目标替换为<strong>图文匹配的对比学习（contrastive learning）目标</strong>，在同一指标上的零样本迁移效率会在词袋基线的基础上进一步提升 4 倍<a href="#ref-radford-2021"><span id="citation-radford-sec23b">1 (§2.3, Figure 2)</span></a>。</p>
+<h3 id="12-联合嵌入空间的线性投影">1.2 联合嵌入空间的线性投影</h3>
+<p>基于上述发现，CLIP 确立了双编码器解耦架构。系统包含两个独立的特征提取骨干：</p>
+<ul>
+<li><strong>图像编码器（Image Encoder）</strong>：支持改进型 ResNet（采用注意力池化 Attention Pooling 替代全局平均池化）或视觉 Transformer（Vision Transformer，ViT）<a href="#ref-radford-2021"><span id="citation-radford-sec24">1 (§2.4)</span></a>；</li>
+<li><strong>文本编码器（Text Encoder）</strong>：基础尺寸（base size）为 12 层、512 隐藏层维度、8 个注意力头的 Transformer，处理经字节对编码（byte pair encoding，BPE）切分的文本序列，提取特定位置（<code>[EOS]</code> token）的最高层隐层状态作为文本全局特征；文本编码器的宽度随视觉模型缩放<a href="#ref-radford-2021"><span id="citation-radford-sec24b">1 (§2.4)</span></a>。</li>
+</ul>
+<p>在图像自监督表征学习（如 SimCLRv2）中，研究界通常在编码器后添加多层感知机（multilayer perceptron，MLP）非线性投影头。但在跨模态图文对齐中，Radford et al. 在实验中没有观察到非线性投影与线性投影在训练效率上的显著差异，因此最终采用简化的线性投影层（Linear Projection）将视觉特征与文本特征分别映射到同一维度的联合嵌入空间<a href="#ref-radford-2021"><span id="citation-radford-sec23c">1 (§2.3)</span></a>。</p>
+<hr>
+<h2 id="2-双编码器对称对比学习机制">2. 双编码器对称对比学习机制</h2>
+<p>CLIP 的核心思想是将开放文本理解任务，转化为一个代理判别问题：在一个包含多个图文对的批量中，判断哪一张图片与哪一段文字原本是成对共现的<a href="#ref-radford-2021"><span id="citation-radford-sec23d">1 (§2.3)</span></a>。</p>
+<p><strong>批次内图文相似度计算与对称对比损失流程：</strong></p>
+<ol>
+<li><strong>双模态嵌入矩阵计算</strong>：
+<ul>
+<li>包含 <code>N</code> 个样本对的图像批次与文本批次分别输入编码器，经投影与归一化后得到特征矩阵 <code>I</code> 与 <code>T</code>（尺寸均为 <code>N × d</code>）；</li>
+<li>计算成对缩放相似度矩阵：<code>S = (I · T^T) * exp(logit_scale)</code>，矩阵规模为 <code>N × N</code>。</li>
+</ul>
+</li>
+<li><strong>正负样本与损失分配</strong>：</li>
+</ol>
+<div class="table-wrapper" tabindex="0">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<table><thead><tr><th align="left">矩阵位置</th><th align="left">配对关系与性质</th><th align="left">交叉熵优化目标</th></tr></thead><tbody><tr><td align="left"><strong>对角线元素 <code>S_ii</code></strong></td><td align="left">真实共现的正样本对</td><td align="left">极大化同索引图文相似度</td></tr><tr><td align="left"><strong>非对角元素 <code>S_ij</code></strong></td><td align="left">批内随机组合负样本对</td><td align="left">相对抑制未配对样本相似度</td></tr><tr><td align="left"><strong>按行与按列计算</strong></td><td align="left">图搜文与文搜图双向约束</td><td align="left">行交叉熵与列交叉熵各取均值后平分（权重各 0.5）</td></tr></tbody></table></div>
+<h3 id="21-批量构造与对称交叉熵损失函数">2.1 批量构造与对称交叉熵损失函数</h3>
+<p>假设单个训练微批次（minibatch）总规模为 <code>N</code> 个配对的样本 <code>(image_i, text_i)</code>。</p>
+<ol>
+<li>视觉编码器与文本编码器分别输出特征，经线性投影和 L2 归一化后得到单位向量 <code>v_i</code> 与 <code>t_i</code>（维度均为 <code>d</code>）；</li>
+<li>在该批次内，系统可以组合出 <code>N * N</code> 个潜在的图文对，其中对角线上的 <code>N</code> 个样本为真实共现的<strong>正样本对（positive pairs）</strong>，其余 <code>N^2 - N</code> 个非对角元素为批次内配对标签意义上的<strong>负样本对（negative pairs）</strong>；</li>
+<li>计算所有图像向量与文本向量的余弦相似度，并乘以温度调节因子 <code>1 / τ</code>（即 <code>exp(logit_scale)</code>）。</li>
+</ol>
+<p>为了同时约束图到文与文到图的双向检索，模型采用<strong>对称多类交叉熵损失（Symmetric Cross Entropy Loss）</strong><a href="#ref-radford-2021"><span id="citation-radford-sec23e">1 (§2.3)</span></a>：</p>
+<pre class="astro-code astro-code-themes min-light night-owl" style="--shiki-light:#24292eff;--shiki-dark:#d6deeb;--shiki-light-bg:#ffffff;--shiki-dark-bg:#011627; overflow-x: auto;--file-name-offset: -0.75rem;" tabindex="0" data-language="text"><code><span class="line"><span>图像到文本的分类损失（按行归一化）：</span></span>
+<span class="line"><span>L_{img} = - (1 / N) * ∑_{i=1}^N log [ exp(cos(v_i, t_i) / τ) / ∑_{j=1}^N exp(cos(v_i, t_j) / τ) ]</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>文本到图像的分类损失（按列归一化）：</span></span>
+<span class="line"><span>L_{txt} = - (1 / N) * ∑_{j=1}^N log [ exp(cos(v_j, t_j) / τ) / ∑_{i=1}^N exp(cos(v_i, t_j) / τ) ]</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>全局对称优化目标：</span></span>
+<span class="line"><span>L = (L_{img} + L_{txt}) / 2</span></span></code></pre>
+<h3 id="22-可学习温度系数与超大批次工程">2.2 可学习温度系数与超大批次工程</h3>
+<p>在对比学习中，温度参数直接控制 softmax 概率分布的平滑度。Radford et al. 令可学习参数 <code>logit_scale</code> 的初始值为 <code>log(1 / 0.07)</code>，使用乘法标量 <code>exp(logit_scale)</code> 缩放相似度（有效温度 <code>τ = exp(-logit_scale)</code>，初始为 0.07）。论文报告在训练过程中将对数几率的缩放因子裁剪至不超过 100，用于防止训练不稳定<a href="#ref-radford-2021"><span id="citation-radford-sec25">1 (§2.5)</span></a>。</p>
+<p>为了让对比学习接触到丰富的负样本，CLIP 采用了高达 <strong>32,768</strong> 的总微批次规模（minibatch size）。在工程实现中，这依赖于多项系统级优化<a href="#ref-radford-2021"><span id="citation-radford-sec25b">1 (§2.5)</span></a>：</p>
+<ul>
+<li><strong>混合精度训练与内存优化</strong>：采用 FP16 混合精度计算，配合梯度检查点（Gradient Checkpointing）技术，减少保存中间激活、以重算换显存；</li>
+<li><strong>分片相似度计算（Sharded Similarity Calculation）</strong>：各 GPU 按局部批次所需相似度分片计算局部成对相似度，避免在单机节点维护全局稠密矩阵。</li>
+</ul>
+<hr>
+<h2 id="3-跨模态零样本迁移">3. 跨模态零样本迁移</h2>
+<p>在传统设置中，零样本学习（Zero-Shot Learning）多聚焦于未见类别间的迁移。CLIP 的评测方式则是直接利用预训练模型评估跨数据集的任务泛化能力<a href="#ref-radford-2021"><span id="citation-radford-sec311">1 (§3.1.1)</span></a>：<strong>将图像分类重构为图像向量与一组预先指定的候选文本描述之间的最近邻语义匹配</strong><a href="#ref-radford-2021"><span id="citation-radford-sec312">1 (§3.1.2)</span></a>。</p>
+<p><strong>零样本图像分类工作流：</strong></p>
+<ol>
+<li><strong>文本提示词编码（离线预先计算并缓存）</strong>：
+<ul>
+<li>给定待分类标签集（如 <code>"dog"</code>, <code>"cat"</code>, <code>"car"</code>），构造提示模板 <code>"A photo of a {label}."</code>；</li>
+<li>文本编码器提取特征后经线性投影与 L2 归一化，生成类别权重矩阵 <code>W_text</code>（维度 <code>K × d</code>）；在类别与提示不变时缓存复用。</li>
+</ul>
+</li>
+<li><strong>图像特征提取（在线推理，inference）</strong>：
+<ul>
+<li>输入测试图像，经视觉编码器提取特征并完成线性投影与 L2 归一化，得到图像嵌入向量 <code>v</code>（维度 <code>1 × d</code>）。</li>
+</ul>
+</li>
+<li><strong>余弦相似度判别与预测</strong>：
+<ul>
+<li>计算图像向量与所有候选文本权重的点积并施加温度缩放：<code>logits = (v · W_text^T) * (1 / τ)</code>；</li>
+<li>输出预测类别：<code>预测类别 = argmax(logits)</code>。</li>
+</ul>
+</li>
+</ol>
+<p>在这种视角下，文本编码器扮演了超网络（Hypernetwork）的角色：根据自然语言书写的概念描述，动态合成下游线性分类器的权重参数 <code>W_text</code><a href="#ref-radford-2021"><span id="citation-radford-sec312b">1 (§3.1.2)</span></a>。</p>
+<h3 id="31-提示词工程与嵌入空间集成">3.1 提示词工程与嵌入空间集成</h3>
+<p>在零样本迁移中，直接输入孤立类别名称（如 <code>"boxer"</code> 或 <code>"crane"</code>）往往会导致性能受损，主要由于一词多义（polysemy，例如起重机与鹤）以及预训练文本多为完整句子的分布差异<a href="#ref-radford-2021"><span id="citation-radford-sec314">1 (§3.1.4)</span></a>。</p>
+<p>为此，研究团队提出了<strong>提示词工程（prompt engineering）</strong>：使用标准化模板 <code>"A photo of a {label}."</code> 包裹类别名称。仅此一项改动，便直接使 ImageNet 的零样本分类准确率提高约 <strong>1.3 个百分点</strong><a href="#ref-radford-2021"><span id="citation-radford-sec314b">1 (§3.1.4)</span></a>。针对特定数据集补充先验提示（如 Oxford-IIIT Pets 的 <code>"..., a type of pet."</code> 或光学字符识别（optical character recognition，OCR）中的引号标注）也能进一步改善表征匹配。</p>
+<p>进一步地，研究者提出了<strong>嵌入空间集成（Prompt Ensembling）</strong>：编写 80 个不同的上下文提示模板，分别计算文本嵌入后在向量空间取平均值，再经归一化得到最终分类权重。在 ImageNet 上，该集成策略相比单个默认提示可进一步提升约 <strong>3.5 个百分点</strong>，提示词工程与集成累计使准确率提高约 <strong>4.8 个百分点</strong><a href="#ref-radford-2021"><span id="citation-radford-sec314c">1 (§3.1.4, Figure 4)</span></a>。由于系统可以先离线生成并缓存平均文本权重，在类别与提示不变时，每张后续图像无需额外运行 80 次文本编码器。</p>
+<h3 id="32-零样本迁移性能与少样本对比">3.2 零样本迁移性能与少样本对比</h3>
+<p>在 27 个标准视觉基准测试集的系统评估中，未经微调的零样本 CLIP 在 16 个数据集上的表现超越了在标准 ResNet-50 特征上训练的完全有监督线性分类器<a href="#ref-radford-2021"><span id="citation-radford-sec315">1 (§3.1.5, Figure 5)</span></a>。在最强模型 ViT-L/14@336px 上，其 ImageNet 零样本准确率达到 <strong>76.2%</strong>（top-5 达 95%），匹配了原版 ResNet-50 有监督基准。</p>
+<p>在少样本对比中，在评估集中每类至少包含 16 个样本的 20 个数据集的平均结果上，<strong>零样本 CLIP 的表现持平了在相同特征空间上训练的 4-shot 线性探测（Linear Probe）模型</strong>，并大致接近评估集中公开模型表现最佳的 16-shot 分类器（在 ImageNet-21K 上预训练的 BiT-M ResNet-152x2）<a href="#ref-radford-2021"><span id="citation-radford-sec315b">1 (§3.1.5, Figure 6)</span></a>。作者推测，直接用自然语言描述指定概念可能减少仅从少数几张图像示例中归纳视觉概念所面临的多义性与假设歧义<a href="#ref-radford-2021"><span id="citation-radford-sec315c">1 (§3.1.5)</span></a>。</p>
+<hr>
+<h2 id="4-多模态表征对齐的局限">4. 多模态表征对齐的局限</h2>
+<p>尽管双编码器对比对齐展现了可观的迁移表现，但该范式在底层机制上仍有明确局限<a href="#ref-radford-2021"><span id="citation-radford-sec6">1 (§6)</span></a>。</p>
+<h3 id="41-判别式闭环匹配并非开放生成">4.1 判别式闭环匹配并非开放生成</h3>
+<p>本文采用的零样本分类协议要求在预先给定的候选文本标签集合中做比选，输出限于本次给定的候选概念<a href="#ref-radford-2021"><span id="citation-radford-sec6b">1 (§6)</span></a>。
+CLIP 本身是一个双编码器表征对齐模型，不具备自回归语言生成能力，无法直接输出自由组合的开放式自然语言长句或解释。</p>
+<h3 id="42-细粒度抽象关系与结构化推理缺陷">4.2 细粒度、抽象关系与结构化推理缺陷</h3>
+<p>实验表明，零样本 CLIP 在多项高度专业化或需要组合推理的任务上表现较弱<a href="#ref-radford-2021"><span id="citation-radford-sec315d">1 (§3.1.5)</span></a>：</p>
+<ol>
+<li><strong>细粒度分类</strong>：在区分具体卫星遥感地貌（EuroSAT、RESISC45）、特定花卉品种（Flowers102）或变体机型（FGVCAircraft）时，性能落后于有监督基线；</li>
+<li><strong>几何与抽象任务</strong>：在合成场景计数任务（CLEVRCounts）以及自动驾驶相关距离估计（KITTI Distance）等任务上，零样本表现较弱，部分任务接近随机猜测水平；</li>
+<li><strong>专业医疗病理</strong>：论文的零样本 CLIP 在淋巴结肿瘤病理切片检测（PatchCamelyon）上表现较弱；作者提醒，对缺乏相关任务先验经验的学习者，如何解释此类困难任务的零样本评测仍需谨慎<a href="#ref-radford-2021"><span id="citation-radford-sec315e">1 (§3.1.5)</span></a>。</li>
+</ol>
+<h3 id="43-分布外脆弱性与数据覆盖">4.3 分布外脆弱性与数据覆盖</h3>
+<p>论文的 CLIP 在多个自然分布偏移测试集上有良好表现，但作者仍观察到其在真正分布外数据上泛化较弱<a href="#ref-radford-2021"><span id="citation-radford-sec6c">1 (§3.3, §6)</span></a>。</p>
+<p>在光学字符识别（OCR）任务中呈现了鲜明对比：</p>
+<ul>
+<li>在数字渲染文本情感数据集（Rendered SST2）上，零样本 CLIP 有一定表现（ViT-L/14@336px 准确率为 67.9%）；</li>
+<li>但在经典的 MNIST 手写数字数据集上，该模型的识别准确率仅为 <strong>88.3%</strong>，被基于原始像素训练的简单逻辑回归基线击败<a href="#ref-radford-2021"><span id="citation-radford-sec6d">1 (§6, Appendix E)</span></a>。</li>
+</ul>
+<p>检索分析显示，预训练数据中几乎没有类似 MNIST 样式的手写灰度数字。作者据此认为，这些观察提示 CLIP 可能仍未解决深度学习的脆弱泛化问题；用更大、更多样的数据覆盖潜在场景，不能保证所有输入都处于训练分布内<a href="#ref-radford-2021"><span id="citation-radford-sec6e">1 (§6)</span></a>。</p>
+<h3 id="44-数据利用率与社会偏见">4.4 数据利用率与社会偏见</h3>
+<p>CLIP 模型的预训练大多历经 32 个完整 epoch，累计前向计算了约 <strong>128 亿张次图像</strong>（若以每秒 1 张图片的速度浏览，约需 405 年）<a href="#ref-radford-2021"><span id="citation-radford-sec6f">1 (§6)</span></a>；最强模型 ViT-L/14@336px 还在高分辨率下额外微调训练了 1 个 epoch<a href="#ref-radford-2021"><span id="citation-radford-sec25c">1 (§2.5)</span></a>。</p>
+<p>此外，直接从互联网收集的大规模图文对包含未经清洗的社会偏见与刻板印象。在 FairFace 等人脸属性分类探测中，零样本与线性探测均展现出不同程度的人口学偏见与非对称错误率<a href="#ref-radford-2021"><span id="citation-radford-sec7">1 (§7, Table 3, Table 4)</span></a>。</p>
+<hr>
+<h2 id="5-总结">5. 总结</h2>
+<p>通过视觉与文本双编码器及对称对比目标，系统成功在联合嵌入空间中将连续图像与离散文本连接起来，把分类问题转化为候选语义的向量检索。然而，图文配对与闭环分类上的匹配能力，不能等同于模型已经掌握了开放环境下的自主文本生成或可靠的组合抽象推理。</p>
+<hr>
+<h2 id="参考资料">参考资料</h2>
+<ol>
+  <li>
+    Radford, A., Kim, J. W., Hallacy, C., Ramesh, A., Goh, G., Agarwal, S., Sastry, G., Askell, A., Mishkin, P., Clark, J., Krueger, G., &#x26; Sutskever, I. (2021). <i>Learning Transferable Visual Models From Natural Language Supervision</i>. arXiv:2103.00020v1 [cs.CV].
+    <br>
+    首次提交日期：2021-02-26；本篇依据版本：2021-02-26 (arXiv:2103.00020v1).
+    <br>
+    原文链接：<a id="ref-radford-2021" href="https://arxiv.org/abs/2103.00020v1" target="_blank" rel="noopener noreferrer">https://arxiv.org/abs/2103.00020v1</a>
+  </li>
+</ol></article><hr class="my-8 border-dashed"><div id="btt-btn-container" class="fixed inset-e-4 bottom-8 z-50 md:sticky md:inset-e-auto md:float-end md:me-1 translate-y-14 opacity-0 transition duration-500"><button data-button="back-to-top" class="group bg-background relative px-2 py-1 size-14 rounded-full shadow-xl md:h-8 md:w-fit md:rounded-md md:shadow-none md:focus-visible:rounded-none md:bg-background/35 md:bg-clip-padding md:backdrop-blur-lg"><span id="progress-indicator" class="absolute inset-0 -z-10 block size-14 scale-110 rounded-full bg-transparent md:hidden md:h-8 md:rounded-md"></span><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="inline-block rotate-90 md:hidden" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M5 12h14M5 12l6 6M5 12l6-6" /></svg><span class="group-hover:text-accent sr-only text-sm md:not-sr-only"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="inline-block size-4" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M12 5v14M16 9l-4-4M8 9l4-4" /></svg> 回到顶部</span></button></div><script data-astro-rerun>
+  function backToTop() {
+    const rootElement = document.documentElement;
+    const btnContainer = document.querySelector("#btt-btn-container");
+    const backToTopBtn = document.querySelector("[data-button='back-to-top']");
+    const progressIndicator = document.querySelector("#progress-indicator");
+
+    if (!rootElement || !btnContainer || !backToTopBtn || !progressIndicator)
+      return;
+
+    backToTopBtn.addEventListener("click", () => {
+      document.body.scrollTop = 0;
+      document.documentElement.scrollTop = 0;
+    });
+
+    let lastVisible = null;
+    function handleScroll() {
+      const scrollTotal = rootElement.scrollHeight - rootElement.clientHeight;
+      const scrollTop = rootElement.scrollTop;
+      const scrollPercent = Math.floor((scrollTop / scrollTotal) * 100);
+
+      progressIndicator.style.setProperty(
+        "background-image",
+        `conic-gradient(var(--accent), var(--accent) ${scrollPercent}%, transparent ${scrollPercent}%)`
+      );
+
+      const isVisible = scrollTop / scrollTotal > 0.3;
+
+      if (isVisible !== lastVisible) {
+        btnContainer.classList.toggle("opacity-100", isVisible);
+        btnContainer.classList.toggle("translate-y-0", isVisible);
+        btnContainer.classList.toggle("opacity-0", !isVisible);
+        btnContainer.classList.toggle("translate-y-14", !isVisible);
+        lastVisible = isVisible;
+      }
+    }
+
+    let ticking = false;
+    document.addEventListener("scroll", () => {
+      if (!ticking) {
+        window.requestAnimationFrame(() => {
+          handleScroll();
+          ticking = false;
+        });
+        ticking = true;
+      }
+    });
+  }
+  backToTop();
+</script><ul class="mt-4 mb-8 flex flex-wrap gap-4 sm:my-8"><li><a data-astro-transition-scope="astro-bztu2lml-1" href="/tags/ai/" class="flex items-center gap-0.5 border-foreground border-b-2 border-dashed hover:border-accent hover:text-accent hover:-mt-0.5 focus-visible:text-accent focus-visible:border-none text-sm"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="opacity-80 size-4" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M5 9h14M5 15h14M11 4 7 20M17 4l-4 16" /></svg>AI</a></li><li><a data-astro-transition-scope="astro-bztu2lml-2" href="/tags/llm/" class="flex items-center gap-0.5 border-foreground border-b-2 border-dashed hover:border-accent hover:text-accent hover:-mt-0.5 focus-visible:text-accent focus-visible:border-none text-sm"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="opacity-80 size-4" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M5 9h14M5 15h14M11 4 7 20M17 4l-4 16" /></svg>LLM</a></li><li><a data-astro-transition-scope="astro-bztu2lml-3" href="/tags/multimodal/" class="flex items-center gap-0.5 border-foreground border-b-2 border-dashed hover:border-accent hover:text-accent hover:-mt-0.5 focus-visible:text-accent focus-visible:border-none text-sm"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="opacity-80 size-4" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M5 9h14M5 15h14M11 4 7 20M17 4l-4 16" /></svg>Multimodal</a></li><li><a data-astro-transition-scope="astro-bztu2lml-4" href="/tags/clip/" class="flex items-center gap-0.5 border-foreground border-b-2 border-dashed hover:border-accent hover:text-accent hover:-mt-0.5 focus-visible:text-accent focus-visible:border-none text-sm"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="opacity-80 size-4" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M5 9h14M5 15h14M11 4 7 20M17 4l-4 16" /></svg>CLIP</a></li><li><a data-astro-transition-scope="astro-bztu2lml-5" href="/tags/contrastivelearning/" class="flex items-center gap-0.5 border-foreground border-b-2 border-dashed hover:border-accent hover:text-accent hover:-mt-0.5 focus-visible:text-accent focus-visible:border-none text-sm"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="opacity-80 size-4" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M5 9h14M5 15h14M11 4 7 20M17 4l-4 16" /></svg>ContrastiveLearning</a></li><li><a data-astro-transition-scope="astro-bztu2lml-6" href="/tags/representationalignment/" class="flex items-center gap-0.5 border-foreground border-b-2 border-dashed hover:border-accent hover:text-accent hover:-mt-0.5 focus-visible:text-accent focus-visible:border-none text-sm"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="opacity-80 size-4" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M5 9h14M5 15h14M11 4 7 20M17 4l-4 16" /></svg>RepresentationAlignment</a></li></ul><hr class="my-8 border-dashed"><div data-pagefind-ignore class="my-8 grid grid-cols-1 gap-6 sm:grid-cols-2"><a href="/posts/llm-tool-use-loop/" class="flex w-full gap-1 hover:opacity-75"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="inline-block flex-none rtl:rotate-180" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M5 12h14M5 12l6 6M5 12l6-6" /></svg><div><span>上一篇</span><div class="text-accent/85 text-sm">模型与程序的工具使用循环</div></div></a><a href="/posts/llm-long-context-boundaries/" class="flex w-full justify-end gap-1 text-end hover:opacity-75 sm:col-start-2"><div><span>下一篇</span><div class="text-accent/85 text-sm">Longformer 的长上下文建模</div></div><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="inline-block flex-none rtl:rotate-180" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M5 12h14M13 18l6-6M13 6l6 6" /></svg></a></div></main><footer class="app-layout mt-auto"><div class="border-border flex flex-col items-center justify-between border-t py-6 sm:flex-row-reverse sm:py-4"><div class="flex flex-wrap items-center gap-1"><a href="https://github.com/SaromChars" title="Sarom Chars 的 GitHub" class="group inline-flex items-center gap-1 hover:text-accent p-2 hover:rotate-6 sm:p-1"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="inline-block size-6 scale-125 fill-transparent stroke-current stroke-2 opacity-90 group-hover:fill-transparent sm:scale-110" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M9 19c-4.3 1.4-4.3-2.5-6-3m12 5v-3.5c0-1 .1-1.4-.5-2 2.8-.3 5.5-1.4 5.5-6a4.6 4.6 0 0 0-1.3-3.2 4.2 4.2 0 0 0-.1-3.2s-1.1-.3-3.5 1.3a12.3 12.3 0 0 0-6.2 0C6.5 2.8 5.4 3.1 5.4 3.1a4.2 4.2 0 0 0-.1 3.2A4.6 4.6 0 0 0 4 9.5c0 4.6 2.7 5.7 5.5 6-.6.6-.6 1.2-.5 2V21" /></svg><span class="sr-only">Sarom Chars 的 GitHub</span></a></div><div class="my-2 flex flex-col items-center whitespace-nowrap sm:flex-row"><span>版权 &#169; 2026</span><span class="hidden sm:inline">&nbsp;|&nbsp;</span><span>保留所有权利。</span></div></div></footer><script type="module">var e=`theme`,t=`light`,n=`dark`;function r(){return localStorage.getItem(e)||(window.matchMedia(`(prefers-color-scheme: dark)`).matches?n:t)}var i=window.__theme?.value??r();function a(){localStorage.setItem(e,i),o()}function o(){let e=document.firstElementChild;e?.setAttribute(`data-theme`,i),e?.classList.toggle(`dark`,i===n),document.querySelector(`#theme-btn`)?.setAttribute(`aria-label`,i);let t=window.getComputedStyle(document.body).backgroundColor;document.querySelector(`meta[name='theme-color']`)?.setAttribute(`content`,t)}function s(){o(),document.querySelector(`#theme-btn`)?.addEventListener(`click`,()=>{i=i===t?n:t,a()})}s(),document.addEventListener(`astro:after-swap`,s),document.addEventListener(`astro:before-swap`,e=>{let t=document.querySelector(`meta[name='theme-color']`)?.getAttribute(`content`);t&&e.newDocument.querySelector(`meta[name='theme-color']`)?.setAttribute(`content`,t)}),window.matchMedia(`(prefers-color-scheme: dark)`).addEventListener(`change`,({matches:e})=>{i=e?n:t,a()});</script></body></html><script type="module">var e=document.querySelector(`#article`);if(e?.querySelector(`a[href^="#ref-"]`)){let t=null,n=!1,r=document.createElement(`button`);r.type=`button`,r.className=`citation-return`,r.textContent=`返回阅读位置`,r.setAttribute(`data-pagefind-ignore`,``),e.addEventListener(`click`,n=>{if(n.button!==0||n.metaKey||n.ctrlKey||n.shiftKey||n.altKey)return;let i=n.target instanceof Element?n.target.closest(`a[href^="#ref-"]`):null;if(!i||!e.contains(i))return;let a=i.hash,o=document.getElementById(decodeURIComponent(a.slice(1)));o&&e.contains(o)&&(t={source:i,url:window.location.href,top:window.scrollY,left:window.scrollX,targetHash:a},o.insertAdjacentElement(`afterend`,r))}),r.addEventListener(`click`,()=>{if(!t||n)return;let e=t,i=i=>{r.remove(),window.requestAnimationFrame(()=>{window.requestAnimationFrame(()=>{e.source.focus({preventScroll:!0}),window.scrollTo({top:e.top,left:e.left,behavior:`instant`}),t=null,n=!1,i?.()})})};window.location.href===e.url?i():(n=!0,window.addEventListener(`popstate`,()=>{let e=window.history.scrollRestoration;window.history.scrollRestoration=`manual`,window.setTimeout(()=>{i(()=>{window.history.scrollRestoration=e})},0)},{once:!0}),window.history.back())}),window.addEventListener(`hashchange`,()=>{!n&&t&&window.location.hash!==t.targetHash&&(r.remove(),t=null)})}</script><script data-astro-rerun>
+  function createProgressBar() {
+    const progressContainer = document.createElement("div");
+    progressContainer.className =
+      "progress-container fixed top-0 z-10 h-1 w-full bg-background";
+
+    const progressBar = document.createElement("div");
+    progressBar.className = "progress-bar h-1 w-0 bg-accent";
+    progressBar.id = "myBar";
+
+    progressContainer.appendChild(progressBar);
+    document.body.appendChild(progressContainer);
+  }
+  createProgressBar();
+
+  function updateScrollProgress() {
+    document.addEventListener("scroll", () => {
+      const winScroll =
+        document.body.scrollTop || document.documentElement.scrollTop;
+      const height =
+        document.documentElement.scrollHeight -
+        document.documentElement.clientHeight;
+      const scrolled = (winScroll / height) * 100;
+      if (document) {
+        const myBar = document.getElementById("myBar");
+        if (myBar) {
+          myBar.style.width = scrolled + "%";
+        }
+      }
+    });
+  }
+  updateScrollProgress();
+
+  function addHeadingLinks() {
+    const headings = Array.from(
+      document.querySelectorAll("h2, h3, h4, h5, h6")
+    );
+    for (const heading of headings) {
+      heading.classList.add("group");
+      const link = document.createElement("a");
+      link.className =
+        "heading-link ms-2 no-underline opacity-75 md:opacity-0 md:group-hover:opacity-100 md:focus:opacity-100";
+      link.href = "#" + heading.id;
+
+      const span = document.createElement("span");
+      span.ariaHidden = "true";
+      span.innerText = "#";
+      link.appendChild(span);
+      heading.appendChild(link);
+    }
+  }
+  addHeadingLinks();
+
+  function attachCopyButtons() {
+    const copyButtonLabel = "Copy";
+    const codeBlocks = Array.from(document.querySelectorAll("pre"));
+
+    for (const codeBlock of codeBlocks) {
+      const wrapper = document.createElement("div");
+      wrapper.style.position = "relative";
+
+      const computedStyle = getComputedStyle(codeBlock);
+      const hasFileNameOffset =
+        computedStyle.getPropertyValue("--file-name-offset").trim() !== "";
+
+      const topClass = hasFileNameOffset
+        ? "top-(--file-name-offset)"
+        : "-top-3";
+
+      const copyButton = document.createElement("button");
+      copyButton.className = `copy-code absolute end-3 ${topClass} rounded bg-muted border border-muted px-2 py-1 text-xs leading-4 text-foreground font-medium`;
+      copyButton.innerHTML = copyButtonLabel;
+      codeBlock.setAttribute("tabindex", "0");
+      codeBlock.appendChild(copyButton);
+
+      codeBlock?.parentNode?.insertBefore(wrapper, codeBlock);
+      wrapper.appendChild(codeBlock);
+
+      copyButton.addEventListener("click", async () => {
+        await copyCode(codeBlock, copyButton);
+      });
+    }
+
+    async function copyCode(block, button) {
+      const code = block.querySelector("code");
+      const text = code?.innerText;
+
+      await navigator.clipboard.writeText(text ?? "");
+
+      button.innerText = "Copied";
+
+      setTimeout(() => {
+        button.innerText = copyButtonLabel;
+      }, 700);
+    }
+  }
+  attachCopyButtons();
+
+  /** Accessible image lightbox for article images. */
+  function initLightbox() {
+    const article = document.getElementById("article");
+    if (!article) return;
+
+    const prefersReducedMotion = () =>
+      window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+    let overlay = null;
+    let lastFocused = null;
+    let removeDragListeners = null;
+
+    // Defer attribute mutations so they don't push the LCP timestamp.
+    // Event listeners below use delegation and don't need the attributes to exist yet.
+    requestAnimationFrame(() => {
+      const images = Array.from(article.querySelectorAll("img"));
+      for (const image of images) {
+        if (image.closest("a")) continue;
+        image.setAttribute("role", "button");
+        image.setAttribute("tabindex", "0");
+        image.setAttribute("aria-haspopup", "dialog");
+        image.setAttribute(
+          "aria-label",
+          image.alt ? `Zoom image: ${image.alt}` : "Zoom image"
+        );
+      }
+    });
+
+    function open(src, alt, trigger) {
+      if (overlay) return;
+      lastFocused = trigger ?? document.activeElement;
+
+      overlay = document.createElement("div");
+      overlay.setAttribute("role", "dialog");
+      overlay.setAttribute("aria-modal", "true");
+      overlay.setAttribute(
+        "aria-label",
+        alt ? `Image preview: ${alt}` : "Image preview"
+      );
+      overlay.className =
+        "fixed inset-0 z-50 flex cursor-zoom-out items-center justify-center bg-black/70 backdrop-blur-sm opacity-0 transition-opacity duration-200 motion-reduce:transition-none";
+
+      const closeButton = document.createElement("button");
+      closeButton.type = "button";
+      closeButton.setAttribute("aria-label", "Close image preview");
+      closeButton.className =
+        "absolute end-4 top-4 z-1 flex size-11 items-center justify-center rounded bg-black/50 text-3xl leading-none text-white";
+      closeButton.innerHTML = "&#10005;";
+      closeButton.addEventListener("click", close);
+
+      const image = document.createElement("img");
+      image.src = src;
+      image.alt = "";
+      image.className =
+        "max-h-[90dvh] max-w-[90dvw] cursor-default object-contain transition-transform duration-100 ease-out motion-reduce:transition-none data-[zoom=drag]:cursor-grabbing data-[zoom=drag]:transition-none data-[zoom=in]:cursor-grab";
+
+      overlay.append(closeButton, image);
+      overlay.addEventListener("click", e => {
+        if (e.target === overlay && currentScale <= 1) close();
+      });
+
+      let currentScale = 1;
+      let translateX = 0;
+      let translateY = 0;
+      let initialDist = 0;
+      let initialScale = 1;
+      let panStartX = 0;
+      let panStartY = 0;
+      let panStartTranslateX = 0;
+      let panStartTranslateY = 0;
+      let lastTapTime = 0;
+
+      function applyTransform() {
+        image.style.transform = `scale(${currentScale}) translate(${translateX}px, ${translateY}px)`;
+        // A backdrop click only closes at fit size, so drop the zoom-out cursor while zoomed.
+        overlay?.classList.toggle("cursor-zoom-out", currentScale <= 1);
+      }
+
+      function resetTransform() {
+        currentScale = 1;
+        translateX = 0;
+        translateY = 0;
+        image.style.transform = "";
+        image.removeAttribute("data-zoom");
+        overlay?.classList.add("cursor-zoom-out");
+      }
+
+      // Keep the zoomed image from being panned past its edges.
+      function clampTranslate() {
+        if (!overlay) return;
+        const maxX = Math.max(
+          0,
+          (image.clientWidth - overlay.clientWidth / currentScale) / 2
+        );
+        const maxY = Math.max(
+          0,
+          (image.clientHeight - overlay.clientHeight / currentScale) / 2
+        );
+        translateX = Math.min(maxX, Math.max(-maxX, translateX));
+        translateY = Math.min(maxY, Math.max(-maxY, translateY));
+      }
+
+      overlay.addEventListener(
+        "touchstart",
+        e => {
+          const t = e.touches;
+          if (t.length === 2) {
+            image.setAttribute("data-zoom", "drag");
+            initialDist = Math.hypot(
+              t[1].clientX - t[0].clientX,
+              t[1].clientY - t[0].clientY
+            );
+            initialScale = currentScale;
+          } else if (t.length === 1) {
+            const now = Date.now();
+            if (now - lastTapTime < 300) {
+              e.preventDefault();
+              if (currentScale > 1) {
+                resetTransform();
+              } else {
+                currentScale = 2;
+                translateX = 0;
+                translateY = 0;
+                applyTransform();
+                image.setAttribute("data-zoom", "in");
+              }
+              lastTapTime = 0;
+              panStartX = t[0].clientX;
+              panStartY = t[0].clientY;
+              panStartTranslateX = translateX;
+              panStartTranslateY = translateY;
+            } else {
+              lastTapTime = now;
+              if (currentScale > 1) {
+                image.setAttribute("data-zoom", "drag");
+                panStartX = t[0].clientX;
+                panStartY = t[0].clientY;
+                panStartTranslateX = translateX;
+                panStartTranslateY = translateY;
+              }
+            }
+          }
+        },
+        { passive: false }
+      );
+
+      overlay.addEventListener(
+        "touchmove",
+        e => {
+          const t = e.touches;
+          if (t.length === 2) {
+            e.preventDefault();
+            const dist = Math.hypot(
+              t[1].clientX - t[0].clientX,
+              t[1].clientY - t[0].clientY
+            );
+            const oldScale = currentScale;
+            currentScale = Math.min(
+              4,
+              Math.max(1, initialScale * (dist / initialDist))
+            );
+
+            // Zoom to the geometric center of the two fingers
+            const midX = (t[0].clientX + t[1].clientX) / 2;
+            const midY = (t[0].clientY + t[1].clientY) / 2;
+            const ox = overlay.clientWidth / 2;
+            const oy = overlay.clientHeight / 2;
+            translateX =
+              (midX - ox) * (1 / currentScale - 1 / oldScale) + translateX;
+            translateY =
+              (midY - oy) * (1 / currentScale - 1 / oldScale) + translateY;
+            clampTranslate();
+            applyTransform();
+          } else if (t.length === 1) {
+            if (currentScale > 1) {
+              e.preventDefault();
+              image.setAttribute("data-zoom", "drag");
+              translateX =
+                panStartTranslateX + (t[0].clientX - panStartX) / currentScale;
+              translateY =
+                panStartTranslateY + (t[0].clientY - panStartY) / currentScale;
+              clampTranslate();
+              applyTransform();
+            } else {
+              e.preventDefault();
+            }
+          }
+        },
+        { passive: false }
+      );
+
+      overlay.addEventListener("touchend", e => {
+        if (e.touches.length === 0) {
+          if (currentScale > 1) {
+            image.setAttribute("data-zoom", "in");
+          } else {
+            image.removeAttribute("data-zoom");
+          }
+          if (currentScale <= 1.05) resetTransform();
+        }
+      });
+
+      overlay.addEventListener("touchcancel", e => {
+        if (e.touches.length === 0) {
+          if (currentScale > 1) {
+            image.setAttribute("data-zoom", "in");
+          } else {
+            image.removeAttribute("data-zoom");
+          }
+          if (currentScale <= 1.05) resetTransform();
+        }
+      });
+
+      overlay.addEventListener(
+        "wheel",
+        e => {
+          e.preventDefault();
+          const oldScale = currentScale;
+          const delta = -e.deltaY * 0.001;
+          currentScale = Math.min(4, Math.max(1, currentScale * (1 + delta)));
+
+          if (currentScale <= 1.05) {
+            resetTransform();
+          } else {
+            image.setAttribute("data-zoom", "in");
+            // Zoom to cursor: adjust translate so the point under cursor stays fixed
+            const ox = overlay.clientWidth / 2;
+            const oy = overlay.clientHeight / 2;
+            translateX =
+              (e.clientX - ox) * (1 / currentScale - 1 / oldScale) + translateX;
+            translateY =
+              (e.clientY - oy) * (1 / currentScale - 1 / oldScale) + translateY;
+            clampTranslate();
+            applyTransform();
+          }
+        },
+        { passive: false }
+      );
+
+      let isMouseDown = false;
+      let mouseStartX = 0;
+      let mouseStartY = 0;
+
+      overlay.addEventListener("mousedown", e => {
+        if (e.button !== 0 || currentScale <= 1) return;
+        if (e.target.closest("button")) return;
+        isMouseDown = true;
+        mouseStartX = e.clientX;
+        mouseStartY = e.clientY;
+        panStartTranslateX = translateX;
+        panStartTranslateY = translateY;
+        image.setAttribute("data-zoom", "drag");
+        e.preventDefault();
+      });
+
+      function onMouseMove(e) {
+        if (!isMouseDown || !overlay) return;
+        translateX =
+          panStartTranslateX + (e.clientX - mouseStartX) / currentScale;
+        translateY =
+          panStartTranslateY + (e.clientY - mouseStartY) / currentScale;
+        clampTranslate();
+        applyTransform();
+      }
+
+      function onMouseUp() {
+        if (!isMouseDown) return;
+        isMouseDown = false;
+        if (currentScale > 1) {
+          image.setAttribute("data-zoom", "in");
+        } else {
+          image.removeAttribute("data-zoom");
+        }
+      }
+
+      document.addEventListener("mousemove", onMouseMove);
+      document.addEventListener("mouseup", onMouseUp);
+      removeDragListeners = () => {
+        document.removeEventListener("mousemove", onMouseMove);
+        document.removeEventListener("mouseup", onMouseUp);
+      };
+
+      document.body.appendChild(overlay);
+      document.documentElement.style.overflow = "hidden";
+      document.addEventListener("keydown", onKeyDown);
+      window.__closeLightbox = close;
+
+      requestAnimationFrame(() => overlay?.classList.add("opacity-100"));
+      closeButton.focus();
+    }
+
+    function close() {
+      if (!overlay) return;
+      const el = overlay;
+      overlay = null;
+      el.classList.add("pointer-events-none");
+      window.__closeLightbox = null;
+
+      document.removeEventListener("keydown", onKeyDown);
+      removeDragListeners?.();
+      removeDragListeners = null;
+      document.documentElement.style.overflow = "";
+      lastFocused?.focus();
+      lastFocused = null;
+
+      if (prefersReducedMotion()) {
+        el.remove();
+        return;
+      }
+      const remove = () => el.remove();
+      el.addEventListener("transitionend", remove, { once: true });
+      setTimeout(remove, 250); // fallback in case transitionend never fires
+      el.classList.remove("opacity-100");
+    }
+
+    function onKeyDown(e) {
+      if (e.key === "Escape") {
+        close();
+      } else if (e.key === "Tab") {
+        trapFocus(e);
+      }
+    }
+
+    // Keep keyboard focus inside the open dialog.
+    function trapFocus(e) {
+      if (!overlay) return;
+      const focusables = overlay.querySelectorAll(
+        'a[href], button, [tabindex]:not([tabindex="-1"])'
+      );
+      if (focusables.length === 0) return;
+      const first = focusables[0];
+      const last = focusables[focusables.length - 1];
+      if (e.shiftKey && document.activeElement === first) {
+        e.preventDefault();
+        last.focus();
+      } else if (!e.shiftKey && document.activeElement === last) {
+        e.preventDefault();
+        first.focus();
+      }
+    }
+
+    function triggerFromEvent(e) {
+      const image = e.target.closest("img");
+      if (!image || !article.contains(image) || image.closest("a")) return null;
+      return image;
+    }
+
+    function activate(image) {
+      open(image.currentSrc || image.src, image.alt, image);
+    }
+
+    article.addEventListener("click", e => {
+      const image = triggerFromEvent(e);
+      if (!image) return;
+      e.preventDefault();
+      activate(image);
+    });
+
+    article.addEventListener("keydown", e => {
+      if (e.key !== "Enter" && e.key !== " " && e.key !== "Spacebar") return;
+      const image = triggerFromEvent(e);
+      if (!image) return;
+      e.preventDefault();
+      activate(image);
+    });
+  }
+  initLightbox();
+
+  if (!window.__lightboxSwapBound) {
+    window.__lightboxSwapBound = true;
+    document.addEventListener("astro:before-swap", () =>
+      window.__closeLightbox?.()
+    );
+  }
+
+  document.addEventListener("astro:after-swap", () =>
+    window.scrollTo({ left: 0, top: 0, behavior: "instant" })
+  );
+</script>

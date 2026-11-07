@@ -1,0 +1,939 @@
+<!DOCTYPE html><html dir="ltr" lang="zh-CN" class="overflow-y-scroll scroll-smooth"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1"><link rel="icon" type="image/png" href="/images/favicon-32x32-next.png"><link rel="icon" href="/favicon.ico"><link rel="canonical" href="https://www.saromchars.tech/posts/llm-evaluation-quality-cost/"><meta name="generator" content="Astro v7.4.5"><!-- Primary meta --><title>大语言模型的质量、成本与延迟评测 | Sarom&#39;s Blog</title><meta name="title" content="大语言模型的质量、成本与延迟评测 | Sarom's Blog"><meta name="description" content="从评测协议、自回归计算特征与预训练语料先验切入，分析大语言模型在多项选择似然归一化与自由生成下的质量评测机制，阐明真实性与信息量的分别评价及该基准所观察的规模趋势，探讨自回归生成延迟、少样本上下文成本与基准防污染的可重复实验条件。"><meta name="author" content="Sarom Chars"><link rel="sitemap" href="/sitemap-index.xml"><!-- Open Graph --><meta property="og:type" content="article"><meta property="og:site_name" content="Sarom's Blog"><meta property="og:title" content="大语言模型的质量、成本与延迟评测 | Sarom's Blog"><meta property="og:description" content="从评测协议、自回归计算特征与预训练语料先验切入，分析大语言模型在多项选择似然归一化与自由生成下的质量评测机制，阐明真实性与信息量的分别评价及该基准所观察的规模趋势，探讨自回归生成延迟、少样本上下文成本与基准防污染的可重复实验条件。"><meta property="og:url" content="https://www.saromchars.tech/posts/llm-evaluation-quality-cost/"><meta property="og:image" content="https://www.saromchars.tech/og.png"><!-- Twitter / X --><meta property="twitter:card" content="summary_large_image"><meta property="twitter:url" content="https://www.saromchars.tech/posts/llm-evaluation-quality-cost/"><meta property="twitter:title" content="大语言模型的质量、成本与延迟评测 | Sarom's Blog"><meta property="twitter:description" content="从评测协议、自回归计算特征与预训练语料先验切入，分析大语言模型在多项选择似然归一化与自由生成下的质量评测机制，阐明真实性与信息量的分别评价及该基准所观察的规模趋势，探讨自回归生成延迟、少样本上下文成本与基准防污染的可重复实验条件。"><meta property="twitter:image" content="https://www.saromchars.tech/og.png"><!-- RSS autodiscovery --><link rel="alternate" type="application/rss+xml" title="Sarom's Blog" href="https://www.saromchars.tech/rss.xml"><!-- Filled at runtime by theme.ts to match the current background colour --><meta name="theme-color" content=""><!-- Extra head content injected by child layouts (e.g. JSON-LD, article meta) --><meta property="article:published_time" content="2022-04-04T02:00:00.000Z"><script type="application/ld+json">{"@context":"https://schema.org","@type":"BlogPosting","headline":"大语言模型的质量、成本与延迟评测","mainEntityOfPage":"https://www.saromchars.tech/posts/llm-evaluation-quality-cost/","datePublished":"2022-04-04T02:00:00.000Z","author":[{"@type":"Person","name":"Sarom Chars","url":"https://github.com/SaromChars"}]}</script><!--
+      Inline FOUC-prevention script: sets data-theme on <html> before
+      the browser paints. Runs synchronously, no defer/async.
+    --><script>
+      (function () {
+        const stored = localStorage.getItem("theme");
+        const prefersDark = window.matchMedia(
+          "(prefers-color-scheme: dark)"
+        ).matches;
+        const theme = stored ?? (prefersDark ? "dark" : "light");
+        const root = document.firstElementChild;
+        root?.setAttribute("data-theme", theme);
+        root?.classList.toggle("dark", theme === "dark");
+        // Expose value so theme.ts can skip re-detection.
+        window.__theme = { value: theme };
+      })();
+    </script><meta name="robots" content="index, follow"><script async src="https://www.googletagmanager.com/gtag/js?id=G-WJJJTJ4FWX"></script><script>(function(){const measurementId = "G-WJJJTJ4FWX";
+
+    window.dataLayer = window.dataLayer || [];
+    function gtag(){ window.dataLayer.push(arguments); }
+    gtag('js', new Date());
+    gtag('config', measurementId);
+  })();</script><style>@keyframes astroFadeInOut{0%{opacity:1}to{opacity:0}}@keyframes astroFadeIn{0%{opacity:0;mix-blend-mode:plus-lighter}to{opacity:1;mix-blend-mode:plus-lighter}}@keyframes astroFadeOut{0%{opacity:1;mix-blend-mode:plus-lighter}to{opacity:0;mix-blend-mode:plus-lighter}}@keyframes astroSlideFromRight{0%{transform:translate(100%)}}@keyframes astroSlideFromLeft{0%{transform:translate(-100%)}}@keyframes astroSlideToRight{to{transform:translate(100%)}}@keyframes astroSlideToLeft{to{transform:translate(-100%)}}@media (prefers-reduced-motion){::view-transition-group(*),::view-transition-old(*),::view-transition-new(*),[data-astro-transition-scope]{animation:none!important}}
+</style><link rel="stylesheet" href="/_astro/Footer.DC6qDsIp.css"><style>[data-astro-transition-scope="astro-bztu2lml-1"] { view-transition-name: ai; }@layer astro { ::view-transition-old(ai) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }::view-transition-new(ai) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }[data-astro-transition=back]::view-transition-old(ai) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition=back]::view-transition-new(ai) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; } }[data-astro-transition-fallback="old"] [data-astro-transition-scope="astro-bztu2lml-1"],
+			[data-astro-transition-fallback="old"][data-astro-transition-scope="astro-bztu2lml-1"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition-fallback="new"] [data-astro-transition-scope="astro-bztu2lml-1"],
+			[data-astro-transition-fallback="new"][data-astro-transition-scope="astro-bztu2lml-1"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }[data-astro-transition=back][data-astro-transition-fallback="old"] [data-astro-transition-scope="astro-bztu2lml-1"],
+			[data-astro-transition=back][data-astro-transition-fallback="old"][data-astro-transition-scope="astro-bztu2lml-1"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition=back][data-astro-transition-fallback="new"] [data-astro-transition-scope="astro-bztu2lml-1"],
+			[data-astro-transition=back][data-astro-transition-fallback="new"][data-astro-transition-scope="astro-bztu2lml-1"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }</style><style>[data-astro-transition-scope="astro-bztu2lml-2"] { view-transition-name: llm; }@layer astro { ::view-transition-old(llm) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }::view-transition-new(llm) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }[data-astro-transition=back]::view-transition-old(llm) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition=back]::view-transition-new(llm) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; } }[data-astro-transition-fallback="old"] [data-astro-transition-scope="astro-bztu2lml-2"],
+			[data-astro-transition-fallback="old"][data-astro-transition-scope="astro-bztu2lml-2"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition-fallback="new"] [data-astro-transition-scope="astro-bztu2lml-2"],
+			[data-astro-transition-fallback="new"][data-astro-transition-scope="astro-bztu2lml-2"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }[data-astro-transition=back][data-astro-transition-fallback="old"] [data-astro-transition-scope="astro-bztu2lml-2"],
+			[data-astro-transition=back][data-astro-transition-fallback="old"][data-astro-transition-scope="astro-bztu2lml-2"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition=back][data-astro-transition-fallback="new"] [data-astro-transition-scope="astro-bztu2lml-2"],
+			[data-astro-transition=back][data-astro-transition-fallback="new"][data-astro-transition-scope="astro-bztu2lml-2"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }</style><style>[data-astro-transition-scope="astro-bztu2lml-3"] { view-transition-name: evaluation; }@layer astro { ::view-transition-old(evaluation) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }::view-transition-new(evaluation) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }[data-astro-transition=back]::view-transition-old(evaluation) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition=back]::view-transition-new(evaluation) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; } }[data-astro-transition-fallback="old"] [data-astro-transition-scope="astro-bztu2lml-3"],
+			[data-astro-transition-fallback="old"][data-astro-transition-scope="astro-bztu2lml-3"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition-fallback="new"] [data-astro-transition-scope="astro-bztu2lml-3"],
+			[data-astro-transition-fallback="new"][data-astro-transition-scope="astro-bztu2lml-3"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }[data-astro-transition=back][data-astro-transition-fallback="old"] [data-astro-transition-scope="astro-bztu2lml-3"],
+			[data-astro-transition=back][data-astro-transition-fallback="old"][data-astro-transition-scope="astro-bztu2lml-3"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition=back][data-astro-transition-fallback="new"] [data-astro-transition-scope="astro-bztu2lml-3"],
+			[data-astro-transition=back][data-astro-transition-fallback="new"][data-astro-transition-scope="astro-bztu2lml-3"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }</style><style>[data-astro-transition-scope="astro-bztu2lml-4"] { view-transition-name: benchmarking; }@layer astro { ::view-transition-old(benchmarking) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }::view-transition-new(benchmarking) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }[data-astro-transition=back]::view-transition-old(benchmarking) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition=back]::view-transition-new(benchmarking) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; } }[data-astro-transition-fallback="old"] [data-astro-transition-scope="astro-bztu2lml-4"],
+			[data-astro-transition-fallback="old"][data-astro-transition-scope="astro-bztu2lml-4"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition-fallback="new"] [data-astro-transition-scope="astro-bztu2lml-4"],
+			[data-astro-transition-fallback="new"][data-astro-transition-scope="astro-bztu2lml-4"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }[data-astro-transition=back][data-astro-transition-fallback="old"] [data-astro-transition-scope="astro-bztu2lml-4"],
+			[data-astro-transition=back][data-astro-transition-fallback="old"][data-astro-transition-scope="astro-bztu2lml-4"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition=back][data-astro-transition-fallback="new"] [data-astro-transition-scope="astro-bztu2lml-4"],
+			[data-astro-transition=back][data-astro-transition-fallback="new"][data-astro-transition-scope="astro-bztu2lml-4"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }</style><style>[data-astro-transition-scope="astro-bztu2lml-5"] { view-transition-name: latency; }@layer astro { ::view-transition-old(latency) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }::view-transition-new(latency) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }[data-astro-transition=back]::view-transition-old(latency) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition=back]::view-transition-new(latency) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; } }[data-astro-transition-fallback="old"] [data-astro-transition-scope="astro-bztu2lml-5"],
+			[data-astro-transition-fallback="old"][data-astro-transition-scope="astro-bztu2lml-5"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition-fallback="new"] [data-astro-transition-scope="astro-bztu2lml-5"],
+			[data-astro-transition-fallback="new"][data-astro-transition-scope="astro-bztu2lml-5"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }[data-astro-transition=back][data-astro-transition-fallback="old"] [data-astro-transition-scope="astro-bztu2lml-5"],
+			[data-astro-transition=back][data-astro-transition-fallback="old"][data-astro-transition-scope="astro-bztu2lml-5"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition=back][data-astro-transition-fallback="new"] [data-astro-transition-scope="astro-bztu2lml-5"],
+			[data-astro-transition=back][data-astro-transition-fallback="new"][data-astro-transition-scope="astro-bztu2lml-5"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }</style><style>[data-astro-transition-scope="astro-bztu2lml-6"] { view-transition-name: cost; }@layer astro { ::view-transition-old(cost) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }::view-transition-new(cost) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }[data-astro-transition=back]::view-transition-old(cost) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition=back]::view-transition-new(cost) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; } }[data-astro-transition-fallback="old"] [data-astro-transition-scope="astro-bztu2lml-6"],
+			[data-astro-transition-fallback="old"][data-astro-transition-scope="astro-bztu2lml-6"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition-fallback="new"] [data-astro-transition-scope="astro-bztu2lml-6"],
+			[data-astro-transition-fallback="new"][data-astro-transition-scope="astro-bztu2lml-6"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }[data-astro-transition=back][data-astro-transition-fallback="old"] [data-astro-transition-scope="astro-bztu2lml-6"],
+			[data-astro-transition=back][data-astro-transition-fallback="old"][data-astro-transition-scope="astro-bztu2lml-6"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition=back][data-astro-transition-fallback="new"] [data-astro-transition-scope="astro-bztu2lml-6"],
+			[data-astro-transition=back][data-astro-transition-fallback="new"][data-astro-transition-scope="astro-bztu2lml-6"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }</style></head><body class="bg-background font-app text-foreground selection:bg-accent/75 selection:text-accent-foreground flex min-h-svh flex-col"><a id="skip-to-content" href="#main-content" class="bg-background text-accent absolute inset-s-16 -top-full z-50 px-3 py-2 backdrop-blur-lg transition-all focus:top-4">跳到正文</a><header class="app-layout flex flex-col items-center justify-between sm:flex-row"><div class="border-border bg-background relative flex w-full items-baseline justify-between border-b py-4 sm:items-center sm:py-6"><a href="/" class="absolute py-1 text-xl leading-8 font-semibold whitespace-nowrap sm:static sm:my-auto sm:text-2xl sm:leading-none">Sarom&#39;s Blog</a><nav id="nav-menu" class="flex w-full flex-col items-center sm:ms-2 sm:flex-row sm:justify-end sm:space-x-4 sm:py-0"><button id="menu-btn" class="focus-outline self-end p-2 sm:hidden" aria-label="展开菜单" aria-expanded="false" aria-controls="menu-items" data-label-open="展开菜单" data-label-close="收起菜单"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="hidden" viewBox="0 0 24 24" id="close-icon"><path stroke="none" d="M0 0h24v24H0z" /><path d="M18 6 6 18M6 6l12 12" /></svg><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="icon icon-tabler icons-tabler-outline icon-tabler-menu-deep" viewBox="0 0 24 24" id="menu-icon"><path stroke="none" d="M0 0h24v24H0z" /><path d="M4 6h16M7 12h13M10 18h10" /></svg></button><ul id="menu-items" class="[&amp;&gt;li&gt;a]:hover:text-accent mt-4 hidden w-44 grid-cols-2 place-content-center gap-2 sm:mt-0 sm:flex sm:w-auto sm:gap-x-5 sm:gap-y-0 sm:[&amp;&gt;li]:h-8 [&amp;&gt;li&gt;a]:block [&amp;&gt;li&gt;a]:px-4 [&amp;&gt;li&gt;a]:py-3 [&amp;&gt;li&gt;a]:text-center [&amp;&gt;li&gt;a]:font-medium sm:[&amp;&gt;li&gt;a]:px-2 sm:[&amp;&gt;li&gt;a]:py-1"><li class="col-span-2"><a href="/posts/" class="active-nav">文章</a></li><li class="col-span-2"><a href="/tags/">标签</a></li><li class="col-span-2"><a href="/about/">关于</a></li><li class="col-span-2"><a href="/archives/" title="归档" aria-label="归档" class="group inline-flex items-center gap-1 hover:text-accent focus-outline flex size-full justify-center p-3 sm:relative sm:size-8 sm:p-0"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="hidden sm:absolute sm:top-1/2 sm:left-1/2 sm:block sm:size-6 sm:-translate-x-1/2 sm:-translate-y-1/2" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M3 6a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2 2 2 0 0 1-2 2H5a2 2 0 0 1-2-2M5 8v10a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8M10 12h4" /></svg><span class="sm:sr-only">归档</span></a></li><li class="col-span-1 flex items-center justify-center"><a href="/search/" title="搜索" aria-label="搜索" class="group inline-flex items-center gap-1 hover:text-accent focus-outline relative size-8"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="absolute top-1/2 left-1/2 size-6 -translate-x-1/2 -translate-y-1/2" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M3 10a7 7 0 1 0 14 0 7 7 0 1 0-14 0M21 21l-6-6" /></svg><span class="sr-only">搜索</span></a></li><li class="col-span-1 flex items-center justify-center"><button id="theme-btn" class="focus-outline hover:[&amp;&gt;svg]:stroke-accent relative size-12 p-4 sm:size-8" title="切换主题" aria-label="auto" aria-live="polite"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="absolute top-[50%] left-[50%] translate-[-50%] scale-100 rotate-0 transition-all dark:scale-0 dark:-rotate-90" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M12 3h.393a7.5 7.5 0 0 0 7.92 12.446A9 9 0 1 1 12 2.992z" /></svg><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="absolute top-[50%] left-[50%] translate-[-50%] scale-0 rotate-90 transition-all dark:scale-100 dark:rotate-0" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M14.828 14.828a4 4 0 1 0-5.656-5.656 4 4 0 0 0 5.656 5.656M6.343 17.657l-1.414 1.414M6.343 6.343 4.929 4.929M17.657 6.343l1.414-1.414M17.657 17.657l1.414 1.414M4 12H2M12 4V2M20 12h2M12 20v2" /></svg></button></li></ul></nav></div></header><script type="module">function e(){let e=document.querySelector(`#menu-btn`),t=document.querySelector(`#menu-items`),n=document.querySelector(`#menu-icon`),r=document.querySelector(`#close-icon`);if(!e||!t||!n||!r)return;let i=e.dataset.labelOpen??`Open menu`,a=e.dataset.labelClose??`Close menu`;e.addEventListener(`click`,()=>{let o=e.getAttribute(`aria-expanded`)===`true`;e.setAttribute(`aria-expanded`,o?`false`:`true`),e.setAttribute(`aria-label`,o?i:a),t.classList.toggle(`hidden`),t.classList.toggle(`grid`),n.classList.toggle(`hidden`),r.classList.toggle(`hidden`)})}function t(){let e=document.getElementById(`skip-to-content`);e&&e.addEventListener(`click`,e=>{if(e.defaultPrevented||e.metaKey||e.ctrlKey||e.shiftKey||e.button!==0)return;e.preventDefault();let t=document.getElementById(`main-content`);t&&(t.setAttribute(`tabindex`,`-1`),t.addEventListener(`blur`,()=>t.removeAttribute(`tabindex`),{once:!0}),t.focus(),t.scrollIntoView({behavior:`smooth`}))})}e(),document.addEventListener(`astro:after-swap`,e),t(),document.addEventListener(`astro:after-swap`,t);</script><div class="app-layout flex items-center justify-start"><a id="back-button" href="/" class="group inline-flex items-center gap-1 hover:text-accent focus-outline hover:text-foreground/75 -ms-2 mt-8 mb-2"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="inline-block size-6 rtl:rotate-180" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="m15 6-6 6 6 6" /></svg><span>返回</span></a></div><script type="module">function e(){let e=document.querySelector(`#back-button`),t=sessionStorage.getItem(`backUrl`);t&&e&&(e.href=t)}document.addEventListener(`astro:page-load`,e),e();</script><main id="main-content" class="app-layout" data-pagefind-body><h1 style="view-transition-name:llm-evaluation-quality-cost" class="text-accent inline-block text-2xl font-bold sm:text-3xl">大语言模型的质量、成本与延迟评测</h1><div class="my-2 flex items-center gap-2"><div class="text-muted-foreground flex items-center gap-x-2"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="inline-block size-6 min-w-5.5" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M4 7a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2zM16 3v4M8 3v4M4 11h16M7 14h.013M10.01 14h.005M13.01 14h.005M16.015 14h.005M13.015 17h.005M7.01 17h.005M10.01 17h.005" /></svg><time class="text-sm sm:text-base" datetime="2022-04-04T02:00:00.000Z">2022年4月4日</time></div><span aria-hidden="true" class="text-muted-foreground max-sm:hidden hidden">|</span></div><article id="article" class="mt-8 w-full app-prose max-w-app prose-pre:bg-(--shiki-light-bg) dark:prose-pre:bg-(--shiki-dark-bg)"><p>在大语言模型（large language model，LLM）从理论预训练走向实际系统构建的过程中，工程团队面临的一个首要瓶颈是如何建立一套科学、可重复且符合工程实际的评测体系。在经典机器学习场景中，模型的评测往往依赖固定划分的测试集，通过准确率、精确率或交叉熵损失即可获得清晰的静态指标。</p>
+<p>然而，在自回归生成的范式下，基于 Transformer 架构的大模型展现出截然不同的行为特征。一方面，模型的输出不仅取决于权重参数，还极度敏感于提示（prompt）形式与上下文示例；另一方面，预训练阶段吞吐的百亿乃至千亿级 token（模型处理的基本序列单位，如子词或词元）语料，使得下游评测集极易受到数据污染（data contamination）的侵蚀。更为严峻的是，评测并非只关乎“模型答得有多准”，质量（quality）、推理延迟（latency）与计算成本（cost）之间存在着物理层面的工程制约。</p>
+<p>本文基于 GPT-3 奠基论文 Brown et al. (2020)<a href="#ref-brown-2020"><span id="citation-brown-intro">1</span></a> 与衡量模型模仿人类谬误的 TruthfulQA 评测论文 Lin et al. (2021)<a href="#ref-lin-2021"><span id="citation-lin-intro">2</span></a>，系统剖析大语言模型的质量评测机制、误差根源、推理时延特征与可重复实验的工程边界。</p>
+<hr>
+<h2 id="1-质量评测的两类协议似然归一化与自由生成">1. 质量评测的两类协议：似然归一化与自由生成</h2>
+<p>评测大语言模型的第一道分水岭在于<strong>评测协议（evaluation protocol）</strong>的设计。根据下游任务的约束形式，主流评测主要分为两大路径：受限选择题的条件概率比较与开放式自由文本生成。</p>
+<p>两类主流评测协议流程：</p>
+<ol>
+<li>多项选择协议（条件似然与先验校正）：
+<ol>
+<li>输入提示上下文 x，拼接各个候选答案 y_i；</li>
+<li>计算各候选的条件对数似然 log P(y_i | x)；</li>
+<li>计算通用引导前缀 a 下的无条件先验对数似然 log P(y_i | a)；</li>
+<li>进行长度均值或无条件概率比值归一化，比选最优选项。</li>
+</ol>
+</li>
+<li>自由生成协议（自回归采样与评估）：
+<ol>
+<li>输入提示上下文 x，自回归逐步采样生成完整文本序列 y；</li>
+<li>依据基准协议采用人工评估或微调判别模型（如 GPT-judge）打分；</li>
+<li>对照参考答案分别核算真实性与信息量指标。</li>
+</ol>
+</li>
+</ol>
+<h3 id="11-多项选择与无条件似然归一化">1.1 多项选择与无条件似然归一化</h3>
+<p>在多项选择（multiple-choice）任务中，模型不需要直接生成离散字符，而是对各个预设候选答案的生成似然值进行比较<a href="#ref-brown-2020"><span id="citation-brown-sec24">1 (§2.4)</span></a>。</p>
+<p>给定上下文 <code>x</code> 与候选完形填空序列 <code>y = (w_1, w_2, ..., w_L)</code>，模型计算该候选的联合条件概率对数和：</p>
+<pre class="astro-code astro-code-themes min-light night-owl" style="--shiki-light:#24292eff;--shiki-dark:#d6deeb;--shiki-light-bg:#ffffff;--shiki-dark-bg:#011627; overflow-x: auto;--file-name-offset: -0.75rem;" tabindex="0" data-language="text"><code><span class="line"><span>log P(y | x) = ∑_{t=1}^L log P(w_t | x, w_1, ..., w_{t-1})</span></span></code></pre>
+<p>如果直接比较各个候选的累加对数似然，会带来严重的<strong>长度惩罚偏差</strong>：序列较长的候选包含更多项小于 1 的概率连乘，其累加值天然显著低于短候选。因此，Brown et al. (2020) 在多数多选任务中采用了逐 token 似然均值（per-token likelihood）进行长度归一化：</p>
+<pre class="astro-code astro-code-themes min-light night-owl" style="--shiki-light:#24292eff;--shiki-dark:#d6deeb;--shiki-light-bg:#ffffff;--shiki-dark-bg:#011627; overflow-x: auto;--file-name-offset: -0.75rem;" tabindex="0" data-language="text"><code><span class="line"><span>Score_{length_norm}(y | x) = (1 / L) * ∑_{t=1}^L log P(w_t | x, w_1, ..., w_{t-1})</span></span></code></pre>
+<p>然而，长度归一化仍然无法消除模型的<strong>先验词频偏见</strong>。大语言模型在预训练语料中对某些常见词汇具有极高的无条件生成倾向，即便该选项与当前上下文毫无逻辑关联，其先验概率 <code>P(y)</code> 也可能显著偏高。为了解决这一问题，Brown et al. (2020) 在 ARC、OpenBookQA 和 RACE 等推理基准上引入了<strong>无条件概率归一化（unconditional probability normalization）</strong>：</p>
+<pre class="astro-code astro-code-themes min-light night-owl" style="--shiki-light:#24292eff;--shiki-dark:#d6deeb;--shiki-light-bg:#ffffff;--shiki-dark-bg:#011627; overflow-x: auto;--file-name-offset: -0.75rem;" tabindex="0" data-language="text"><code><span class="line"><span>Score_{uncond_norm}(y | x) = P(y | x) / P(y | answer_context)</span></span></code></pre>
+<p>其中 <code>answer_context</code> 是通用的问答引导词（例如固定字符串 <code>"Answer: "</code> 或 <code>"A: "</code>）。该公式计算的是：在给定具体题干后，该候选答案的概率提升倍数相比于“没有任何题干、仅知道这是一道答案”时的纯先验概率的比值。这一校正机制有效压制了高频通用词与模型先验输出倾向带来的虚假高分。</p>
+<h3 id="12-自由生成的指标困境表面重叠-vs-事实正确">1.2 自由生成的指标困境：表面重叠 vs 事实正确</h3>
+<p>对于问答、摘要或开放对话等生成任务，系统必须在选定的解码策略（如 GPT-3 采用的束宽 4、长度惩罚 <code>alpha = 0.6</code> 的束搜索，或确定性贪心解码）下生成连续文本<a href="#ref-brown-2020"><span id="citation-brown-sec24b">1 (§2.4)</span></a>。</p>
+<p>在评估此类生成内容时，学术界长期使用基于 n-gram 词面重叠的自动化指标（如 ROUGE、BLEU 或准确匹配 Exact Match）。但 Lin et al. (2021) 的实验表明，当评估维度转向<strong>事实真实性（truthfulness）</strong>时，论文所测基于 ROUGE1 与 BLEURT 的相似度差值变体在该基准上预测人工真实性标签表现较差<a href="#ref-lin-2021"><span id="citation-lin-sec44">2 (§4.4, Table 1)</span></a>。</p>
+<p>词面字符重叠评测事实真实性的局限示意（教学用人工示例）：</p>
+<ul>
+<li>参考真实答案：<code>"地球绕着太阳转"</code>（7 个汉字）</li>
+<li>模型生成答案 A：<code>"地球确实绕着太阳转"</code>（9 个汉字，事实正确）</li>
+<li>模型生成答案 B：<code>"地球不绕着太阳转"</code>（8 个汉字，事实相反）</li>
+</ul>
+<p>若以参考答案为基准计算字符级召回率（Recall，匹配字符数 / 参考字符数）：</p>
+<ul>
+<li>答案 A 匹配字符为全部 7 字，召回率 = 7 / 7 = 100%</li>
+<li>答案 B 匹配字符同样包含全部 7 字（多出的“不”字改变了真假），召回率 = 7 / 7 = 100%</li>
+</ul>
+<p>若计算字符级精确率（Precision，匹配字符数 / 生成字符数）：</p>
+<ul>
+<li>答案 A 精确率 = 7 / 9 ≈ 77.8%</li>
+<li>答案 B 精确率 = 7 / 8 = 87.5%</li>
+</ul>
+<p>答案 B 在事实层面上彻底相反，其精确率得分反而高于答案 A。纯粹的词面字符匹配无法区分关键的否定词与逻辑转向，难以反映事实真伪。Lin et al. (2021) 在实验中发现，利用 ROUGE1 或 BLEURT 建立的真假参考答案相似度差值指标，在预测人工真实性评判时准确率较低，促使评测需要引入更稳健的人工打分或微调判别模型。</p>
+<h3 id="13-真实性与信息量的分别评价">1.3 真实性与信息量的分别评价</h3>
+<p>为了科学衡量模型的生成质量，Lin et al. (2021) 在 TruthfulQA 评测基准中确立了一个关键规范：<strong>将真实性（truthfulness）与信息量（informativeness）分别评价（separate evaluations）</strong><a href="#ref-lin-2021"><span id="citation-lin-sec21">2 (§2.1)</span></a>。</p>
+<p>在严格的哲学与事实定义下，“不陈述假话”即可被认定为真实。如果仅以单一的真实率作为优化目标，语言模型将很容易学到一个退化的全局最优解：对所有提问均回答“无可奉告（No comment）”或“我不知道”。这种回答在逻辑上并未断言任何虚假事实，但对解答问题毫无帮助。信息量要求回答提供能够降低问题所引发不确定性的有效信息，并非指冗长或辞藻华丽。</p>
+<p>真实性与信息量分别评价的四类划分：</p>
+<ul>
+<li><strong>真实且有信息（Truthful &#x26; Informative）</strong>：准确给出切题的客观事实，有效解答问题；</li>
+<li><strong>真实但无信息（Truthful &#x26; Uninformative）</strong>：回答“无可奉告（No comment）”或表达不确定，未陈述虚假事实，但未能减少问题的不确定性；</li>
+<li><strong>不真实且有信息（Untruthful &#x26; Informative）</strong>：给出了具体详实的回答，但内容包含人类流行误区、伪科学迷信或事实谬误；</li>
+<li><strong>不真实且无信息（Untruthful &#x26; Uninformative）</strong>：既未能有效回答问题，又包含了事实性错误。</li>
+</ul>
+<p>在 TruthfulQA 的 817 道测试题目中，人类基准的全部回答中，94% 为真实回答，87% 同时满足真实且有信息，6% 为有信息的错误回答<a href="#ref-lin-2021"><span id="citation-lin-sec41">2 (§4.1)</span></a>。而在测试的所有模型与提示组合中，表现最好的配置（GPT-3 175B 配合针对真实性设计的 helpful 提示）在全部回答中，有 58% 为真实回答，21% 同时满足真实且有信息，42% 为有信息的错误回答（false and informative）。这类回答提供了切题的具体内容，却复述了常见的错误观念或民间迷信。</p>
+<p>为了以较低成本复现对自由生成回答的评判，Lin et al. (2021) 探索了基于微调判别模型的方案（GPT-judge）<a href="#ref-lin-2021"><span id="citation-lin-sec32">2 (§3.2)</span></a>, <a href="#ref-lin-2021"><span id="citation-lin-sec44b">2 (§4.4, Table 1)</span></a>。研究者在包含所有 817 题的 6.6k 条参考问答与 15.5k 条模型回答的人工标签上微调 GPT-3 13B 模型。在留出模型家族的跨模型验证中，该判别器对人工真实性标签的预测准确率达到 90%–96%。需要强调的是，这一高准确率是在该固定基准问题集上的留出模型验证结果，并不构成对开放新问题的普遍真实性保证，且作者指出人工评估对针对性调优仍更具稳健性。</p>
+<hr>
+<h2 id="2-误差分类与逆向扩展基准观察的规模趋势">2. 误差分类与逆向扩展：基准观察的规模趋势</h2>
+<p>在评测大语言模型的输出质量时，不能将所有回答错误笼统归为同一类机理。根据模型底层概率分布的形成机制，错误呈现出不同的特征。</p>
+<h3 id="21-泛化不足-vs-模仿性谬误">2.1 泛化不足 vs 模仿性谬误</h3>
+<p>大语言模型的生成错误在机理上通常涉及两类不同来源：</p>
+<ol>
+<li><strong>分布拟合不足导致的泛化错误（Generalization Failure）</strong>：
+例如多位数乘法（如 Lin et al. 2021 §1 引用的 <code>1241 × 123</code> 输出 <code>14812</code>）或符号倒转。虽然 Brown et al. (2020) 观察到语言建模交叉熵验证损失随训练算力遵循平滑的幂律下降<a href="#ref-brown-2020"><span id="citation-brown-sec3">1 (§3, Fig 3.1)</span></a>，但这并不保证所有下游具体任务的准确率随规模单调改善；</li>
+<li><strong>模仿性谬误（Imitative Falsehoods）</strong>：
+在针对人类常见迷信、伪科学谣言、历史误传等领域的问题时，互联网原始语料本身就包含大量错误认知。预训练目标是最小化语料上的自回归负对数似然；当模型对该数据分布拟合得更好时，预测这些常见错误文本的似然概率可能反而更高<a href="#ref-lin-2021"><span id="citation-lin-sec1">2 (§1)</span></a>。</li>
+</ol>
+<h3 id="22-逆向扩展现象inverse-scaling">2.2 逆向扩展现象（Inverse Scaling）</h3>
+<p>这种模仿倾向在特定基准上体现为<strong>逆向扩展（Inverse Scaling）</strong>：在所测模型家族与参数范围内，较大模型的事实真实性得分反而低于较小模型。</p>
+<p>Lin et al. (2021) 在 TruthfulQA 上测试 GPT-3、GPT-Neo/J、GPT-2 等多组模型家族时，观察到了这种总体趋势<a href="#ref-lin-2021"><span id="citation-lin-sec42">2 (§4.2)</span></a>：</p>
+<ul>
+<li>在 GPT-Neo/J 家族中，60 亿参数（6B）的 GPT-J 在 TruthfulQA 上的真实率比 1.25 亿参数（125M）的模型低了约 17 个百分点；</li>
+<li>在多项选择协议下，更大规模的模型在错误答案上的预测似然值同样出现偏高趋势，测试的基座模型在选择题上的表现多未显著超越随机猜测基线。</li>
+</ul>
+<p>为了检验逆向扩展是否仅仅是由对抗性题目的句法复杂度诱发的误解，Lin et al. (2021) 设计了一组<strong>配对句法对照题（matched control questions）</strong><a href="#ref-lin-2021"><span id="citation-lin-sec43">2 (§4.3)</span></a>。研究者仅修改原始题目中的 1 到 3 个核心词汇，使句子保持完全一致的句法结构，但转化为普通的客观事实问答。</p>
+<p>实验结果显示：在句法对照题上，大模型的正确率随着模型规模呈现改善趋势，并在大模型上取得较高得分。这一对比支持了模仿性谬误解释，表明 TruthfulQA 上的性能滑落与语料中的偏见倾向密切相关；但作者亦明确指出，该证据并未完全排除非模仿性质的语义理解弱点。作者也推测，继续扩大模型规模可能有助于纠正一部分尚未充分学习分布的错误，但单纯规模扩展难以消除所有模仿性谬误<a href="#ref-lin-2021"><span id="citation-lin-sec43b">2 (§4.3)</span></a>；在训练目标上探索模仿网页文本之外的方向被视为更有希望的路径<a href="#ref-lin-2021"><span id="citation-lin-sec5">2 (§5)</span></a>。</p>
+<hr>
+<h2 id="3-延迟的物理机制与少样本成本分析">3. 延迟的物理机制与少样本成本分析</h2>
+<p>系统评测不仅要考核静态输出的准确率，还必须量化服务在生产环境中的时间与计算开销。</p>
+<h3 id="31-自回归解码的时延构成">3.1 自回归解码的时延构成</h3>
+<p>自回归语言模型生成文本的物理依赖关系，决定了其推理延迟的基本特征。</p>
+<p>在 Transformer 预训练阶段，借助因果注意力掩码（causal attention mask），整个序列的真实 token 可以一次性送入网络进行并行矩阵运算；但在自回归推理阶段，模型在时间步 <code>t</code> 必须依赖时间步 <code>t-1</code> 输出的采样结果。</p>
+<p>设生成总长度为 <code>N</code> 个 token（<code>N ≥ 1</code>），观察到第一个 token 的等待时间记为 <code>t_first</code>，随后生成其余 <code>N - 1</code> 个 token 的时间间隔分别记为 <code>d_2, d_3, ..., d_N</code>。按定义，总生成耗时为首个 token 的等待时间与后续各个间隔之和：</p>
+<pre class="astro-code astro-code-themes min-light night-owl" style="--shiki-light:#24292eff;--shiki-dark:#d6deeb;--shiki-light-bg:#ffffff;--shiki-dark-bg:#011627; overflow-x: auto;--file-name-offset: -0.75rem;" tabindex="0" data-language="text"><code><span class="line"><span>T_total = t_first + ∑_{i=2}^N d_i  (N ≥ 1)</span></span></code></pre>
+<p>若各步后续间隔近似相等（记为 <code>d</code>），则总时间近似满足：</p>
+<pre class="astro-code astro-code-themes min-light night-owl" style="--shiki-light:#24292eff;--shiki-dark:#d6deeb;--shiki-light-bg:#ffffff;--shiki-dark-bg:#011627; overflow-x: auto;--file-name-offset: -0.75rem;" tabindex="0" data-language="text"><code><span class="line"><span>T_total ≈ t_first + (N - 1) * d  (N ≥ 1)</span></span></code></pre>
+<p>需要说明的是，上述公式属于基于时间计数的自编教学示意，用于说明逐 token 生成的因果依赖关系，并非源自论文的硬件实测结论；各时间步的具体耗时需结合实际运行环境进行测量。</p>
+<h3 id="32-少样本提示few-shot的输入开销分析">3.2 少样本提示（Few-Shot）的输入开销分析</h3>
+<p>在 GPT-3 奠定的上下文学习（in-context learning）范式中，提示中通常拼接少样本示例（few-shot demonstrations）以提升输出适应性<a href="#ref-brown-2020"><span id="citation-brown-sec24c">1 (§2.4)</span></a>。然而，示例数量的增加会显著改变输入规模。</p>
+<p>Brown et al. (2020) 采用 2048 个 token 的上下文窗口，少样本评测中的示例数量 <code>K</code> 通常在 10 到 100 之间。下表给出一个假定任务下（题干固定 40 tokens，每组示范示例固定 35 tokens）输入规模的直接复算示例：</p>
+<div class="table-wrapper" tabindex="0">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<table><thead><tr><th align="left">评测设置</th><th align="left">示例数 K</th><th align="left">输入总 token 数（40 + K × 35）</th></tr></thead><tbody><tr><td align="left">零样本（Zero-Shot）</td><td align="left">0</td><td align="left">40 tokens</td></tr><tr><td align="left">少样本（Few-Shot）</td><td align="left">10</td><td align="left">390 tokens</td></tr><tr><td align="left">较多示例设置</td><td align="left">50</td><td align="left">1790 tokens</td></tr></tbody></table></div>
+<p>示例增多会占用更多上下文；本例只计算输入 token 数，不给出时延、显存或费用倍率。具体运行成本需在确定系统上另行测量。</p>
+<h3 id="33-超大规模模型的推理工程考量">3.3 超大规模模型的推理工程考量</h3>
+<p>GPT-3 175B 拥有 96 层 Transformer 结构，隐藏层维度 <code>d_model = 12288</code>，配备 96 个注意力头（<code>d_head = 128</code>），上下文长度为 2048<a href="#ref-brown-2020"><span id="citation-brown-sec21">1 (§2.1, Table 2.1)</span></a>。</p>
+<p>在预训练过程中，Brown et al. (2020) 在微软高带宽 V100 GPU 集群上采用了矩阵乘法内部的模型并行以及跨网络层的模型并行策略<a href="#ref-brown-2020"><span id="citation-brown-sec23">1 (§2.3)</span></a>。而在推理方面，作者在论文第 5 节“局限性”中明确指出，处于 GPT-3 这一参数尺度的模型，其实际推理“既昂贵又很不便（both expensive and inconvenient to perform inference on）”<a href="#ref-brown-2020"><span id="citation-brown-sec5">1 (§5)</span></a>。作者据此提出，将千亿参数大模型通过知识蒸馏（distillation）压缩到适合特定下游任务的紧凑尺寸，是解决其落地推理开销的一个重要潜在研究方向。</p>
+<hr>
+<h2 id="4-可重复评测条件与基准防污染工程">4. 可重复评测条件与基准防污染工程</h2>
+<p>如果一项评测结果无法在明确的软硬件与协议约定下被独立复现，或者评测得分源于对测试数据的预先记忆，评测结论将失去客观参考价值。</p>
+<h3 id="41-可重复实验的核心协议约束">4.1 可重复实验的核心协议约束</h3>
+<p>为了保证评测结果具备坚实的可比性，必须在实验协议中固化关键参数：</p>
+<ul>
+<li><strong>解码参数的明确与固定</strong>：在自由生成任务中，Lin et al. (2021) 在主实验中采用确定性贪心解码（<code>temperature = 0</code>）以排除随机采样种子带来的波动<a href="#ref-lin-2021"><span id="citation-lin-sec31">2 (§3.1)</span></a>；而在 Brown et al. (2020) 的自由生成评测中则统一使用束宽为 4、长度惩罚为 0.6 的束搜索<a href="#ref-brown-2020"><span id="citation-brown-sec24-beam">1 (§2.4)</span></a>。无论采用何种解码方式，均需在报告中明确配置；</li>
+<li><strong>提示模板的固化控制</strong>：大语言模型对引导词、标点与示范格式极其敏感。在比较不同模型时，应使用完全冻结的标准提示模板（如 OpenAI API 标准的 QA prompt），避免通过在测试题上反复试错提示词来虚增性能；</li>
+<li><strong>真实零样本（True Zero-Shot）规范</strong>：严格的零样本协议要求不得在当前测试任务的样例上反向调优提示词或超参数<a href="#ref-lin-2021"><span id="citation-lin-sec31-zero">2 (§3.1)</span></a>。</li>
+</ul>
+<h3 id="42-预训练数据污染排查data-contamination">4.2 预训练数据污染排查（Data Contamination）</h3>
+<p>大语言模型在包含 Common Crawl、WebText、Wikipedia 和图书集合等数千亿 token 的互联网公开语料上进行自监督预训练<a href="#ref-brown-2020"><span id="citation-brown-sec22">1 (§2.2, Table 2.2)</span></a>。下游评测基准的测试集或验证集可能无意中混入预训练语料，从而使测试结果受到数据污染。</p>
+<p>Brown et al. (2020) 在 GPT-3 中建立了一套排查数据重叠的评估方法<a href="#ref-brown-2020"><span id="citation-brown-sec4">1 (§4)</span></a>, <a href="#ref-brown-2020"><span id="citation-brown-app-c">1 (Appendix C)</span></a>：</p>
+<ol>
+<li><strong>词级 n-gram 重叠检索</strong>：论文在概述中以 13-gram 为基准，而在附录 C 的具体实施中，根据各数据集样例长度的第 5 百分位数动态选择 N（非合成任务下限为 8，上限为 13），去除标点符号与空白字符并统一转为小写后进行词级重叠检索；</li>
+<li><strong>构建干净子集（Clean Subset）</strong>：将存在潜在重叠的样本剥离，生成无重叠的高置信干净子集；</li>
+<li><strong>差异度对比检验</strong>：在全量测试集与干净子集上分别运行评估，并依据分数差异（Δ = 全量集得分 - 干净子集得分）进行审慎解释：
+<ul>
+<li><strong>得分差异极小（Δ ≈ 0）</strong>：未发现明显由数据重叠引起的分数膨胀证据，但仍需考虑干净子集是否引入了分布偏移等限制；</li>
+<li><strong>得分出现下滑（Δ > 0）</strong>：需进一步排查是否存在训练数据泄露，或是由于剔除样本改变了测试集难度分布。</li>
+</ul>
+</li>
+</ol>
+<p>在具体任务排查中，Brown et al. (2020) 揭示了重叠性质的多样性：在 QuAC、SQuAD2 和 DROP 等阅读理解任务中，虽然有超过 90% 的样本被规则标记为潜在重叠，但人工审查抽检显示，语料库中存在的仅是源背景文章，具体的问答对并未在训练语料中出现，模型依然需要实时利用上下文进行抽取回答。而在 PIQA 和 Winograd 任务中，GPT-3 在干净子集上的绝对表现分别出现了 3 个百分点和 2.6 个百分点的下滑：对于 PIQA，作者发现类似下滑也出现在记忆容量小得多的 25x 小模型上，提示该差异可能包含众包网页数据难度分布偏移的统计偏差影响，未能严格证明存在背诵；而对于 Winograd Schema，人工检查确认训练语料中确实包含了 132 个 schema（尽管呈现格式与任务不同）。</p>
+<hr>
+<h2 id="5-总结">5. 总结</h2>
+<p>评测大语言模型不能简单套用传统分类任务的静态单一指标。评测协议的选择（多项选择似然归一化 vs 自由文本生成）决定了模型输出所受约束与观测边界；在事实真实性等高要求场景下，将真实性与信息量分别评价有助于揭示模型复述流行谬误的倾向，并提示规模扩展在因果语言建模目标下可能伴随的逆向表现。</p>
+<p>与此同时，串行自回归生成的时延特征与少样本示例带来的上下文规模增长，构成了系统落地必须考量的工程制约。唯有在明确冻结解码设置、严格控制提示优化过程，并审慎核验训练数据污染边界的前提下，评测数据才能为模型选型与系统架构决策提供可信的证据支撑。</p>
+<hr>
+<h2 id="参考资料">参考资料</h2>
+<ol>
+  <li>
+    Brown, T. B., Mann, B., Ryder, N., Subbiah, M., Kaplan, J., Dhariwal, P., Neelakantan, A., Shyam, P., Sastry, G., Askell, A., Agarwal, S., Herbert-Voss, A., Krueger, G., Henighan, T., Child, R., Ramesh, A., Ziegler, D. M., Wu, J., Winter, C., Hesse, C., Chen, M., Sigler, E., Litwin, M., Gray, S., Chess, B., Clark, J., Berner, C., McCandlish, S., Radford, A., Sutskever, I., &#x26; Amodei, D. (2020). <i>Language Models are Few-Shot Learners</i>. arXiv:2005.14165v4 [cs.CL].
+    <br>
+    首次提交日期：2020-05-28；本篇依据版本：2020-07-22 (arXiv:2005.14165v4).
+    <br>
+    原文链接：<a id="ref-brown-2020" href="https://arxiv.org/abs/2005.14165v4" target="_blank" rel="noopener noreferrer">https://arxiv.org/abs/2005.14165v4</a>
+  </li>
+  <li>
+    Lin, S., Hilton, J., &#x26; Evans, O. (2021). <i>TruthfulQA: Measuring How Models Mimic Human Falsehoods</i>. arXiv:2109.07958v1 [cs.CL].
+    <br>
+    首次提交日期：2021-09-08；本篇依据版本：2021-09-08 (arXiv:2109.07958v1).
+    <br>
+    原文链接：<a id="ref-lin-2021" href="https://arxiv.org/abs/2109.07958v1" target="_blank" rel="noopener noreferrer">https://arxiv.org/abs/2109.07958v1</a>
+  </li>
+</ol></article><hr class="my-8 border-dashed"><div id="btt-btn-container" class="fixed inset-e-4 bottom-8 z-50 md:sticky md:inset-e-auto md:float-end md:me-1 translate-y-14 opacity-0 transition duration-500"><button data-button="back-to-top" class="group bg-background relative px-2 py-1 size-14 rounded-full shadow-xl md:h-8 md:w-fit md:rounded-md md:shadow-none md:focus-visible:rounded-none md:bg-background/35 md:bg-clip-padding md:backdrop-blur-lg"><span id="progress-indicator" class="absolute inset-0 -z-10 block size-14 scale-110 rounded-full bg-transparent md:hidden md:h-8 md:rounded-md"></span><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="inline-block rotate-90 md:hidden" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M5 12h14M5 12l6 6M5 12l6-6" /></svg><span class="group-hover:text-accent sr-only text-sm md:not-sr-only"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="inline-block size-4" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M12 5v14M16 9l-4-4M8 9l4-4" /></svg> 回到顶部</span></button></div><script data-astro-rerun>
+  function backToTop() {
+    const rootElement = document.documentElement;
+    const btnContainer = document.querySelector("#btt-btn-container");
+    const backToTopBtn = document.querySelector("[data-button='back-to-top']");
+    const progressIndicator = document.querySelector("#progress-indicator");
+
+    if (!rootElement || !btnContainer || !backToTopBtn || !progressIndicator)
+      return;
+
+    backToTopBtn.addEventListener("click", () => {
+      document.body.scrollTop = 0;
+      document.documentElement.scrollTop = 0;
+    });
+
+    let lastVisible = null;
+    function handleScroll() {
+      const scrollTotal = rootElement.scrollHeight - rootElement.clientHeight;
+      const scrollTop = rootElement.scrollTop;
+      const scrollPercent = Math.floor((scrollTop / scrollTotal) * 100);
+
+      progressIndicator.style.setProperty(
+        "background-image",
+        `conic-gradient(var(--accent), var(--accent) ${scrollPercent}%, transparent ${scrollPercent}%)`
+      );
+
+      const isVisible = scrollTop / scrollTotal > 0.3;
+
+      if (isVisible !== lastVisible) {
+        btnContainer.classList.toggle("opacity-100", isVisible);
+        btnContainer.classList.toggle("translate-y-0", isVisible);
+        btnContainer.classList.toggle("opacity-0", !isVisible);
+        btnContainer.classList.toggle("translate-y-14", !isVisible);
+        lastVisible = isVisible;
+      }
+    }
+
+    let ticking = false;
+    document.addEventListener("scroll", () => {
+      if (!ticking) {
+        window.requestAnimationFrame(() => {
+          handleScroll();
+          ticking = false;
+        });
+        ticking = true;
+      }
+    });
+  }
+  backToTop();
+</script><ul class="mt-4 mb-8 flex flex-wrap gap-4 sm:my-8"><li><a data-astro-transition-scope="astro-bztu2lml-1" href="/tags/ai/" class="flex items-center gap-0.5 border-foreground border-b-2 border-dashed hover:border-accent hover:text-accent hover:-mt-0.5 focus-visible:text-accent focus-visible:border-none text-sm"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="opacity-80 size-4" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M5 9h14M5 15h14M11 4 7 20M17 4l-4 16" /></svg>AI</a></li><li><a data-astro-transition-scope="astro-bztu2lml-2" href="/tags/llm/" class="flex items-center gap-0.5 border-foreground border-b-2 border-dashed hover:border-accent hover:text-accent hover:-mt-0.5 focus-visible:text-accent focus-visible:border-none text-sm"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="opacity-80 size-4" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M5 9h14M5 15h14M11 4 7 20M17 4l-4 16" /></svg>LLM</a></li><li><a data-astro-transition-scope="astro-bztu2lml-3" href="/tags/evaluation/" class="flex items-center gap-0.5 border-foreground border-b-2 border-dashed hover:border-accent hover:text-accent hover:-mt-0.5 focus-visible:text-accent focus-visible:border-none text-sm"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="opacity-80 size-4" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M5 9h14M5 15h14M11 4 7 20M17 4l-4 16" /></svg>Evaluation</a></li><li><a data-astro-transition-scope="astro-bztu2lml-4" href="/tags/benchmarking/" class="flex items-center gap-0.5 border-foreground border-b-2 border-dashed hover:border-accent hover:text-accent hover:-mt-0.5 focus-visible:text-accent focus-visible:border-none text-sm"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="opacity-80 size-4" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M5 9h14M5 15h14M11 4 7 20M17 4l-4 16" /></svg>Benchmarking</a></li><li><a data-astro-transition-scope="astro-bztu2lml-5" href="/tags/latency/" class="flex items-center gap-0.5 border-foreground border-b-2 border-dashed hover:border-accent hover:text-accent hover:-mt-0.5 focus-visible:text-accent focus-visible:border-none text-sm"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="opacity-80 size-4" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M5 9h14M5 15h14M11 4 7 20M17 4l-4 16" /></svg>Latency</a></li><li><a data-astro-transition-scope="astro-bztu2lml-6" href="/tags/cost/" class="flex items-center gap-0.5 border-foreground border-b-2 border-dashed hover:border-accent hover:text-accent hover:-mt-0.5 focus-visible:text-accent focus-visible:border-none text-sm"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="opacity-80 size-4" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M5 9h14M5 15h14M11 4 7 20M17 4l-4 16" /></svg>Cost</a></li></ul><hr class="my-8 border-dashed"><div data-pagefind-ignore class="my-8 grid grid-cols-1 gap-6 sm:grid-cols-2"><a href="/posts/llm-rag-finetuning-pretraining/" class="flex w-full gap-1 hover:opacity-75"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="inline-block flex-none rtl:rotate-180" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M5 12h14M5 12l6 6M5 12l6-6" /></svg><div><span>上一篇</span><div class="text-accent/85 text-sm">RAG、微调与继续预训练分别改变哪里：材料、参数与更新边界</div></div></a><a href="/posts/llm-tool-use-loop/" class="flex w-full justify-end gap-1 text-end hover:opacity-75 sm:col-start-2"><div><span>下一篇</span><div class="text-accent/85 text-sm">模型与程序的工具使用循环</div></div><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="inline-block flex-none rtl:rotate-180" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M5 12h14M13 18l6-6M13 6l6 6" /></svg></a></div></main><footer class="app-layout mt-auto"><div class="border-border flex flex-col items-center justify-between border-t py-6 sm:flex-row-reverse sm:py-4"><div class="flex flex-wrap items-center gap-1"><a href="https://github.com/SaromChars" title="Sarom Chars 的 GitHub" class="group inline-flex items-center gap-1 hover:text-accent p-2 hover:rotate-6 sm:p-1"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="inline-block size-6 scale-125 fill-transparent stroke-current stroke-2 opacity-90 group-hover:fill-transparent sm:scale-110" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M9 19c-4.3 1.4-4.3-2.5-6-3m12 5v-3.5c0-1 .1-1.4-.5-2 2.8-.3 5.5-1.4 5.5-6a4.6 4.6 0 0 0-1.3-3.2 4.2 4.2 0 0 0-.1-3.2s-1.1-.3-3.5 1.3a12.3 12.3 0 0 0-6.2 0C6.5 2.8 5.4 3.1 5.4 3.1a4.2 4.2 0 0 0-.1 3.2A4.6 4.6 0 0 0 4 9.5c0 4.6 2.7 5.7 5.5 6-.6.6-.6 1.2-.5 2V21" /></svg><span class="sr-only">Sarom Chars 的 GitHub</span></a></div><div class="my-2 flex flex-col items-center whitespace-nowrap sm:flex-row"><span>版权 &#169; 2026</span><span class="hidden sm:inline">&nbsp;|&nbsp;</span><span>保留所有权利。</span></div></div></footer><script type="module">var e=`theme`,t=`light`,n=`dark`;function r(){return localStorage.getItem(e)||(window.matchMedia(`(prefers-color-scheme: dark)`).matches?n:t)}var i=window.__theme?.value??r();function a(){localStorage.setItem(e,i),o()}function o(){let e=document.firstElementChild;e?.setAttribute(`data-theme`,i),e?.classList.toggle(`dark`,i===n),document.querySelector(`#theme-btn`)?.setAttribute(`aria-label`,i);let t=window.getComputedStyle(document.body).backgroundColor;document.querySelector(`meta[name='theme-color']`)?.setAttribute(`content`,t)}function s(){o(),document.querySelector(`#theme-btn`)?.addEventListener(`click`,()=>{i=i===t?n:t,a()})}s(),document.addEventListener(`astro:after-swap`,s),document.addEventListener(`astro:before-swap`,e=>{let t=document.querySelector(`meta[name='theme-color']`)?.getAttribute(`content`);t&&e.newDocument.querySelector(`meta[name='theme-color']`)?.setAttribute(`content`,t)}),window.matchMedia(`(prefers-color-scheme: dark)`).addEventListener(`change`,({matches:e})=>{i=e?n:t,a()});</script></body></html><script type="module">var e=document.querySelector(`#article`);if(e?.querySelector(`a[href^="#ref-"]`)){let t=null,n=!1,r=document.createElement(`button`);r.type=`button`,r.className=`citation-return`,r.textContent=`返回阅读位置`,r.setAttribute(`data-pagefind-ignore`,``),e.addEventListener(`click`,n=>{if(n.button!==0||n.metaKey||n.ctrlKey||n.shiftKey||n.altKey)return;let i=n.target instanceof Element?n.target.closest(`a[href^="#ref-"]`):null;if(!i||!e.contains(i))return;let a=i.hash,o=document.getElementById(decodeURIComponent(a.slice(1)));o&&e.contains(o)&&(t={source:i,url:window.location.href,top:window.scrollY,left:window.scrollX,targetHash:a},o.insertAdjacentElement(`afterend`,r))}),r.addEventListener(`click`,()=>{if(!t||n)return;let e=t,i=i=>{r.remove(),window.requestAnimationFrame(()=>{window.requestAnimationFrame(()=>{e.source.focus({preventScroll:!0}),window.scrollTo({top:e.top,left:e.left,behavior:`instant`}),t=null,n=!1,i?.()})})};window.location.href===e.url?i():(n=!0,window.addEventListener(`popstate`,()=>{let e=window.history.scrollRestoration;window.history.scrollRestoration=`manual`,window.setTimeout(()=>{i(()=>{window.history.scrollRestoration=e})},0)},{once:!0}),window.history.back())}),window.addEventListener(`hashchange`,()=>{!n&&t&&window.location.hash!==t.targetHash&&(r.remove(),t=null)})}</script><script data-astro-rerun>
+  function createProgressBar() {
+    const progressContainer = document.createElement("div");
+    progressContainer.className =
+      "progress-container fixed top-0 z-10 h-1 w-full bg-background";
+
+    const progressBar = document.createElement("div");
+    progressBar.className = "progress-bar h-1 w-0 bg-accent";
+    progressBar.id = "myBar";
+
+    progressContainer.appendChild(progressBar);
+    document.body.appendChild(progressContainer);
+  }
+  createProgressBar();
+
+  function updateScrollProgress() {
+    document.addEventListener("scroll", () => {
+      const winScroll =
+        document.body.scrollTop || document.documentElement.scrollTop;
+      const height =
+        document.documentElement.scrollHeight -
+        document.documentElement.clientHeight;
+      const scrolled = (winScroll / height) * 100;
+      if (document) {
+        const myBar = document.getElementById("myBar");
+        if (myBar) {
+          myBar.style.width = scrolled + "%";
+        }
+      }
+    });
+  }
+  updateScrollProgress();
+
+  function addHeadingLinks() {
+    const headings = Array.from(
+      document.querySelectorAll("h2, h3, h4, h5, h6")
+    );
+    for (const heading of headings) {
+      heading.classList.add("group");
+      const link = document.createElement("a");
+      link.className =
+        "heading-link ms-2 no-underline opacity-75 md:opacity-0 md:group-hover:opacity-100 md:focus:opacity-100";
+      link.href = "#" + heading.id;
+
+      const span = document.createElement("span");
+      span.ariaHidden = "true";
+      span.innerText = "#";
+      link.appendChild(span);
+      heading.appendChild(link);
+    }
+  }
+  addHeadingLinks();
+
+  function attachCopyButtons() {
+    const copyButtonLabel = "Copy";
+    const codeBlocks = Array.from(document.querySelectorAll("pre"));
+
+    for (const codeBlock of codeBlocks) {
+      const wrapper = document.createElement("div");
+      wrapper.style.position = "relative";
+
+      const computedStyle = getComputedStyle(codeBlock);
+      const hasFileNameOffset =
+        computedStyle.getPropertyValue("--file-name-offset").trim() !== "";
+
+      const topClass = hasFileNameOffset
+        ? "top-(--file-name-offset)"
+        : "-top-3";
+
+      const copyButton = document.createElement("button");
+      copyButton.className = `copy-code absolute end-3 ${topClass} rounded bg-muted border border-muted px-2 py-1 text-xs leading-4 text-foreground font-medium`;
+      copyButton.innerHTML = copyButtonLabel;
+      codeBlock.setAttribute("tabindex", "0");
+      codeBlock.appendChild(copyButton);
+
+      codeBlock?.parentNode?.insertBefore(wrapper, codeBlock);
+      wrapper.appendChild(codeBlock);
+
+      copyButton.addEventListener("click", async () => {
+        await copyCode(codeBlock, copyButton);
+      });
+    }
+
+    async function copyCode(block, button) {
+      const code = block.querySelector("code");
+      const text = code?.innerText;
+
+      await navigator.clipboard.writeText(text ?? "");
+
+      button.innerText = "Copied";
+
+      setTimeout(() => {
+        button.innerText = copyButtonLabel;
+      }, 700);
+    }
+  }
+  attachCopyButtons();
+
+  /** Accessible image lightbox for article images. */
+  function initLightbox() {
+    const article = document.getElementById("article");
+    if (!article) return;
+
+    const prefersReducedMotion = () =>
+      window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+    let overlay = null;
+    let lastFocused = null;
+    let removeDragListeners = null;
+
+    // Defer attribute mutations so they don't push the LCP timestamp.
+    // Event listeners below use delegation and don't need the attributes to exist yet.
+    requestAnimationFrame(() => {
+      const images = Array.from(article.querySelectorAll("img"));
+      for (const image of images) {
+        if (image.closest("a")) continue;
+        image.setAttribute("role", "button");
+        image.setAttribute("tabindex", "0");
+        image.setAttribute("aria-haspopup", "dialog");
+        image.setAttribute(
+          "aria-label",
+          image.alt ? `Zoom image: ${image.alt}` : "Zoom image"
+        );
+      }
+    });
+
+    function open(src, alt, trigger) {
+      if (overlay) return;
+      lastFocused = trigger ?? document.activeElement;
+
+      overlay = document.createElement("div");
+      overlay.setAttribute("role", "dialog");
+      overlay.setAttribute("aria-modal", "true");
+      overlay.setAttribute(
+        "aria-label",
+        alt ? `Image preview: ${alt}` : "Image preview"
+      );
+      overlay.className =
+        "fixed inset-0 z-50 flex cursor-zoom-out items-center justify-center bg-black/70 backdrop-blur-sm opacity-0 transition-opacity duration-200 motion-reduce:transition-none";
+
+      const closeButton = document.createElement("button");
+      closeButton.type = "button";
+      closeButton.setAttribute("aria-label", "Close image preview");
+      closeButton.className =
+        "absolute end-4 top-4 z-1 flex size-11 items-center justify-center rounded bg-black/50 text-3xl leading-none text-white";
+      closeButton.innerHTML = "&#10005;";
+      closeButton.addEventListener("click", close);
+
+      const image = document.createElement("img");
+      image.src = src;
+      image.alt = "";
+      image.className =
+        "max-h-[90dvh] max-w-[90dvw] cursor-default object-contain transition-transform duration-100 ease-out motion-reduce:transition-none data-[zoom=drag]:cursor-grabbing data-[zoom=drag]:transition-none data-[zoom=in]:cursor-grab";
+
+      overlay.append(closeButton, image);
+      overlay.addEventListener("click", e => {
+        if (e.target === overlay && currentScale <= 1) close();
+      });
+
+      let currentScale = 1;
+      let translateX = 0;
+      let translateY = 0;
+      let initialDist = 0;
+      let initialScale = 1;
+      let panStartX = 0;
+      let panStartY = 0;
+      let panStartTranslateX = 0;
+      let panStartTranslateY = 0;
+      let lastTapTime = 0;
+
+      function applyTransform() {
+        image.style.transform = `scale(${currentScale}) translate(${translateX}px, ${translateY}px)`;
+        // A backdrop click only closes at fit size, so drop the zoom-out cursor while zoomed.
+        overlay?.classList.toggle("cursor-zoom-out", currentScale <= 1);
+      }
+
+      function resetTransform() {
+        currentScale = 1;
+        translateX = 0;
+        translateY = 0;
+        image.style.transform = "";
+        image.removeAttribute("data-zoom");
+        overlay?.classList.add("cursor-zoom-out");
+      }
+
+      // Keep the zoomed image from being panned past its edges.
+      function clampTranslate() {
+        if (!overlay) return;
+        const maxX = Math.max(
+          0,
+          (image.clientWidth - overlay.clientWidth / currentScale) / 2
+        );
+        const maxY = Math.max(
+          0,
+          (image.clientHeight - overlay.clientHeight / currentScale) / 2
+        );
+        translateX = Math.min(maxX, Math.max(-maxX, translateX));
+        translateY = Math.min(maxY, Math.max(-maxY, translateY));
+      }
+
+      overlay.addEventListener(
+        "touchstart",
+        e => {
+          const t = e.touches;
+          if (t.length === 2) {
+            image.setAttribute("data-zoom", "drag");
+            initialDist = Math.hypot(
+              t[1].clientX - t[0].clientX,
+              t[1].clientY - t[0].clientY
+            );
+            initialScale = currentScale;
+          } else if (t.length === 1) {
+            const now = Date.now();
+            if (now - lastTapTime < 300) {
+              e.preventDefault();
+              if (currentScale > 1) {
+                resetTransform();
+              } else {
+                currentScale = 2;
+                translateX = 0;
+                translateY = 0;
+                applyTransform();
+                image.setAttribute("data-zoom", "in");
+              }
+              lastTapTime = 0;
+              panStartX = t[0].clientX;
+              panStartY = t[0].clientY;
+              panStartTranslateX = translateX;
+              panStartTranslateY = translateY;
+            } else {
+              lastTapTime = now;
+              if (currentScale > 1) {
+                image.setAttribute("data-zoom", "drag");
+                panStartX = t[0].clientX;
+                panStartY = t[0].clientY;
+                panStartTranslateX = translateX;
+                panStartTranslateY = translateY;
+              }
+            }
+          }
+        },
+        { passive: false }
+      );
+
+      overlay.addEventListener(
+        "touchmove",
+        e => {
+          const t = e.touches;
+          if (t.length === 2) {
+            e.preventDefault();
+            const dist = Math.hypot(
+              t[1].clientX - t[0].clientX,
+              t[1].clientY - t[0].clientY
+            );
+            const oldScale = currentScale;
+            currentScale = Math.min(
+              4,
+              Math.max(1, initialScale * (dist / initialDist))
+            );
+
+            // Zoom to the geometric center of the two fingers
+            const midX = (t[0].clientX + t[1].clientX) / 2;
+            const midY = (t[0].clientY + t[1].clientY) / 2;
+            const ox = overlay.clientWidth / 2;
+            const oy = overlay.clientHeight / 2;
+            translateX =
+              (midX - ox) * (1 / currentScale - 1 / oldScale) + translateX;
+            translateY =
+              (midY - oy) * (1 / currentScale - 1 / oldScale) + translateY;
+            clampTranslate();
+            applyTransform();
+          } else if (t.length === 1) {
+            if (currentScale > 1) {
+              e.preventDefault();
+              image.setAttribute("data-zoom", "drag");
+              translateX =
+                panStartTranslateX + (t[0].clientX - panStartX) / currentScale;
+              translateY =
+                panStartTranslateY + (t[0].clientY - panStartY) / currentScale;
+              clampTranslate();
+              applyTransform();
+            } else {
+              e.preventDefault();
+            }
+          }
+        },
+        { passive: false }
+      );
+
+      overlay.addEventListener("touchend", e => {
+        if (e.touches.length === 0) {
+          if (currentScale > 1) {
+            image.setAttribute("data-zoom", "in");
+          } else {
+            image.removeAttribute("data-zoom");
+          }
+          if (currentScale <= 1.05) resetTransform();
+        }
+      });
+
+      overlay.addEventListener("touchcancel", e => {
+        if (e.touches.length === 0) {
+          if (currentScale > 1) {
+            image.setAttribute("data-zoom", "in");
+          } else {
+            image.removeAttribute("data-zoom");
+          }
+          if (currentScale <= 1.05) resetTransform();
+        }
+      });
+
+      overlay.addEventListener(
+        "wheel",
+        e => {
+          e.preventDefault();
+          const oldScale = currentScale;
+          const delta = -e.deltaY * 0.001;
+          currentScale = Math.min(4, Math.max(1, currentScale * (1 + delta)));
+
+          if (currentScale <= 1.05) {
+            resetTransform();
+          } else {
+            image.setAttribute("data-zoom", "in");
+            // Zoom to cursor: adjust translate so the point under cursor stays fixed
+            const ox = overlay.clientWidth / 2;
+            const oy = overlay.clientHeight / 2;
+            translateX =
+              (e.clientX - ox) * (1 / currentScale - 1 / oldScale) + translateX;
+            translateY =
+              (e.clientY - oy) * (1 / currentScale - 1 / oldScale) + translateY;
+            clampTranslate();
+            applyTransform();
+          }
+        },
+        { passive: false }
+      );
+
+      let isMouseDown = false;
+      let mouseStartX = 0;
+      let mouseStartY = 0;
+
+      overlay.addEventListener("mousedown", e => {
+        if (e.button !== 0 || currentScale <= 1) return;
+        if (e.target.closest("button")) return;
+        isMouseDown = true;
+        mouseStartX = e.clientX;
+        mouseStartY = e.clientY;
+        panStartTranslateX = translateX;
+        panStartTranslateY = translateY;
+        image.setAttribute("data-zoom", "drag");
+        e.preventDefault();
+      });
+
+      function onMouseMove(e) {
+        if (!isMouseDown || !overlay) return;
+        translateX =
+          panStartTranslateX + (e.clientX - mouseStartX) / currentScale;
+        translateY =
+          panStartTranslateY + (e.clientY - mouseStartY) / currentScale;
+        clampTranslate();
+        applyTransform();
+      }
+
+      function onMouseUp() {
+        if (!isMouseDown) return;
+        isMouseDown = false;
+        if (currentScale > 1) {
+          image.setAttribute("data-zoom", "in");
+        } else {
+          image.removeAttribute("data-zoom");
+        }
+      }
+
+      document.addEventListener("mousemove", onMouseMove);
+      document.addEventListener("mouseup", onMouseUp);
+      removeDragListeners = () => {
+        document.removeEventListener("mousemove", onMouseMove);
+        document.removeEventListener("mouseup", onMouseUp);
+      };
+
+      document.body.appendChild(overlay);
+      document.documentElement.style.overflow = "hidden";
+      document.addEventListener("keydown", onKeyDown);
+      window.__closeLightbox = close;
+
+      requestAnimationFrame(() => overlay?.classList.add("opacity-100"));
+      closeButton.focus();
+    }
+
+    function close() {
+      if (!overlay) return;
+      const el = overlay;
+      overlay = null;
+      el.classList.add("pointer-events-none");
+      window.__closeLightbox = null;
+
+      document.removeEventListener("keydown", onKeyDown);
+      removeDragListeners?.();
+      removeDragListeners = null;
+      document.documentElement.style.overflow = "";
+      lastFocused?.focus();
+      lastFocused = null;
+
+      if (prefersReducedMotion()) {
+        el.remove();
+        return;
+      }
+      const remove = () => el.remove();
+      el.addEventListener("transitionend", remove, { once: true });
+      setTimeout(remove, 250); // fallback in case transitionend never fires
+      el.classList.remove("opacity-100");
+    }
+
+    function onKeyDown(e) {
+      if (e.key === "Escape") {
+        close();
+      } else if (e.key === "Tab") {
+        trapFocus(e);
+      }
+    }
+
+    // Keep keyboard focus inside the open dialog.
+    function trapFocus(e) {
+      if (!overlay) return;
+      const focusables = overlay.querySelectorAll(
+        'a[href], button, [tabindex]:not([tabindex="-1"])'
+      );
+      if (focusables.length === 0) return;
+      const first = focusables[0];
+      const last = focusables[focusables.length - 1];
+      if (e.shiftKey && document.activeElement === first) {
+        e.preventDefault();
+        last.focus();
+      } else if (!e.shiftKey && document.activeElement === last) {
+        e.preventDefault();
+        first.focus();
+      }
+    }
+
+    function triggerFromEvent(e) {
+      const image = e.target.closest("img");
+      if (!image || !article.contains(image) || image.closest("a")) return null;
+      return image;
+    }
+
+    function activate(image) {
+      open(image.currentSrc || image.src, image.alt, image);
+    }
+
+    article.addEventListener("click", e => {
+      const image = triggerFromEvent(e);
+      if (!image) return;
+      e.preventDefault();
+      activate(image);
+    });
+
+    article.addEventListener("keydown", e => {
+      if (e.key !== "Enter" && e.key !== " " && e.key !== "Spacebar") return;
+      const image = triggerFromEvent(e);
+      if (!image) return;
+      e.preventDefault();
+      activate(image);
+    });
+  }
+  initLightbox();
+
+  if (!window.__lightboxSwapBound) {
+    window.__lightboxSwapBound = true;
+    document.addEventListener("astro:before-swap", () =>
+      window.__closeLightbox?.()
+    );
+  }
+
+  document.addEventListener("astro:after-swap", () =>
+    window.scrollTo({ left: 0, top: 0, behavior: "instant" })
+  );
+</script>
