@@ -1,0 +1,75 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 700" width="100%" height="100%">
+  <title>文本转向量处理链路图（竖排手机适配）</title>
+  <desc>展示从原始文本到分词Token、词表ID映射、嵌入矩阵查表、位置表示叠加及生成Transformer上下文表示的竖向数据流。</desc>
+
+  <!-- 中性浅色背景 -->
+  <rect x="0" y="0" width="400" height="700" rx="12" fill="#f8fafc" stroke="#cbd5e1" stroke-width="2"/>
+
+  <!-- 顶部标题 -->
+  <text x="200" y="38" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="20" font-weight="700" fill="#0f172a">文本到嵌入向量处理链路</text>
+  <text x="200" y="66" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="18" fill="#475569">教学算例："河水浅" 转换流程</text>
+
+  <!-- 步骤 1: 原始输入 -->
+  <g transform="translate(20, 85)">
+    <rect x="0" y="0" width="360" height="66" rx="8" fill="#ffffff" stroke="#94a3b8" stroke-width="2"/>
+    <text x="180" y="28" text-anchor="middle" font-family="sans-serif" font-size="18" font-weight="700" fill="#334155">1. 原始文本 (String)</text>
+    <text x="180" y="52" text-anchor="middle" font-family="sans-serif" font-size="18" fill="#0f172a">输入字符串："河水浅"</text>
+  </g>
+
+  <!-- 箭头 1 -->
+  <path d="M 200 151 L 200 169" fill="none" stroke="#64748b" stroke-width="3"/>
+  <polygon points="193,169 200,179 207,169" fill="#64748b"/>
+
+  <!-- 步骤 2: 分词 Token -->
+  <g transform="translate(20, 181)">
+    <rect x="0" y="0" width="360" height="66" rx="8" fill="#ffffff" stroke="#3b82f6" stroke-width="2"/>
+    <text x="180" y="28" text-anchor="middle" font-family="sans-serif" font-size="18" font-weight="700" fill="#1e40af">2. 分词切分 (Tokenize)</text>
+    <text x="180" y="52" text-anchor="middle" font-family="sans-serif" font-size="18" fill="#1d4ed8">Token 序列：["河", "水", "浅"]</text>
+  </g>
+
+  <!-- 箭头 2 -->
+  <path d="M 200 247 L 200 265" fill="none" stroke="#64748b" stroke-width="3"/>
+  <polygon points="193,265 200,275 207,265" fill="#64748b"/>
+
+  <!-- 步骤 3: 词表 ID -->
+  <g transform="translate(20, 277)">
+    <rect x="0" y="0" width="360" height="66" rx="8" fill="#ffffff" stroke="#d97706" stroke-width="2"/>
+    <text x="180" y="28" text-anchor="middle" font-family="sans-serif" font-size="18" font-weight="700" fill="#92400e">3. 词表映射 (Vocab ID)</text>
+    <text x="180" y="52" text-anchor="middle" font-family="sans-serif" font-size="18" fill="#b45309">离散整数索引：[1, 2, 3]</text>
+  </g>
+
+  <!-- 箭头 3 -->
+  <path d="M 200 343 L 200 361" fill="none" stroke="#64748b" stroke-width="3"/>
+  <polygon points="193,361 200,371 207,361" fill="#64748b"/>
+
+  <!-- 步骤 4: 嵌入查表 -->
+  <g transform="translate(20, 373)">
+    <rect x="0" y="0" width="360" height="88" rx="8" fill="#ffffff" stroke="#16a34a" stroke-width="2"/>
+    <text x="180" y="28" text-anchor="middle" font-family="sans-serif" font-size="18" font-weight="700" fill="#14532d">4. 嵌入矩阵查表 (Lookup)</text>
+    <text x="180" y="54" text-anchor="middle" font-family="sans-serif" font-size="18" fill="#15803d">按 ID 抽取 E 中静态行向量</text>
+    <text x="180" y="78" text-anchor="middle" font-family="sans-serif" font-size="18" fill="#15803d">构成静态输入矩阵 X_emb</text>
+  </g>
+
+  <!-- 箭头 4 -->
+  <path d="M 200 461 L 200 479" fill="none" stroke="#64748b" stroke-width="3"/>
+  <polygon points="193,479 200,489 207,479" fill="#64748b"/>
+
+  <!-- 步骤 5: 叠加位置信息 -->
+  <g transform="translate(20, 491)">
+    <rect x="0" y="0" width="360" height="88" rx="8" fill="#ffffff" stroke="#ec4899" stroke-width="2"/>
+    <text x="180" y="28" text-anchor="middle" font-family="sans-serif" font-size="18" font-weight="700" fill="#9d174d">5. 注入位置表示 (Position)</text>
+    <text x="180" y="54" text-anchor="middle" font-family="sans-serif" font-size="18" fill="#be185d">叠加位置编码/嵌入向量 P</text>
+    <text x="180" y="78" text-anchor="middle" font-family="sans-serif" font-size="18" fill="#be185d">输入表示：X = X_emb + P</text>
+  </g>
+
+  <!-- 箭头 5 -->
+  <path d="M 200 579 L 200 597" fill="none" stroke="#64748b" stroke-width="3"/>
+  <polygon points="193,597 200,607 207,597" fill="#64748b"/>
+
+  <!-- 步骤 6: Transformer 演化 -->
+  <g transform="translate(20, 609)">
+    <rect x="0" y="0" width="360" height="72" rx="8" fill="#f0fdf4" stroke="#22c55e" stroke-width="2"/>
+    <text x="180" y="30" text-anchor="middle" font-family="sans-serif" font-size="18" font-weight="700" fill="#14532d">6. Transformer 多层计算</text>
+    <text x="180" y="56" text-anchor="middle" font-family="sans-serif" font-size="18" fill="#15803d">生成动态上下文表示 h_i</text>
+  </g>
+</svg>

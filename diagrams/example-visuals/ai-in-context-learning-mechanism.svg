@@ -1,0 +1,40 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 640" width="100%" height="100%">
+  <title>微调与上下文学习机制对比图（竖排手机适配）</title>
+  <desc>对比传统微调通过反向传播修改模型权重与上下文学习在保持模型权重下仅凭前向计算响应完成任务的机理差异。</desc>
+
+  <rect x="0" y="0" width="400" height="640" rx="12" fill="#f8fafc" stroke="#cbd5e1" stroke-width="2"/>
+
+  <!-- 顶部标题 -->
+  <text x="200" y="38" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="20" font-weight="700" fill="#0f172a">微调与上下文学习对比</text>
+  <text x="200" y="66" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="18" fill="#475569">权重修改 vs 前向激活响应</text>
+
+  <!-- 上部分：传统微调范式 -->
+  <g transform="translate(20, 85)">
+    <rect x="0" y="0" width="360" height="235" rx="8" fill="#ffffff" stroke="#ef4444" stroke-width="2"/>
+    <text x="180" y="32" text-anchor="middle" font-family="sans-serif" font-size="18" font-weight="700" fill="#991b1b">传统微调 (Fine-Tuning)</text>
+    <rect x="15" y="45" width="330" height="40" rx="6" fill="#fee2e2"/>
+    <text x="180" y="70" text-anchor="middle" font-family="sans-serif" font-size="18" font-weight="700" fill="#b91c1c">修改模型权重：Δθ ≠ 0</text>
+
+    <text x="180" y="115" text-anchor="middle" font-family="sans-serif" font-size="18" fill="#334155">1. 使用任务训练数据</text>
+    <text x="180" y="145" text-anchor="middle" font-family="sans-serif" font-size="18" fill="#334155">2. 误差反向传播计算梯度</text>
+    <text x="180" y="175" text-anchor="middle" font-family="sans-serif" font-size="18" fill="#334155">3. 优化器更新网络权重矩阵</text>
+    <text x="180" y="210" text-anchor="middle" font-family="sans-serif" font-size="18" fill="#7f1d1d">代价：通常需维护适配后的权重</text>
+  </g>
+
+  <!-- 分割指示 -->
+  <text x="200" y="348" text-anchor="middle" font-family="sans-serif" font-size="18" font-weight="700" fill="#64748b">VS 机制根本分水岭</text>
+
+  <!-- 下部分：上下文学习 -->
+  <g transform="translate(20, 365)">
+    <rect x="0" y="0" width="360" height="250" rx="8" fill="#ffffff" stroke="#16a34a" stroke-width="2"/>
+    <text x="180" y="32" text-anchor="middle" font-family="sans-serif" font-size="18" font-weight="700" fill="#14532d">上下文学习 (In-Context)</text>
+    <rect x="15" y="45" width="330" height="40" rx="6" fill="#dcfce7"/>
+    <text x="180" y="70" text-anchor="middle" font-family="sans-serif" font-size="18" font-weight="700" fill="#15803d">保持模型权重：Δθ = 0</text>
+
+    <text x="180" y="115" text-anchor="middle" font-family="sans-serif" font-size="18" fill="#334155">1. 输入端拼接 K 个示范</text>
+    <text x="180" y="145" text-anchor="middle" font-family="sans-serif" font-size="18" fill="#334155">2. 仅做前向计算，不更新参数</text>
+    <text x="180" y="175" text-anchor="middle" font-family="sans-serif" font-size="18" fill="#334155">3. 示范调制生成位置隐藏态</text>
+    <text x="180" y="210" text-anchor="middle" font-family="sans-serif" font-size="18" fill="#166534">特征：单模型零样本/少样本通用</text>
+    <text x="180" y="235" text-anchor="middle" font-family="sans-serif" font-size="18" fill="#166534">受限于上下文窗口与预训练模式</text>
+  </g>
+</svg>

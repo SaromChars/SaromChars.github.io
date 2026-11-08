@@ -1,0 +1,62 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 600" width="100%" height="100%">
+  <title>缩放点积注意力计算流程图（竖排手机适配）</title>
+  <desc>展示查询Q、键K经过点积乘法、除以根号dk缩放、逐行Softmax归一化、与值V加权求和生成上下文表示的竖向步骤，附带算例数值流向。</desc>
+
+  <!-- 中性浅色背景，保证暗色/亮色主题均清晰可读 -->
+  <rect x="0" y="0" width="400" height="600" rx="12" fill="#f8fafc" stroke="#cbd5e1" stroke-width="2"/>
+
+  <!-- 顶部标题 -->
+  <text x="200" y="38" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="20" font-weight="700" fill="#0f172a">缩放点积注意力计算流向</text>
+  <text x="200" y="66" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="18" fill="#475569">教学算例与矩阵计算步骤</text>
+
+  <!-- 步骤 1: Q 与 K 点积 -->
+  <g transform="translate(20, 85)">
+    <rect x="0" y="0" width="360" height="74" rx="8" fill="#ffffff" stroke="#6366f1" stroke-width="2"/>
+    <text x="180" y="30" text-anchor="middle" font-family="sans-serif" font-size="18" font-weight="700" fill="#312e81">步骤 1：点积匹配 (Q · K^T)</text>
+    <text x="180" y="56" text-anchor="middle" font-family="sans-serif" font-size="18" fill="#4338ca">计算查询与各键的相似得分</text>
+  </g>
+
+  <!-- 连线箭头 1 -->
+  <path d="M 200 159 L 200 181" fill="none" stroke="#64748b" stroke-width="3"/>
+  <polygon points="193,181 200,191 207,181" fill="#64748b"/>
+
+  <!-- 步骤 2: 缩放除以 sqrt(d_k) -->
+  <g transform="translate(20, 193)">
+    <rect x="0" y="0" width="360" height="74" rx="8" fill="#ffffff" stroke="#d97706" stroke-width="2"/>
+    <text x="180" y="30" text-anchor="middle" font-family="sans-serif" font-size="18" font-weight="700" fill="#92400e">步骤 2：缩放因子 (/ √d_k)</text>
+    <text x="180" y="56" text-anchor="middle" font-family="sans-serif" font-size="18" fill="#b45309">除以 √d_k 稳定大维度方差</text>
+  </g>
+
+  <!-- 连线箭头 2 -->
+  <path d="M 200 267 L 200 289" fill="none" stroke="#64748b" stroke-width="3"/>
+  <polygon points="193,289 200,299 207,289" fill="#64748b"/>
+
+  <!-- 步骤 3: Softmax 归一化 -->
+  <g transform="translate(20, 301)">
+    <rect x="0" y="0" width="360" height="74" rx="8" fill="#ffffff" stroke="#16a34a" stroke-width="2"/>
+    <text x="180" y="30" text-anchor="middle" font-family="sans-serif" font-size="18" font-weight="700" fill="#14532d">步骤 3：逐行 Softmax</text>
+    <text x="180" y="56" text-anchor="middle" font-family="sans-serif" font-size="18" fill="#15803d">得分转为非负权重（和为 1）</text>
+  </g>
+
+  <!-- 连线箭头 3 -->
+  <path d="M 200 375 L 200 397" fill="none" stroke="#64748b" stroke-width="3"/>
+  <polygon points="193,397 200,407 207,397" fill="#64748b"/>
+
+  <!-- 步骤 4: 与 V 加权求和 -->
+  <g transform="translate(20, 409)">
+    <rect x="0" y="0" width="360" height="96" rx="8" fill="#ffffff" stroke="#2563eb" stroke-width="2"/>
+    <text x="180" y="30" text-anchor="middle" font-family="sans-serif" font-size="18" font-weight="700" fill="#1e3a8a">步骤 4：与 Value 加权求和</text>
+    <text x="180" y="56" text-anchor="middle" font-family="sans-serif" font-size="18" fill="#1d4ed8">Output_3 ≈ 0.19·v_1</text>
+    <text x="180" y="82" text-anchor="middle" font-family="sans-serif" font-size="18" fill="#1d4ed8">+ 0.49·v_2 + 0.32·v_3</text>
+  </g>
+
+  <!-- 连线箭头 4 -->
+  <path d="M 200 505 L 200 523" fill="none" stroke="#64748b" stroke-width="3"/>
+  <polygon points="193,523 200,533 207,523" fill="#64748b"/>
+
+  <!-- 输出节点 -->
+  <g transform="translate(20, 535)">
+    <rect x="0" y="0" width="360" height="48" rx="8" fill="#f1f5f9" stroke="#475569" stroke-width="2"/>
+    <text x="180" y="32" text-anchor="middle" font-family="sans-serif" font-size="18" font-weight="700" fill="#0f172a">输出：融合上下文的表示向量</text>
+  </g>
+</svg>

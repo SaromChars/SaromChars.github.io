@@ -1,0 +1,77 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 380 580" width="100%" height="100%">
+  <title>Diffie-Hellman 密钥协商小数字算例示意</title>
+  <desc>教学示意图：展示 Alice 与 Bob 基于公开参数 p=23, g=5，各自生成私钥、计算公钥并公开交换，最终各自在本地独立算得共享秘密 2。私钥不直接发送，但本例数字过小，极易被枚举，不具备密码学安全性。</desc>
+  <defs>
+    <style>
+      .bg { fill: #f8fafc; }
+      .box { fill: #ffffff; stroke: #94a3b8; stroke-width: 1.5; rx: 8px; }
+      .param-box { fill: #f1f5f9; stroke: #64748b; stroke-width: 1.5; rx: 8px; }
+      .secret-box { fill: #ecfdf5; stroke: #10b981; stroke-width: 1.5; rx: 6px; }
+      .pub-box { fill: #eff6ff; stroke: #3b82f6; stroke-width: 1.5; rx: 6px; }
+      .res-box { fill: #fef3c7; stroke: #f59e0b; stroke-width: 2; rx: 6px; }
+      .warn-box { fill: #fff7ed; stroke: #ea580c; stroke-width: 1.5; rx: 6px; }
+      .title { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; font-size: 20px; font-weight: bold; fill: #0f172a; }
+      .h2 { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; font-size: 18.5px; font-weight: bold; fill: #1e293b; }
+      .text { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; font-size: 18px; fill: #334155; }
+      .code { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; font-size: 18.5px; font-weight: bold; fill: #0f172a; }
+      .warn-text { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; font-size: 18px; fill: #9a3412; }
+      .arrow { stroke: #2563eb; stroke-width: 2.5; marker-end: url(#blue-arr); }
+    </style>
+    <marker id="blue-arr" markerWidth="7" markerHeight="7" refX="6" refY="3.5" orient="auto">
+      <polygon points="0 0, 7 3.5, 0 7" fill="#2563eb" />
+    </marker>
+  </defs>
+
+  <!-- 整体浅色背景 -->
+  <rect width="380" height="580" class="bg" rx="10" />
+
+  <!-- 1. 公开参数 -->
+  <rect x="15" y="15" width="350" height="60" class="param-box" />
+  <text x="190" y="40" text-anchor="middle" class="h2">公开参数（信道公开可见）</text>
+  <text x="190" y="63" text-anchor="middle" class="code">p = 23,  g = 5</text>
+
+  <!-- 2. 本地挑选私钥 -->
+  <rect x="15" y="85" width="170" height="90" class="secret-box" />
+  <text x="100" y="112" text-anchor="middle" class="title">Alice</text>
+  <text x="100" y="137" text-anchor="middle" class="text">私钥保密(不外发)</text>
+  <text x="100" y="162" text-anchor="middle" class="code" style="fill:#047857;">x_a = 6</text>
+
+  <rect x="195" y="85" width="170" height="90" class="secret-box" />
+  <text x="280" y="112" text-anchor="middle" class="title">Bob</text>
+  <text x="280" y="137" text-anchor="middle" class="text">私钥保密(不外发)</text>
+  <text x="280" y="162" text-anchor="middle" class="code" style="fill:#047857;">x_b = 15</text>
+
+  <!-- 3. 计算公钥 -->
+  <rect x="15" y="185" width="170" height="75" class="pub-box" />
+  <text x="100" y="212" text-anchor="middle" class="text">本地计算公钥</text>
+  <text x="100" y="240" text-anchor="middle" class="code" style="fill:#1d4ed8;">y_a = 8</text>
+
+  <rect x="195" y="185" width="170" height="75" class="pub-box" />
+  <text x="280" y="212" text-anchor="middle" class="text">本地计算公钥</text>
+  <text x="280" y="240" text-anchor="middle" class="code" style="fill:#1d4ed8;">y_b = 19</text>
+
+  <!-- 4. 公开信道交换公钥 -->
+  <line x1="100" y1="265" x2="265" y2="295" class="arrow" />
+  <text x="210" y="280" class="code" style="fill:#1d4ed8;">发送 8 →</text>
+
+  <line x1="280" y1="310" x2="115" y2="340" class="arrow" />
+  <text x="75" y="325" class="code" style="fill:#1d4ed8;">← 发送 19</text>
+
+  <!-- 5. 本地独立计算共享秘密 -->
+  <rect x="15" y="345" width="170" height="90" class="res-box" />
+  <text x="100" y="372" text-anchor="middle" class="text">收到 y_b=19 后计算</text>
+  <text x="100" y="398" text-anchor="middle" class="code">19^6 mod 23</text>
+  <text x="100" y="424" text-anchor="middle" class="code" style="font-size:20px; fill:#b45309;">ZZ = 2</text>
+
+  <rect x="195" y="345" width="170" height="90" class="res-box" />
+  <text x="280" y="372" text-anchor="middle" class="text">收到 y_a=8 后计算</text>
+  <text x="280" y="398" text-anchor="middle" class="code">8^15 mod 23</text>
+  <text x="280" y="424" text-anchor="middle" class="code" style="font-size:20px; fill:#b45309;">ZZ = 2</text>
+
+  <!-- 6. 教学与安全界限提示 -->
+  <rect x="15" y="445" width="350" height="120" class="warn-box" />
+  <text x="190" y="473" text-anchor="middle" class="h2" style="fill:#9a3412;">教学示意边界提示</text>
+  <text x="25" y="503" class="warn-text">• 私钥不直接发送；</text>
+  <text x="25" y="529" class="warn-text">• 本例数字过小，由公开值可</text>
+  <text x="35" y="555" class="warn-text">  轻易枚举恢复，毫无安全性。</text>
+</svg>

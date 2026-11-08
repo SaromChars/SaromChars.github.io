@@ -1,0 +1,829 @@
+<!DOCTYPE html><html dir="ltr" lang="zh-CN" class="overflow-y-scroll scroll-smooth"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1"><link rel="icon" type="image/png" href="/images/favicon-32x32-next.png"><link rel="icon" href="/favicon.ico"><link rel="canonical" href="https://www.saromchars.tech/posts/browser-fingerprinting/"><meta name="generator" content="Astro v7.4.5"><!-- Primary meta --><title>浏览器指纹的原理与防御 | Sarom&#39;s Blog</title><meta name="title" content="浏览器指纹的原理与防御 | Sarom's Blog"><meta name="description" content="从信息熵与设备差异的测量方法出发，分析网络标头、Canvas、WebGL、音频与字体的指纹生成机制，探讨浏览器防御策略及指纹漂移对追踪有效性的约束。"><meta name="author" content="Sarom Chars"><link rel="sitemap" href="/sitemap-index.xml"><!-- Open Graph --><meta property="og:type" content="article"><meta property="og:site_name" content="Sarom's Blog"><meta property="og:title" content="浏览器指纹的原理与防御 | Sarom's Blog"><meta property="og:description" content="从信息熵与设备差异的测量方法出发，分析网络标头、Canvas、WebGL、音频与字体的指纹生成机制，探讨浏览器防御策略及指纹漂移对追踪有效性的约束。"><meta property="og:url" content="https://www.saromchars.tech/posts/browser-fingerprinting/"><meta property="og:image" content="https://www.saromchars.tech/og.png"><!-- Twitter / X --><meta property="twitter:card" content="summary_large_image"><meta property="twitter:url" content="https://www.saromchars.tech/posts/browser-fingerprinting/"><meta property="twitter:title" content="浏览器指纹的原理与防御 | Sarom's Blog"><meta property="twitter:description" content="从信息熵与设备差异的测量方法出发，分析网络标头、Canvas、WebGL、音频与字体的指纹生成机制，探讨浏览器防御策略及指纹漂移对追踪有效性的约束。"><meta property="twitter:image" content="https://www.saromchars.tech/og.png"><!-- RSS autodiscovery --><link rel="alternate" type="application/rss+xml" title="Sarom's Blog" href="https://www.saromchars.tech/rss.xml"><!-- Filled at runtime by theme.ts to match the current background colour --><meta name="theme-color" content=""><!-- Extra head content injected by child layouts (e.g. JSON-LD, article meta) --><meta property="article:published_time" content="2026-11-09T02:00:00.000Z"><script type="application/ld+json">{"@context":"https://schema.org","@type":"BlogPosting","headline":"浏览器指纹的原理与防御","mainEntityOfPage":"https://www.saromchars.tech/posts/browser-fingerprinting/","datePublished":"2026-11-09T02:00:00.000Z","author":[{"@type":"Person","name":"Sarom Chars","url":"https://github.com/SaromChars"}]}</script><!--
+      Inline FOUC-prevention script: sets data-theme on <html> before
+      the browser paints. Runs synchronously, no defer/async.
+    --><script>
+      (function () {
+        const stored = localStorage.getItem("theme");
+        const prefersDark = window.matchMedia(
+          "(prefers-color-scheme: dark)"
+        ).matches;
+        const theme = stored ?? (prefersDark ? "dark" : "light");
+        const root = document.firstElementChild;
+        root?.setAttribute("data-theme", theme);
+        root?.classList.toggle("dark", theme === "dark");
+        // Expose value so theme.ts can skip re-detection.
+        window.__theme = { value: theme };
+      })();
+    </script><meta name="robots" content="index, follow"><script async src="https://www.googletagmanager.com/gtag/js?id=G-WJJJTJ4FWX"></script><script>(function(){const measurementId = "G-WJJJTJ4FWX";
+
+    window.dataLayer = window.dataLayer || [];
+    function gtag(){ window.dataLayer.push(arguments); }
+    gtag('js', new Date());
+    gtag('config', measurementId);
+  })();</script><style>@keyframes astroFadeInOut{0%{opacity:1}to{opacity:0}}@keyframes astroFadeIn{0%{opacity:0;mix-blend-mode:plus-lighter}to{opacity:1;mix-blend-mode:plus-lighter}}@keyframes astroFadeOut{0%{opacity:1;mix-blend-mode:plus-lighter}to{opacity:0;mix-blend-mode:plus-lighter}}@keyframes astroSlideFromRight{0%{transform:translate(100%)}}@keyframes astroSlideFromLeft{0%{transform:translate(-100%)}}@keyframes astroSlideToRight{to{transform:translate(100%)}}@keyframes astroSlideToLeft{to{transform:translate(-100%)}}@media (prefers-reduced-motion){::view-transition-group(*),::view-transition-old(*),::view-transition-new(*),[data-astro-transition-scope]{animation:none!important}}
+</style><link rel="stylesheet" href="/_astro/Footer.wlxowfqU.css"><style>[data-astro-transition-scope="astro-bztu2lml-1"] { view-transition-name: \7F51\7EDC\5B89\5168; }@layer astro { ::view-transition-old(\7F51\7EDC\5B89\5168) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }::view-transition-new(\7F51\7EDC\5B89\5168) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }[data-astro-transition=back]::view-transition-old(\7F51\7EDC\5B89\5168) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition=back]::view-transition-new(\7F51\7EDC\5B89\5168) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; } }[data-astro-transition-fallback="old"] [data-astro-transition-scope="astro-bztu2lml-1"],
+			[data-astro-transition-fallback="old"][data-astro-transition-scope="astro-bztu2lml-1"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition-fallback="new"] [data-astro-transition-scope="astro-bztu2lml-1"],
+			[data-astro-transition-fallback="new"][data-astro-transition-scope="astro-bztu2lml-1"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }[data-astro-transition=back][data-astro-transition-fallback="old"] [data-astro-transition-scope="astro-bztu2lml-1"],
+			[data-astro-transition=back][data-astro-transition-fallback="old"][data-astro-transition-scope="astro-bztu2lml-1"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition=back][data-astro-transition-fallback="new"] [data-astro-transition-scope="astro-bztu2lml-1"],
+			[data-astro-transition=back][data-astro-transition-fallback="new"][data-astro-transition-scope="astro-bztu2lml-1"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }</style><style>[data-astro-transition-scope="astro-bztu2lml-2"] { view-transition-name: \8EAB\4EFD\8BA4\8BC1; }@layer astro { ::view-transition-old(\8EAB\4EFD\8BA4\8BC1) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }::view-transition-new(\8EAB\4EFD\8BA4\8BC1) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }[data-astro-transition=back]::view-transition-old(\8EAB\4EFD\8BA4\8BC1) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition=back]::view-transition-new(\8EAB\4EFD\8BA4\8BC1) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; } }[data-astro-transition-fallback="old"] [data-astro-transition-scope="astro-bztu2lml-2"],
+			[data-astro-transition-fallback="old"][data-astro-transition-scope="astro-bztu2lml-2"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition-fallback="new"] [data-astro-transition-scope="astro-bztu2lml-2"],
+			[data-astro-transition-fallback="new"][data-astro-transition-scope="astro-bztu2lml-2"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }[data-astro-transition=back][data-astro-transition-fallback="old"] [data-astro-transition-scope="astro-bztu2lml-2"],
+			[data-astro-transition=back][data-astro-transition-fallback="old"][data-astro-transition-scope="astro-bztu2lml-2"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition=back][data-astro-transition-fallback="new"] [data-astro-transition-scope="astro-bztu2lml-2"],
+			[data-astro-transition=back][data-astro-transition-fallback="new"][data-astro-transition-scope="astro-bztu2lml-2"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }</style></head><body class="bg-background font-app text-foreground selection:bg-accent/75 selection:text-accent-foreground flex min-h-svh flex-col"><a id="skip-to-content" href="#main-content" class="bg-background text-accent absolute inset-s-16 -top-full z-50 px-3 py-2 backdrop-blur-lg transition-all focus:top-4">跳到正文</a><header class="app-layout flex flex-col items-center justify-between sm:flex-row"><div class="border-border bg-background relative flex w-full items-baseline justify-between border-b py-4 sm:items-center sm:py-6"><a href="/" class="absolute py-1 text-xl leading-8 font-semibold whitespace-nowrap sm:static sm:my-auto sm:text-2xl sm:leading-none">Sarom&#39;s Blog</a><nav id="nav-menu" class="flex w-full flex-col items-center sm:ms-2 sm:flex-row sm:justify-end sm:space-x-4 sm:py-0"><button id="menu-btn" class="focus-outline self-end p-2 sm:hidden" aria-label="展开菜单" aria-expanded="false" aria-controls="menu-items" data-label-open="展开菜单" data-label-close="收起菜单"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="hidden" viewBox="0 0 24 24" id="close-icon"><path stroke="none" d="M0 0h24v24H0z" /><path d="M18 6 6 18M6 6l12 12" /></svg><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="icon icon-tabler icons-tabler-outline icon-tabler-menu-deep" viewBox="0 0 24 24" id="menu-icon"><path stroke="none" d="M0 0h24v24H0z" /><path d="M4 6h16M7 12h13M10 18h10" /></svg></button><ul id="menu-items" class="[&amp;&gt;li&gt;a]:hover:text-accent mt-4 hidden w-44 grid-cols-2 place-content-center gap-2 sm:mt-0 sm:flex sm:w-auto sm:gap-x-5 sm:gap-y-0 sm:[&amp;&gt;li]:h-8 [&amp;&gt;li&gt;a]:block [&amp;&gt;li&gt;a]:px-4 [&amp;&gt;li&gt;a]:py-3 [&amp;&gt;li&gt;a]:text-center [&amp;&gt;li&gt;a]:font-medium sm:[&amp;&gt;li&gt;a]:px-2 sm:[&amp;&gt;li&gt;a]:py-1"><li class="col-span-2"><a href="/posts/" class="active-nav">文章</a></li><li class="col-span-2"><a href="/tags/">标签</a></li><li class="col-span-2"><a href="/about/">关于</a></li><li class="col-span-2"><a href="/archives/" title="归档" aria-label="归档" class="group inline-flex items-center gap-1 hover:text-accent focus-outline flex size-full justify-center p-3 sm:relative sm:size-8 sm:p-0"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="hidden sm:absolute sm:top-1/2 sm:left-1/2 sm:block sm:size-6 sm:-translate-x-1/2 sm:-translate-y-1/2" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M3 6a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2 2 2 0 0 1-2 2H5a2 2 0 0 1-2-2M5 8v10a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8M10 12h4" /></svg><span class="sm:sr-only">归档</span></a></li><li class="col-span-1 flex items-center justify-center"><a href="/search/" title="搜索" aria-label="搜索" class="group inline-flex items-center gap-1 hover:text-accent focus-outline relative size-8"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="absolute top-1/2 left-1/2 size-6 -translate-x-1/2 -translate-y-1/2" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M3 10a7 7 0 1 0 14 0 7 7 0 1 0-14 0M21 21l-6-6" /></svg><span class="sr-only">搜索</span></a></li><li class="col-span-1 flex items-center justify-center"><button id="theme-btn" class="focus-outline hover:[&amp;&gt;svg]:stroke-accent relative size-12 p-4 sm:size-8" title="切换主题" aria-label="auto" aria-live="polite"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="absolute top-[50%] left-[50%] translate-[-50%] scale-100 rotate-0 transition-all dark:scale-0 dark:-rotate-90" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M12 3h.393a7.5 7.5 0 0 0 7.92 12.446A9 9 0 1 1 12 2.992z" /></svg><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="absolute top-[50%] left-[50%] translate-[-50%] scale-0 rotate-90 transition-all dark:scale-100 dark:rotate-0" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M14.828 14.828a4 4 0 1 0-5.656-5.656 4 4 0 0 0 5.656 5.656M6.343 17.657l-1.414 1.414M6.343 6.343 4.929 4.929M17.657 6.343l1.414-1.414M17.657 17.657l1.414 1.414M4 12H2M12 4V2M20 12h2M12 20v2" /></svg></button></li></ul></nav></div></header><script type="module">function e(){let e=document.querySelector(`#menu-btn`),t=document.querySelector(`#menu-items`),n=document.querySelector(`#menu-icon`),r=document.querySelector(`#close-icon`);if(!e||!t||!n||!r)return;let i=e.dataset.labelOpen??`Open menu`,a=e.dataset.labelClose??`Close menu`;e.addEventListener(`click`,()=>{let o=e.getAttribute(`aria-expanded`)===`true`;e.setAttribute(`aria-expanded`,o?`false`:`true`),e.setAttribute(`aria-label`,o?i:a),t.classList.toggle(`hidden`),t.classList.toggle(`grid`),n.classList.toggle(`hidden`),r.classList.toggle(`hidden`)})}function t(){let e=document.getElementById(`skip-to-content`);e&&e.addEventListener(`click`,e=>{if(e.defaultPrevented||e.metaKey||e.ctrlKey||e.shiftKey||e.button!==0)return;e.preventDefault();let t=document.getElementById(`main-content`);t&&(t.setAttribute(`tabindex`,`-1`),t.addEventListener(`blur`,()=>t.removeAttribute(`tabindex`),{once:!0}),t.focus(),t.scrollIntoView({behavior:`smooth`}))})}e(),document.addEventListener(`astro:after-swap`,e),t(),document.addEventListener(`astro:after-swap`,t);</script><div class="app-layout flex items-center justify-start"><a id="back-button" href="/" class="group inline-flex items-center gap-1 hover:text-accent focus-outline hover:text-foreground/75 -ms-2 mt-8 mb-2"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="inline-block size-6 rtl:rotate-180" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="m15 6-6 6 6 6" /></svg><span>返回</span></a></div><script type="module">function e(){let e=document.querySelector(`#back-button`),t=sessionStorage.getItem(`backUrl`);t&&e&&(e.href=t)}document.addEventListener(`astro:page-load`,e),e();</script><main id="main-content" class="app-layout" data-pagefind-body><h1 style="view-transition-name:browser-fingerprinting" class="text-accent inline-block text-2xl font-bold sm:text-3xl">浏览器指纹的原理与防御</h1><div class="my-2 flex items-center gap-2"><div class="text-muted-foreground flex flex-wrap items-center gap-x-2 gap-y-1"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="inline-block size-6 min-w-5.5" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M4 7a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2zM16 3v4M8 3v4M4 11h16M7 14h.013M10.01 14h.005M13.01 14h.005M16.015 14h.005M13.015 17h.005M7.01 17h.005M10.01 17h.005" /></svg><time class="text-sm sm:text-base" datetime="2026-11-09T02:00:00.000Z">2026年11月9日</time></div><span aria-hidden="true" class="text-muted-foreground max-sm:hidden hidden">|</span></div><article id="article" class="mt-8 w-full app-prose max-w-app prose-pre:bg-(--shiki-light-bg) dark:prose-pre:bg-(--shiki-dark-bg)"><p>传统的客户端状态追踪依赖保存在本地的持久化标识符，例如 Cookie、<code>localStorage</code> 或 IndexedDB。清除 Cookie 和站点数据可以重置部分持久状态，隐私窗口与存储分区（storage partitioning）也提供了不同范围的隔离机制。浏览器指纹（browser fingerprinting）则不依赖站点预先写入的持久标识符，服务端通过收集客户端在环境配置、操作系统、图形堆栈及音频实现中暴露的细微差异，将其组合映射为一个相对稳定的特征向量。<a href="#ref-w3c-fingerprinting">[W3C Fingerprinting Guidance §1.1]</a></p>
+<p>这种技术被广泛应用于反欺诈、机器人识别、风控检测以及跨站广告追踪。理解浏览器指纹的有效性与防御边界，需要从信息熵的度量模型出发，结合各层 Web 接口的实际差异与浏览器防御机制进行分析。</p>
+<h2 id="信息熵与特征度量">信息熵与特征度量</h2>
+<p>浏览器指纹的核心不是某个全局唯一的硬件序列号，而是由多个低辨识度特征组合而成的高辨识度向量。衡量特征区分能力的基础工具是香农熵（Shannon entropy）。</p>
+<p>设某个离散特征 <code>X</code> 具有 <code>n</code> 种可能的取值，每种取值的出现概率为 <code>P(x<sub>i</sub>)</code>，则该特征所包含的信息熵定义为：</p>
+<p align="center"><code>H(X) = -∑<sub>i=1</sub><sup>n</sup> P(x<sub>i</sub>) log<sub>2</sub> P(x<sub>i</sub>)</code></p>
+<p>熵的单位是比特（bit）。对于某个具体观测值 <code>x</code>，其自身的信息量为 <code>-log<sub>2</sub> P(x)</code>；取值越罕见，提供的信息量越大。当多个特征严格统计独立时，联合特征集的信息熵等于各独立特征熵的代数累加；但在实际浏览器环境中，由于 User-Agent、字体列表、Canvas 与 WebGL 均高度依赖底层操作系统与硬件，特征之间存在显著相关性，联合熵通常低于简单相加的数值。<a href="#ref-eckersley2010">[Eckersley 2010 §3]</a></p>
+<p>在 Peter Eckersley 针对 470,161 个浏览器样本的 Panopticlick 实验中，受测样本指纹分布熵的估计下界为 18.1 比特，样本唯一率为 83.6%。该实验明确指出受测群体存在技术人员偏多的自选择偏差，不能直接等同于现代大众浏览器的通用平均值。<a href="#ref-eckersley2010">[Eckersley 2010 §4]</a></p>
+<p>从编码空间来看，若要在规模为 <code>N</code> 的设备池中为每台设备分配固定长度的二进制代号，理论上需要 <code>⌈log<sub>2</sub>(N)⌉</code> 比特的地址空间（例如 <code>log<sub>2</sub>(10<sup>10</sup>) ≈ 33.2</code> 比特）。但这并不代表特征熵达到 33 比特便必然保证个体唯一：在各设备独立抽样且特征在 <code>M = 2<sup>H</sup></code> 个状态中完全均匀分布的简化假设下，某台特定设备在 <code>N</code> 台设备中不与任何其他设备重叠的概率仅为 <code>(1 - 1/M)<sup>N-1</sup></code>；当 <code>M ≈ N</code> 时，这一概率仅约为 <code>e<sup>-1</sup> ≈ 36.8%</code>。现实中特征分布的高度非均匀性，使得指纹仅能提供统计意义上的辨识能力，而非确定性的身份判定。</p>
+<h2 id="被动特征与客户端提示">被动特征与客户端提示</h2>
+<p>指纹特征通常分为被动采集（passive fingerprinting）与主动探测（active fingerprinting）。被动特征指不需要在客户端执行测量脚本、直接从网络请求元数据中提取的信息。<a href="#ref-w3c-fingerprinting">[W3C Fingerprinting Guidance §3]</a></p>
+<p>早期的典型被动特征包括 <code>User-Agent</code>、<code>Accept</code>、<code>Accept-Language</code> 与 <code>Accept-Encoding</code> 等 HTTP 请求标头。其中 <code>User-Agent</code> 字符串曾详细包含操作系统版本、CPU 架构、浏览器渲染引擎及补丁编号，泄露了大量系统信息。<a href="#ref-laperdrix2016">[Laperdrix 2016 §3]</a></p>
+<p>为了收敛被动信息泄露，Chromium 逐步推行了用户代理缩减（User-Agent reduction）策略，将桌面端操作系统版本字段固定为通用占位符，并将次版本号归零。<a href="#ref-chromium-ua-reduction">[Chromium UA Reduction]</a></p>
+<p>在支持的浏览器中，客户端提示（client hints，CH）被引入作为结构化替代方案。低熵提示（如包含品牌与主版本的 <code>Sec-CH-UA</code>、<code>Sec-CH-UA-Mobile</code>、<code>Sec-CH-UA-Platform</code>）默认在安全上下文中发送；高熵提示（如 <code>Sec-CH-UA-Model</code>、<code>Sec-CH-UA-Full-Version-List</code>）则需要服务端通过 <code>Accept-CH</code> 标头显式申请，并受权限策略（Permissions Policy）约束。此外，客户端脚本亦可通过 <code>navigator.userAgentData.getHighEntropyValues()</code> API 异步请求获取高熵值，该 JavaScript 调用并不强制依赖服务端预先下发响应头，但返回值仍受客户端策略限制。<a href="#ref-chromium-ua-reduction">[Chromium UA Reduction]</a></p>
+<h2 id="canvas-与图形管线的渲染差异">Canvas 与图形管线的渲染差异</h2>
+<p>在前端脚本主动探测中，画布指纹（canvas fingerprinting）是应用广泛的采集机制。Keaton Mowery 与 Hovav Shacham 在 2012 年的研究中证实，HTML5 <code>&#x3C;canvas></code> 在不同设备上执行相同的绘图指令时，最终输出存在细微但确定的像素级差异。<a href="#ref-mowery2012">[Mowery 2012 §1]</a></p>
+<p>探测脚本通常创建一个隐藏的 <code>&#x3C;canvas></code> 画布，绘制包含复杂字形、特定字体回退序列、连字（ligatures）、Emoji 以及带透明通道渐变色的图形。随后调用 <code>canvas.toDataURL()</code> 获取编码后的图片字符串，或调用 <code>ctx.getImageData()</code> 读取原始 RGBA 像素矩阵，再经由哈希函数（hash function）生成固定摘要。</p>
+<pre class="astro-code astro-code-themes min-light night-owl" style="--shiki-light:#24292eff;--shiki-dark:#d6deeb;--shiki-light-bg:#ffffff;--shiki-dark-bg:#011627; overflow-x: auto;--file-name-offset: -0.75rem;" tabindex="0" data-language="javascript"><code><span class="line"><span style="--shiki-light:#C2C3C5;--shiki-light-font-style:inherit;--shiki-dark:#637777;--shiki-dark-font-style:italic">// 画布指纹渲染数据提取示例</span></span>
+<span class="line"><span style="--shiki-light:#D32F2F;--shiki-dark:#C792EA">function</span><span style="--shiki-light:#6F42C1;--shiki-light-font-style:inherit;--shiki-dark:#82AAFF;--shiki-dark-font-style:italic"> getCanvasFingerprintData</span><span style="--shiki-light:#24292EFF;--shiki-dark:#D9F5DD">()</span><span style="--shiki-light:#24292EFF;--shiki-dark:#D6DEEB"> {</span></span>
+<span class="line"><span style="--shiki-light:#D32F2F;--shiki-dark:#C792EA">  const</span><span style="--shiki-light:#1976D2;--shiki-light-font-style:inherit;--shiki-dark:#82AAFF;--shiki-dark-font-style:italic"> canvas</span><span style="--shiki-light:#D32F2F;--shiki-dark:#C792EA"> =</span><span style="--shiki-light:#1976D2;--shiki-light-font-style:inherit;--shiki-dark:#7FDBCA;--shiki-dark-font-style:italic"> document</span><span style="--shiki-light:#6F42C1;--shiki-light-font-style:inherit;--shiki-dark:#C792EA;--shiki-dark-font-style:italic">.</span><span style="--shiki-light:#6F42C1;--shiki-light-font-style:inherit;--shiki-dark:#82AAFF;--shiki-dark-font-style:italic">createElement</span><span style="--shiki-light:#24292EFF;--shiki-dark:#D6DEEB">(</span><span style="--shiki-light:#22863A;--shiki-dark:#D9F5DD">"</span><span style="--shiki-light:#22863A;--shiki-dark:#ECC48D">canvas</span><span style="--shiki-light:#22863A;--shiki-dark:#D9F5DD">"</span><span style="--shiki-light:#24292EFF;--shiki-dark:#D6DEEB">);</span></span>
+<span class="line"><span style="--shiki-light:#1976D2;--shiki-light-font-style:inherit;--shiki-dark:#7FDBCA;--shiki-dark-font-style:italic">  canvas</span><span style="--shiki-light:#24292EFF;--shiki-light-font-style:inherit;--shiki-dark:#C792EA;--shiki-dark-font-style:italic">.</span><span style="--shiki-light:#24292EFF;--shiki-dark:#BAEBE2">width</span><span style="--shiki-light:#D32F2F;--shiki-dark:#C792EA"> =</span><span style="--shiki-light:#1976D2;--shiki-dark:#F78C6C"> 240</span><span style="--shiki-light:#24292EFF;--shiki-dark:#D6DEEB">;</span></span>
+<span class="line"><span style="--shiki-light:#1976D2;--shiki-light-font-style:inherit;--shiki-dark:#7FDBCA;--shiki-dark-font-style:italic">  canvas</span><span style="--shiki-light:#24292EFF;--shiki-light-font-style:inherit;--shiki-dark:#C792EA;--shiki-dark-font-style:italic">.</span><span style="--shiki-light:#24292EFF;--shiki-dark:#BAEBE2">height</span><span style="--shiki-light:#D32F2F;--shiki-dark:#C792EA"> =</span><span style="--shiki-light:#1976D2;--shiki-dark:#F78C6C"> 60</span><span style="--shiki-light:#24292EFF;--shiki-dark:#D6DEEB">;</span></span>
+<span class="line"><span style="--shiki-light:#D32F2F;--shiki-dark:#C792EA">  const</span><span style="--shiki-light:#1976D2;--shiki-light-font-style:inherit;--shiki-dark:#82AAFF;--shiki-dark-font-style:italic"> ctx</span><span style="--shiki-light:#D32F2F;--shiki-dark:#C792EA"> =</span><span style="--shiki-light:#1976D2;--shiki-light-font-style:inherit;--shiki-dark:#7FDBCA;--shiki-dark-font-style:italic"> canvas</span><span style="--shiki-light:#6F42C1;--shiki-light-font-style:inherit;--shiki-dark:#C792EA;--shiki-dark-font-style:italic">.</span><span style="--shiki-light:#6F42C1;--shiki-light-font-style:inherit;--shiki-dark:#82AAFF;--shiki-dark-font-style:italic">getContext</span><span style="--shiki-light:#24292EFF;--shiki-dark:#D6DEEB">(</span><span style="--shiki-light:#22863A;--shiki-dark:#D9F5DD">"</span><span style="--shiki-light:#22863A;--shiki-dark:#ECC48D">2d</span><span style="--shiki-light:#22863A;--shiki-dark:#D9F5DD">"</span><span style="--shiki-light:#24292EFF;--shiki-dark:#D6DEEB">);</span></span>
+<span class="line"><span style="--shiki-light:#D32F2F;--shiki-dark:#C792EA">  if</span><span style="--shiki-light:#24292EFF;--shiki-dark:#D6DEEB"> (</span><span style="--shiki-light:#D32F2F;--shiki-dark:#C792EA">!</span><span style="--shiki-light:#24292EFF;--shiki-dark:#D7DBE0">ctx</span><span style="--shiki-light:#24292EFF;--shiki-dark:#D6DEEB">) </span><span style="--shiki-light:#D32F2F;--shiki-light-font-style:inherit;--shiki-dark:#C792EA;--shiki-dark-font-style:italic">return</span><span style="--shiki-light:#1976D2;--shiki-dark:#FF5874"> null</span><span style="--shiki-light:#24292EFF;--shiki-dark:#D6DEEB">;</span></span>
+<span class="line"></span>
+<span class="line"><span style="--shiki-light:#C2C3C5;--shiki-light-font-style:inherit;--shiki-dark:#637777;--shiki-dark-font-style:italic">  // 绘制线性渐变几何背景</span></span>
+<span class="line"><span style="--shiki-light:#D32F2F;--shiki-dark:#C792EA">  const</span><span style="--shiki-light:#1976D2;--shiki-light-font-style:inherit;--shiki-dark:#82AAFF;--shiki-dark-font-style:italic"> gradient</span><span style="--shiki-light:#D32F2F;--shiki-dark:#C792EA"> =</span><span style="--shiki-light:#1976D2;--shiki-light-font-style:inherit;--shiki-dark:#7FDBCA;--shiki-dark-font-style:italic"> ctx</span><span style="--shiki-light:#6F42C1;--shiki-light-font-style:inherit;--shiki-dark:#C792EA;--shiki-dark-font-style:italic">.</span><span style="--shiki-light:#6F42C1;--shiki-light-font-style:inherit;--shiki-dark:#82AAFF;--shiki-dark-font-style:italic">createLinearGradient</span><span style="--shiki-light:#24292EFF;--shiki-dark:#D6DEEB">(</span><span style="--shiki-light:#1976D2;--shiki-dark:#F78C6C">0</span><span style="--shiki-light:#212121;--shiki-dark:#5F7E97">,</span><span style="--shiki-light:#1976D2;--shiki-dark:#F78C6C"> 0</span><span style="--shiki-light:#212121;--shiki-dark:#5F7E97">,</span><span style="--shiki-light:#1976D2;--shiki-light-font-style:inherit;--shiki-dark:#7FDBCA;--shiki-dark-font-style:italic"> canvas</span><span style="--shiki-light:#24292EFF;--shiki-light-font-style:inherit;--shiki-dark:#C792EA;--shiki-dark-font-style:italic">.</span><span style="--shiki-light:#24292EFF;--shiki-light-font-style:inherit;--shiki-dark:#BAEBE2;--shiki-dark-font-style:italic">width</span><span style="--shiki-light:#212121;--shiki-dark:#5F7E97">,</span><span style="--shiki-light:#1976D2;--shiki-light-font-style:inherit;--shiki-dark:#7FDBCA;--shiki-dark-font-style:italic"> canvas</span><span style="--shiki-light:#24292EFF;--shiki-light-font-style:inherit;--shiki-dark:#C792EA;--shiki-dark-font-style:italic">.</span><span style="--shiki-light:#24292EFF;--shiki-light-font-style:inherit;--shiki-dark:#BAEBE2;--shiki-dark-font-style:italic">height</span><span style="--shiki-light:#24292EFF;--shiki-dark:#D6DEEB">);</span></span>
+<span class="line"><span style="--shiki-light:#1976D2;--shiki-light-font-style:inherit;--shiki-dark:#7FDBCA;--shiki-dark-font-style:italic">  gradient</span><span style="--shiki-light:#6F42C1;--shiki-light-font-style:inherit;--shiki-dark:#C792EA;--shiki-dark-font-style:italic">.</span><span style="--shiki-light:#6F42C1;--shiki-light-font-style:inherit;--shiki-dark:#82AAFF;--shiki-dark-font-style:italic">addColorStop</span><span style="--shiki-light:#24292EFF;--shiki-dark:#D6DEEB">(</span><span style="--shiki-light:#1976D2;--shiki-dark:#F78C6C">0</span><span style="--shiki-light:#212121;--shiki-dark:#5F7E97">,</span><span style="--shiki-light:#22863A;--shiki-dark:#D9F5DD"> "</span><span style="--shiki-light:#22863A;--shiki-dark:#ECC48D">rgb(255, 0, 128)</span><span style="--shiki-light:#22863A;--shiki-dark:#D9F5DD">"</span><span style="--shiki-light:#24292EFF;--shiki-dark:#D6DEEB">);</span></span>
+<span class="line"><span style="--shiki-light:#1976D2;--shiki-light-font-style:inherit;--shiki-dark:#7FDBCA;--shiki-dark-font-style:italic">  gradient</span><span style="--shiki-light:#6F42C1;--shiki-light-font-style:inherit;--shiki-dark:#C792EA;--shiki-dark-font-style:italic">.</span><span style="--shiki-light:#6F42C1;--shiki-light-font-style:inherit;--shiki-dark:#82AAFF;--shiki-dark-font-style:italic">addColorStop</span><span style="--shiki-light:#24292EFF;--shiki-dark:#D6DEEB">(</span><span style="--shiki-light:#1976D2;--shiki-dark:#F78C6C">1</span><span style="--shiki-light:#212121;--shiki-dark:#5F7E97">,</span><span style="--shiki-light:#22863A;--shiki-dark:#D9F5DD"> "</span><span style="--shiki-light:#22863A;--shiki-dark:#ECC48D">rgb(0, 200, 255)</span><span style="--shiki-light:#22863A;--shiki-dark:#D9F5DD">"</span><span style="--shiki-light:#24292EFF;--shiki-dark:#D6DEEB">);</span></span>
+<span class="line"><span style="--shiki-light:#1976D2;--shiki-light-font-style:inherit;--shiki-dark:#7FDBCA;--shiki-dark-font-style:italic">  ctx</span><span style="--shiki-light:#24292EFF;--shiki-light-font-style:inherit;--shiki-dark:#C792EA;--shiki-dark-font-style:italic">.</span><span style="--shiki-light:#24292EFF;--shiki-dark:#BAEBE2">fillStyle</span><span style="--shiki-light:#D32F2F;--shiki-dark:#C792EA"> =</span><span style="--shiki-light:#24292EFF;--shiki-dark:#D7DBE0"> gradient</span><span style="--shiki-light:#24292EFF;--shiki-dark:#D6DEEB">;</span></span>
+<span class="line"><span style="--shiki-light:#1976D2;--shiki-light-font-style:inherit;--shiki-dark:#7FDBCA;--shiki-dark-font-style:italic">  ctx</span><span style="--shiki-light:#6F42C1;--shiki-light-font-style:inherit;--shiki-dark:#C792EA;--shiki-dark-font-style:italic">.</span><span style="--shiki-light:#6F42C1;--shiki-light-font-style:inherit;--shiki-dark:#82AAFF;--shiki-dark-font-style:italic">fillRect</span><span style="--shiki-light:#24292EFF;--shiki-dark:#D6DEEB">(</span><span style="--shiki-light:#1976D2;--shiki-dark:#F78C6C">0</span><span style="--shiki-light:#212121;--shiki-dark:#5F7E97">,</span><span style="--shiki-light:#1976D2;--shiki-dark:#F78C6C"> 0</span><span style="--shiki-light:#212121;--shiki-dark:#5F7E97">,</span><span style="--shiki-light:#1976D2;--shiki-light-font-style:inherit;--shiki-dark:#7FDBCA;--shiki-dark-font-style:italic"> canvas</span><span style="--shiki-light:#24292EFF;--shiki-light-font-style:inherit;--shiki-dark:#C792EA;--shiki-dark-font-style:italic">.</span><span style="--shiki-light:#24292EFF;--shiki-dark:#BAEBE2">width</span><span style="--shiki-light:#212121;--shiki-dark:#5F7E97">,</span><span style="--shiki-light:#1976D2;--shiki-light-font-style:inherit;--shiki-dark:#7FDBCA;--shiki-dark-font-style:italic"> canvas</span><span style="--shiki-light:#24292EFF;--shiki-light-font-style:inherit;--shiki-dark:#C792EA;--shiki-dark-font-style:italic">.</span><span style="--shiki-light:#24292EFF;--shiki-dark:#BAEBE2">height</span><span style="--shiki-light:#24292EFF;--shiki-dark:#D6DEEB">);</span></span>
+<span class="line"></span>
+<span class="line"><span style="--shiki-light:#C2C3C5;--shiki-light-font-style:inherit;--shiki-dark:#637777;--shiki-dark-font-style:italic">  // 绘制包含回退字体与透明度的文本</span></span>
+<span class="line"><span style="--shiki-light:#1976D2;--shiki-light-font-style:inherit;--shiki-dark:#7FDBCA;--shiki-dark-font-style:italic">  ctx</span><span style="--shiki-light:#24292EFF;--shiki-light-font-style:inherit;--shiki-dark:#C792EA;--shiki-dark-font-style:italic">.</span><span style="--shiki-light:#24292EFF;--shiki-dark:#BAEBE2">textBaseline</span><span style="--shiki-light:#D32F2F;--shiki-dark:#C792EA"> =</span><span style="--shiki-light:#22863A;--shiki-dark:#D9F5DD"> "</span><span style="--shiki-light:#22863A;--shiki-dark:#ECC48D">alphabetic</span><span style="--shiki-light:#22863A;--shiki-dark:#D9F5DD">"</span><span style="--shiki-light:#24292EFF;--shiki-dark:#D6DEEB">;</span></span>
+<span class="line"><span style="--shiki-light:#1976D2;--shiki-light-font-style:inherit;--shiki-dark:#7FDBCA;--shiki-dark-font-style:italic">  ctx</span><span style="--shiki-light:#24292EFF;--shiki-light-font-style:inherit;--shiki-dark:#C792EA;--shiki-dark-font-style:italic">.</span><span style="--shiki-light:#24292EFF;--shiki-dark:#BAEBE2">font</span><span style="--shiki-light:#D32F2F;--shiki-dark:#C792EA"> =</span><span style="--shiki-light:#22863A;--shiki-dark:#D9F5DD"> "</span><span style="--shiki-light:#22863A;--shiki-dark:#ECC48D">14px 'Arial', 'Times New Roman', sans-serif</span><span style="--shiki-light:#22863A;--shiki-dark:#D9F5DD">"</span><span style="--shiki-light:#24292EFF;--shiki-dark:#D6DEEB">;</span></span>
+<span class="line"><span style="--shiki-light:#1976D2;--shiki-light-font-style:inherit;--shiki-dark:#7FDBCA;--shiki-dark-font-style:italic">  ctx</span><span style="--shiki-light:#24292EFF;--shiki-light-font-style:inherit;--shiki-dark:#C792EA;--shiki-dark-font-style:italic">.</span><span style="--shiki-light:#24292EFF;--shiki-dark:#BAEBE2">fillStyle</span><span style="--shiki-light:#D32F2F;--shiki-dark:#C792EA"> =</span><span style="--shiki-light:#22863A;--shiki-dark:#D9F5DD"> "</span><span style="--shiki-light:#22863A;--shiki-dark:#ECC48D">rgba(0, 0, 0, 0.8)</span><span style="--shiki-light:#22863A;--shiki-dark:#D9F5DD">"</span><span style="--shiki-light:#24292EFF;--shiki-dark:#D6DEEB">;</span></span>
+<span class="line"><span style="--shiki-light:#1976D2;--shiki-light-font-style:inherit;--shiki-dark:#7FDBCA;--shiki-dark-font-style:italic">  ctx</span><span style="--shiki-light:#6F42C1;--shiki-light-font-style:inherit;--shiki-dark:#C792EA;--shiki-dark-font-style:italic">.</span><span style="--shiki-light:#6F42C1;--shiki-light-font-style:inherit;--shiki-dark:#82AAFF;--shiki-dark-font-style:italic">fillText</span><span style="--shiki-light:#24292EFF;--shiki-dark:#D6DEEB">(</span><span style="--shiki-light:#22863A;--shiki-dark:#D9F5DD">"</span><span style="--shiki-light:#22863A;--shiki-dark:#ECC48D">Fingerprint &#x3C;canvas> 1.0 😃 🏳️‍🌈</span><span style="--shiki-light:#22863A;--shiki-dark:#D9F5DD">"</span><span style="--shiki-light:#212121;--shiki-dark:#5F7E97">,</span><span style="--shiki-light:#1976D2;--shiki-dark:#F78C6C"> 10</span><span style="--shiki-light:#212121;--shiki-dark:#5F7E97">,</span><span style="--shiki-light:#1976D2;--shiki-dark:#F78C6C"> 30</span><span style="--shiki-light:#24292EFF;--shiki-dark:#D6DEEB">);</span></span>
+<span class="line"><span style="--shiki-light:#1976D2;--shiki-light-font-style:inherit;--shiki-dark:#7FDBCA;--shiki-dark-font-style:italic">  ctx</span><span style="--shiki-light:#24292EFF;--shiki-light-font-style:inherit;--shiki-dark:#C792EA;--shiki-dark-font-style:italic">.</span><span style="--shiki-light:#24292EFF;--shiki-dark:#BAEBE2">fillStyle</span><span style="--shiki-light:#D32F2F;--shiki-dark:#C792EA"> =</span><span style="--shiki-light:#22863A;--shiki-dark:#D9F5DD"> "</span><span style="--shiki-light:#22863A;--shiki-dark:#ECC48D">rgba(255, 255, 255, 0.7)</span><span style="--shiki-light:#22863A;--shiki-dark:#D9F5DD">"</span><span style="--shiki-light:#24292EFF;--shiki-dark:#D6DEEB">;</span></span>
+<span class="line"><span style="--shiki-light:#1976D2;--shiki-light-font-style:inherit;--shiki-dark:#7FDBCA;--shiki-dark-font-style:italic">  ctx</span><span style="--shiki-light:#6F42C1;--shiki-light-font-style:inherit;--shiki-dark:#C792EA;--shiki-dark-font-style:italic">.</span><span style="--shiki-light:#6F42C1;--shiki-light-font-style:inherit;--shiki-dark:#82AAFF;--shiki-dark-font-style:italic">fillText</span><span style="--shiki-light:#24292EFF;--shiki-dark:#D6DEEB">(</span><span style="--shiki-light:#22863A;--shiki-dark:#D9F5DD">"</span><span style="--shiki-light:#22863A;--shiki-dark:#ECC48D">Fingerprint &#x3C;canvas> 1.0 😃 🏳️‍🌈</span><span style="--shiki-light:#22863A;--shiki-dark:#D9F5DD">"</span><span style="--shiki-light:#212121;--shiki-dark:#5F7E97">,</span><span style="--shiki-light:#1976D2;--shiki-dark:#F78C6C"> 12</span><span style="--shiki-light:#212121;--shiki-dark:#5F7E97">,</span><span style="--shiki-light:#1976D2;--shiki-dark:#F78C6C"> 32</span><span style="--shiki-light:#24292EFF;--shiki-dark:#D6DEEB">);</span></span>
+<span class="line"></span>
+<span class="line"><span style="--shiki-light:#C2C3C5;--shiki-light-font-style:inherit;--shiki-dark:#637777;--shiki-dark-font-style:italic">  // 提取原始 RGBA 像素数据（避免 PNG 压缩实现的额外干扰）</span></span>
+<span class="line"><span style="--shiki-light:#D32F2F;--shiki-dark:#C792EA">  const</span><span style="--shiki-light:#1976D2;--shiki-light-font-style:inherit;--shiki-dark:#82AAFF;--shiki-dark-font-style:italic"> imageData</span><span style="--shiki-light:#D32F2F;--shiki-dark:#C792EA"> =</span><span style="--shiki-light:#1976D2;--shiki-light-font-style:inherit;--shiki-dark:#7FDBCA;--shiki-dark-font-style:italic"> ctx</span><span style="--shiki-light:#6F42C1;--shiki-light-font-style:inherit;--shiki-dark:#C792EA;--shiki-dark-font-style:italic">.</span><span style="--shiki-light:#6F42C1;--shiki-light-font-style:inherit;--shiki-dark:#82AAFF;--shiki-dark-font-style:italic">getImageData</span><span style="--shiki-light:#24292EFF;--shiki-dark:#D6DEEB">(</span><span style="--shiki-light:#1976D2;--shiki-dark:#F78C6C">0</span><span style="--shiki-light:#212121;--shiki-dark:#5F7E97">,</span><span style="--shiki-light:#1976D2;--shiki-dark:#F78C6C"> 0</span><span style="--shiki-light:#212121;--shiki-dark:#5F7E97">,</span><span style="--shiki-light:#1976D2;--shiki-light-font-style:inherit;--shiki-dark:#7FDBCA;--shiki-dark-font-style:italic"> canvas</span><span style="--shiki-light:#24292EFF;--shiki-light-font-style:inherit;--shiki-dark:#C792EA;--shiki-dark-font-style:italic">.</span><span style="--shiki-light:#24292EFF;--shiki-light-font-style:inherit;--shiki-dark:#BAEBE2;--shiki-dark-font-style:italic">width</span><span style="--shiki-light:#212121;--shiki-dark:#5F7E97">,</span><span style="--shiki-light:#1976D2;--shiki-light-font-style:inherit;--shiki-dark:#7FDBCA;--shiki-dark-font-style:italic"> canvas</span><span style="--shiki-light:#24292EFF;--shiki-light-font-style:inherit;--shiki-dark:#C792EA;--shiki-dark-font-style:italic">.</span><span style="--shiki-light:#24292EFF;--shiki-light-font-style:inherit;--shiki-dark:#BAEBE2;--shiki-dark-font-style:italic">height</span><span style="--shiki-light:#24292EFF;--shiki-dark:#D6DEEB">);</span></span>
+<span class="line"><span style="--shiki-light:#D32F2F;--shiki-light-font-style:inherit;--shiki-dark:#C792EA;--shiki-dark-font-style:italic">  return</span><span style="--shiki-light:#1976D2;--shiki-light-font-style:inherit;--shiki-dark:#7FDBCA;--shiki-dark-font-style:italic"> imageData</span><span style="--shiki-light:#24292EFF;--shiki-light-font-style:inherit;--shiki-dark:#C792EA;--shiki-dark-font-style:italic">.</span><span style="--shiki-light:#24292EFF;--shiki-dark:#BAEBE2">data</span><span style="--shiki-light:#24292EFF;--shiki-dark:#D6DEEB">; </span><span style="--shiki-light:#C2C3C5;--shiki-light-font-style:inherit;--shiki-dark:#637777;--shiki-dark-font-style:italic">// 生产环境通常对该字节数组计算哈希（如 SHA-256）</span></span>
+<span class="line"><span style="--shiki-light:#24292EFF;--shiki-dark:#D6DEEB">}</span></span></code></pre>
+<p>渲染结果之所以在不同设备上出现分歧，由底层多层图形软件与硬件因素共同导致：</p>
+<ol>
+<li><strong>字体文件与光栅化引擎：</strong> 不同操作系统所搭载的基础字体版本存在字形差异；Windows 的 DirectWrite、macOS 的 Core Text 以及 Linux 下基于 FreeType 的光栅化算法，在字形轮廓提取与微调（hinting）处理规则上各不相同。</li>
+<li><strong>抗锯齿与合成管线：</strong> 文本边缘平滑算法涉及灰度抗锯齿与特定次像素滤波。离屏画布虽然不一定会直接采用 LCD 次像素排布抗锯齿，但不同图形库在处理半透明通道混合与边缘 Alpha 衰减时存在计算偏差。</li>
+<li><strong>图形后端与计算精度：</strong> 浏览器可通过 Skia 等绘图库及不同平台后端，采用 CPU 或 GPU 路径完成绘制。不同硬件芯片与图形驱动在执行渐变插值与浮点光栅化时存在细微的舍入与实现差异。<a href="#ref-mowery2012">[Mowery 2012 §1]</a></li>
+</ol>
+<p>若使用 <code>toDataURL()</code>，浏览器内置 PNG 压缩器的实现差异也会叠加到最终字符串中；直接读取原始 RGBA 像素数组能更纯粹地反映渲染层面的特征。</p>
+<h2 id="webgl-与硬件参数查询">WebGL 与硬件参数查询</h2>
+<p>网页图形库（Web Graphics Library，WebGL）进一步扩展了图形层面的硬件探测能力。通过创建 WebGL 渲染上下文，脚本可以直接查询底层图形驱动暴露的硬件标识与计算参数。</p>
+<p>最常见的读取接口是 <code>WEBGL_debug_renderer_info</code> 扩展。调用该扩展定义的常量，可以获取经过驱动与浏览器处理后的显卡厂商与渲染器描述：<a href="#ref-webgl-debug-info">[Khronos WEBGL_debug_renderer_info]</a></p>
+<pre class="astro-code astro-code-themes min-light night-owl" style="--shiki-light:#24292eff;--shiki-dark:#d6deeb;--shiki-light-bg:#ffffff;--shiki-dark-bg:#011627; overflow-x: auto;--file-name-offset: -0.75rem;" tabindex="0" data-language="javascript"><code><span class="line"><span style="--shiki-light:#C2C3C5;--shiki-light-font-style:inherit;--shiki-dark:#637777;--shiki-dark-font-style:italic">// WebGL 描述字符串查询示例</span></span>
+<span class="line"><span style="--shiki-light:#D32F2F;--shiki-dark:#C792EA">function</span><span style="--shiki-light:#6F42C1;--shiki-light-font-style:inherit;--shiki-dark:#82AAFF;--shiki-dark-font-style:italic"> getWebGLInfo</span><span style="--shiki-light:#24292EFF;--shiki-dark:#D9F5DD">()</span><span style="--shiki-light:#24292EFF;--shiki-dark:#D6DEEB"> {</span></span>
+<span class="line"><span style="--shiki-light:#D32F2F;--shiki-dark:#C792EA">  const</span><span style="--shiki-light:#1976D2;--shiki-light-font-style:inherit;--shiki-dark:#82AAFF;--shiki-dark-font-style:italic"> canvas</span><span style="--shiki-light:#D32F2F;--shiki-dark:#C792EA"> =</span><span style="--shiki-light:#1976D2;--shiki-light-font-style:inherit;--shiki-dark:#7FDBCA;--shiki-dark-font-style:italic"> document</span><span style="--shiki-light:#6F42C1;--shiki-light-font-style:inherit;--shiki-dark:#C792EA;--shiki-dark-font-style:italic">.</span><span style="--shiki-light:#6F42C1;--shiki-light-font-style:inherit;--shiki-dark:#82AAFF;--shiki-dark-font-style:italic">createElement</span><span style="--shiki-light:#24292EFF;--shiki-dark:#D6DEEB">(</span><span style="--shiki-light:#22863A;--shiki-dark:#D9F5DD">"</span><span style="--shiki-light:#22863A;--shiki-dark:#ECC48D">canvas</span><span style="--shiki-light:#22863A;--shiki-dark:#D9F5DD">"</span><span style="--shiki-light:#24292EFF;--shiki-dark:#D6DEEB">);</span></span>
+<span class="line"><span style="--shiki-light:#D32F2F;--shiki-dark:#C792EA">  const</span><span style="--shiki-light:#1976D2;--shiki-light-font-style:inherit;--shiki-dark:#82AAFF;--shiki-dark-font-style:italic"> gl</span><span style="--shiki-light:#D32F2F;--shiki-dark:#C792EA"> =</span><span style="--shiki-light:#1976D2;--shiki-light-font-style:inherit;--shiki-dark:#7FDBCA;--shiki-dark-font-style:italic"> canvas</span><span style="--shiki-light:#6F42C1;--shiki-light-font-style:inherit;--shiki-dark:#C792EA;--shiki-dark-font-style:italic">.</span><span style="--shiki-light:#6F42C1;--shiki-light-font-style:inherit;--shiki-dark:#82AAFF;--shiki-dark-font-style:italic">getContext</span><span style="--shiki-light:#24292EFF;--shiki-dark:#D6DEEB">(</span><span style="--shiki-light:#22863A;--shiki-dark:#D9F5DD">"</span><span style="--shiki-light:#22863A;--shiki-dark:#ECC48D">webgl</span><span style="--shiki-light:#22863A;--shiki-dark:#D9F5DD">"</span><span style="--shiki-light:#24292EFF;--shiki-dark:#D6DEEB">)</span><span style="--shiki-light:#D32F2F;--shiki-dark:#C792EA"> ||</span><span style="--shiki-light:#1976D2;--shiki-light-font-style:inherit;--shiki-dark:#7FDBCA;--shiki-dark-font-style:italic"> canvas</span><span style="--shiki-light:#6F42C1;--shiki-light-font-style:inherit;--shiki-dark:#C792EA;--shiki-dark-font-style:italic">.</span><span style="--shiki-light:#6F42C1;--shiki-light-font-style:inherit;--shiki-dark:#82AAFF;--shiki-dark-font-style:italic">getContext</span><span style="--shiki-light:#24292EFF;--shiki-dark:#D6DEEB">(</span><span style="--shiki-light:#22863A;--shiki-dark:#D9F5DD">"</span><span style="--shiki-light:#22863A;--shiki-dark:#ECC48D">experimental-webgl</span><span style="--shiki-light:#22863A;--shiki-dark:#D9F5DD">"</span><span style="--shiki-light:#24292EFF;--shiki-dark:#D6DEEB">);</span></span>
+<span class="line"><span style="--shiki-light:#D32F2F;--shiki-dark:#C792EA">  if</span><span style="--shiki-light:#24292EFF;--shiki-dark:#D6DEEB"> (</span><span style="--shiki-light:#D32F2F;--shiki-dark:#C792EA">!</span><span style="--shiki-light:#24292EFF;--shiki-dark:#D7DBE0">gl</span><span style="--shiki-light:#24292EFF;--shiki-dark:#D6DEEB">) </span><span style="--shiki-light:#D32F2F;--shiki-light-font-style:inherit;--shiki-dark:#C792EA;--shiki-dark-font-style:italic">return</span><span style="--shiki-light:#1976D2;--shiki-dark:#FF5874"> null</span><span style="--shiki-light:#24292EFF;--shiki-dark:#D6DEEB">;</span></span>
+<span class="line"></span>
+<span class="line"><span style="--shiki-light:#D32F2F;--shiki-dark:#C792EA">  const</span><span style="--shiki-light:#1976D2;--shiki-light-font-style:inherit;--shiki-dark:#82AAFF;--shiki-dark-font-style:italic"> debugInfo</span><span style="--shiki-light:#D32F2F;--shiki-dark:#C792EA"> =</span><span style="--shiki-light:#1976D2;--shiki-light-font-style:inherit;--shiki-dark:#7FDBCA;--shiki-dark-font-style:italic"> gl</span><span style="--shiki-light:#6F42C1;--shiki-light-font-style:inherit;--shiki-dark:#C792EA;--shiki-dark-font-style:italic">.</span><span style="--shiki-light:#6F42C1;--shiki-light-font-style:inherit;--shiki-dark:#82AAFF;--shiki-dark-font-style:italic">getExtension</span><span style="--shiki-light:#24292EFF;--shiki-dark:#D6DEEB">(</span><span style="--shiki-light:#22863A;--shiki-dark:#D9F5DD">"</span><span style="--shiki-light:#22863A;--shiki-dark:#ECC48D">WEBGL_debug_renderer_info</span><span style="--shiki-light:#22863A;--shiki-dark:#D9F5DD">"</span><span style="--shiki-light:#24292EFF;--shiki-dark:#D6DEEB">);</span></span>
+<span class="line"><span style="--shiki-light:#D32F2F;--shiki-dark:#C792EA">  if</span><span style="--shiki-light:#24292EFF;--shiki-dark:#D6DEEB"> (</span><span style="--shiki-light:#D32F2F;--shiki-dark:#C792EA">!</span><span style="--shiki-light:#24292EFF;--shiki-dark:#D7DBE0">debugInfo</span><span style="--shiki-light:#24292EFF;--shiki-dark:#D6DEEB">) </span><span style="--shiki-light:#D32F2F;--shiki-light-font-style:inherit;--shiki-dark:#C792EA;--shiki-dark-font-style:italic">return</span><span style="--shiki-light:#1976D2;--shiki-dark:#FF5874"> null</span><span style="--shiki-light:#24292EFF;--shiki-dark:#D6DEEB">;</span></span>
+<span class="line"></span>
+<span class="line"><span style="--shiki-light:#D32F2F;--shiki-light-font-style:inherit;--shiki-dark:#C792EA;--shiki-dark-font-style:italic">  return</span><span style="--shiki-light:#24292EFF;--shiki-dark:#D6DEEB"> {</span></span>
+<span class="line"><span style="--shiki-light:#24292EFF;--shiki-dark:#D6DEEB">    vendor</span><span style="--shiki-light:#D32F2F;--shiki-dark:#D6DEEB">:</span><span style="--shiki-light:#1976D2;--shiki-light-font-style:inherit;--shiki-dark:#7FDBCA;--shiki-dark-font-style:italic"> gl</span><span style="--shiki-light:#6F42C1;--shiki-light-font-style:inherit;--shiki-dark:#C792EA;--shiki-dark-font-style:italic">.</span><span style="--shiki-light:#6F42C1;--shiki-light-font-style:inherit;--shiki-dark:#82AAFF;--shiki-dark-font-style:italic">getParameter</span><span style="--shiki-light:#24292EFF;--shiki-dark:#D6DEEB">(</span><span style="--shiki-light:#1976D2;--shiki-light-font-style:inherit;--shiki-dark:#7FDBCA;--shiki-dark-font-style:italic">debugInfo</span><span style="--shiki-light:#24292EFF;--shiki-light-font-style:inherit;--shiki-dark:#C792EA;--shiki-dark-font-style:italic">.</span><span style="--shiki-light:#1976D2;--shiki-dark:#82AAFF">UNMASKED_VENDOR_WEBGL</span><span style="--shiki-light:#24292EFF;--shiki-dark:#D6DEEB">)</span><span style="--shiki-light:#212121;--shiki-dark:#5F7E97">,</span></span>
+<span class="line"><span style="--shiki-light:#24292EFF;--shiki-dark:#D6DEEB">    renderer</span><span style="--shiki-light:#D32F2F;--shiki-dark:#D6DEEB">:</span><span style="--shiki-light:#1976D2;--shiki-light-font-style:inherit;--shiki-dark:#7FDBCA;--shiki-dark-font-style:italic"> gl</span><span style="--shiki-light:#6F42C1;--shiki-light-font-style:inherit;--shiki-dark:#C792EA;--shiki-dark-font-style:italic">.</span><span style="--shiki-light:#6F42C1;--shiki-light-font-style:inherit;--shiki-dark:#82AAFF;--shiki-dark-font-style:italic">getParameter</span><span style="--shiki-light:#24292EFF;--shiki-dark:#D6DEEB">(</span><span style="--shiki-light:#1976D2;--shiki-light-font-style:inherit;--shiki-dark:#7FDBCA;--shiki-dark-font-style:italic">debugInfo</span><span style="--shiki-light:#24292EFF;--shiki-light-font-style:inherit;--shiki-dark:#C792EA;--shiki-dark-font-style:italic">.</span><span style="--shiki-light:#1976D2;--shiki-dark:#82AAFF">UNMASKED_RENDERER_WEBGL</span><span style="--shiki-light:#24292EFF;--shiki-dark:#D6DEEB">)</span></span>
+<span class="line"><span style="--shiki-light:#24292EFF;--shiki-dark:#D6DEEB">  };</span></span>
+<span class="line"><span style="--shiki-light:#24292EFF;--shiki-dark:#D6DEEB">}</span></span></code></pre>
+<p>需要注意的是，该接口返回的并非操作系统内核底层的原始硬件寄存器值，而是经过操作系统、图形中间层（如 ANGLE）、软件虚拟化及浏览器隐私策略处理后的描述文本。<a href="#ref-laperdrix2016">[Laperdrix 2016 §3]</a></p>
+<p>除厂商字符串外，脚本还可以查询底层硬件支持的参数边界，例如通过 <code>gl.getShaderPrecisionFormat(gl.FRAGMENT_SHADER, gl.HIGH_FLOAT)</code> 查询片段着色器的精度范围（<code>rangeMin</code>、<code>rangeMax</code> 与 <code>precision</code>），或在 WebGL 2 上下文中查询多重采样支持（<code>MAX_SAMPLES</code>）。通过离屏帧缓冲区渲染三维模型并调用 <code>gl.readPixels()</code> 亦可捕获渲染差异，但 Pierre Laperdrix 等人在附录 B 中报告，其 three.js 测试会随窗口调整而改变渲染上下文尺寸，因此结果不够稳定；这说明渲染指纹需要严格控制画布、视口与上下文尺寸，该实验并未证明固定尺寸离屏渲染同样受窗口变化影响。<a href="#ref-laperdrix2016">[Laperdrix 2016 附录 B]</a></p>
+<h2 id="音频上下文与计算差异">音频上下文与计算差异</h2>
+<p>Web Audio API 同样可以被用于提取设备特征。音频指纹（audio fingerprinting）并不采集物理麦克风的输入，也不播放真实声音，而是测量数字信号处理在不同软件与计算架构下的浮点数运算表现。<a href="#ref-englehardt2016">[Englehardt 2016 §4]</a></p>
+<p>采集过程利用 <code>OfflineAudioContext</code>（离线音频上下文）。离线上下文直接在内存中执行音频信号处理，不受实时音频输出时钟的速率限制：</p>
+<pre class="astro-code astro-code-themes min-light night-owl" style="--shiki-light:#24292eff;--shiki-dark:#d6deeb;--shiki-light-bg:#ffffff;--shiki-dark-bg:#011627; overflow-x: auto;--file-name-offset: -0.75rem;" tabindex="0" data-language="javascript"><code><span class="line"><span style="--shiki-light:#C2C3C5;--shiki-light-font-style:inherit;--shiki-dark:#637777;--shiki-dark-font-style:italic">// 离线音频特征生成示意</span></span>
+<span class="line"><span style="--shiki-light:#D32F2F;--shiki-dark:#C792EA">function</span><span style="--shiki-light:#6F42C1;--shiki-light-font-style:inherit;--shiki-dark:#82AAFF;--shiki-dark-font-style:italic"> getAudioFingerprint</span><span style="--shiki-light:#24292EFF;--shiki-dark:#D9F5DD">(</span><span style="--shiki-light:#24292EFF;--shiki-dark:#D7DBE0">callback</span><span style="--shiki-light:#24292EFF;--shiki-dark:#D9F5DD">)</span><span style="--shiki-light:#24292EFF;--shiki-dark:#D6DEEB"> {</span></span>
+<span class="line"><span style="--shiki-light:#D32F2F;--shiki-dark:#C792EA">  const</span><span style="--shiki-light:#1976D2;--shiki-light-font-style:inherit;--shiki-dark:#82AAFF;--shiki-dark-font-style:italic"> AudioContext</span><span style="--shiki-light:#D32F2F;--shiki-dark:#C792EA"> =</span><span style="--shiki-light:#1976D2;--shiki-light-font-style:inherit;--shiki-dark:#7FDBCA;--shiki-dark-font-style:italic"> window</span><span style="--shiki-light:#24292EFF;--shiki-light-font-style:inherit;--shiki-dark:#C792EA;--shiki-dark-font-style:italic">.</span><span style="--shiki-light:#24292EFF;--shiki-light-font-style:inherit;--shiki-dark:#BAEBE2;--shiki-dark-font-style:italic">OfflineAudioContext</span><span style="--shiki-light:#D32F2F;--shiki-dark:#C792EA"> ||</span><span style="--shiki-light:#1976D2;--shiki-light-font-style:inherit;--shiki-dark:#7FDBCA;--shiki-dark-font-style:italic"> window</span><span style="--shiki-light:#24292EFF;--shiki-light-font-style:inherit;--shiki-dark:#C792EA;--shiki-dark-font-style:italic">.</span><span style="--shiki-light:#24292EFF;--shiki-light-font-style:inherit;--shiki-dark:#BAEBE2;--shiki-dark-font-style:italic">webkitOfflineAudioContext</span><span style="--shiki-light:#24292EFF;--shiki-dark:#D6DEEB">;</span></span>
+<span class="line"><span style="--shiki-light:#D32F2F;--shiki-dark:#C792EA">  if</span><span style="--shiki-light:#24292EFF;--shiki-dark:#D6DEEB"> (</span><span style="--shiki-light:#D32F2F;--shiki-dark:#C792EA">!</span><span style="--shiki-light:#24292EFF;--shiki-dark:#D7DBE0">AudioContext</span><span style="--shiki-light:#24292EFF;--shiki-dark:#D6DEEB">) </span><span style="--shiki-light:#D32F2F;--shiki-light-font-style:inherit;--shiki-dark:#C792EA;--shiki-dark-font-style:italic">return</span><span style="--shiki-light:#6F42C1;--shiki-light-font-style:inherit;--shiki-dark:#82AAFF;--shiki-dark-font-style:italic"> callback</span><span style="--shiki-light:#24292EFF;--shiki-dark:#D6DEEB">(</span><span style="--shiki-light:#1976D2;--shiki-dark:#FF5874">null</span><span style="--shiki-light:#24292EFF;--shiki-dark:#D6DEEB">);</span></span>
+<span class="line"></span>
+<span class="line"><span style="--shiki-light:#D32F2F;--shiki-dark:#C792EA">  const</span><span style="--shiki-light:#1976D2;--shiki-light-font-style:inherit;--shiki-dark:#82AAFF;--shiki-dark-font-style:italic"> context</span><span style="--shiki-light:#D32F2F;--shiki-dark:#C792EA"> =</span><span style="--shiki-light:#D32F2F;--shiki-dark:#7FDBCA"> new</span><span style="--shiki-light:#6F42C1;--shiki-light-font-style:inherit;--shiki-dark:#82AAFF;--shiki-dark-font-style:italic"> AudioContext</span><span style="--shiki-light:#24292EFF;--shiki-dark:#D6DEEB">(</span><span style="--shiki-light:#1976D2;--shiki-dark:#F78C6C">1</span><span style="--shiki-light:#212121;--shiki-dark:#5F7E97">,</span><span style="--shiki-light:#1976D2;--shiki-dark:#F78C6C"> 44100</span><span style="--shiki-light:#212121;--shiki-dark:#5F7E97">,</span><span style="--shiki-light:#1976D2;--shiki-dark:#F78C6C"> 44100</span><span style="--shiki-light:#24292EFF;--shiki-dark:#D6DEEB">);</span></span>
+<span class="line"><span style="--shiki-light:#D32F2F;--shiki-dark:#C792EA">  const</span><span style="--shiki-light:#1976D2;--shiki-light-font-style:inherit;--shiki-dark:#82AAFF;--shiki-dark-font-style:italic"> oscillator</span><span style="--shiki-light:#D32F2F;--shiki-dark:#C792EA"> =</span><span style="--shiki-light:#1976D2;--shiki-light-font-style:inherit;--shiki-dark:#7FDBCA;--shiki-dark-font-style:italic"> context</span><span style="--shiki-light:#6F42C1;--shiki-light-font-style:inherit;--shiki-dark:#C792EA;--shiki-dark-font-style:italic">.</span><span style="--shiki-light:#6F42C1;--shiki-light-font-style:inherit;--shiki-dark:#82AAFF;--shiki-dark-font-style:italic">createOscillator</span><span style="--shiki-light:#24292EFF;--shiki-dark:#D6DEEB">();</span></span>
+<span class="line"><span style="--shiki-light:#1976D2;--shiki-light-font-style:inherit;--shiki-dark:#7FDBCA;--shiki-dark-font-style:italic">  oscillator</span><span style="--shiki-light:#24292EFF;--shiki-light-font-style:inherit;--shiki-dark:#C792EA;--shiki-dark-font-style:italic">.</span><span style="--shiki-light:#24292EFF;--shiki-dark:#BAEBE2">type</span><span style="--shiki-light:#D32F2F;--shiki-dark:#C792EA"> =</span><span style="--shiki-light:#22863A;--shiki-dark:#D9F5DD"> "</span><span style="--shiki-light:#22863A;--shiki-dark:#ECC48D">triangle</span><span style="--shiki-light:#22863A;--shiki-dark:#D9F5DD">"</span><span style="--shiki-light:#24292EFF;--shiki-dark:#D6DEEB">;</span></span>
+<span class="line"><span style="--shiki-light:#1976D2;--shiki-light-font-style:inherit;--shiki-dark:#7FDBCA;--shiki-dark-font-style:italic">  oscillator</span><span style="--shiki-light:#6F42C1;--shiki-light-font-style:inherit;--shiki-dark:#C792EA;--shiki-dark-font-style:italic">.</span><span style="--shiki-light:#1976D2;--shiki-light-font-style:inherit;--shiki-dark:#FAF39F;--shiki-dark-font-style:italic">frequency</span><span style="--shiki-light:#6F42C1;--shiki-light-font-style:inherit;--shiki-dark:#C792EA;--shiki-dark-font-style:italic">.</span><span style="--shiki-light:#6F42C1;--shiki-light-font-style:inherit;--shiki-dark:#82AAFF;--shiki-dark-font-style:italic">setValueAtTime</span><span style="--shiki-light:#24292EFF;--shiki-dark:#D6DEEB">(</span><span style="--shiki-light:#1976D2;--shiki-dark:#F78C6C">10000</span><span style="--shiki-light:#212121;--shiki-dark:#5F7E97">,</span><span style="--shiki-light:#1976D2;--shiki-light-font-style:inherit;--shiki-dark:#7FDBCA;--shiki-dark-font-style:italic"> context</span><span style="--shiki-light:#24292EFF;--shiki-light-font-style:inherit;--shiki-dark:#C792EA;--shiki-dark-font-style:italic">.</span><span style="--shiki-light:#24292EFF;--shiki-dark:#BAEBE2">currentTime</span><span style="--shiki-light:#24292EFF;--shiki-dark:#D6DEEB">);</span></span>
+<span class="line"></span>
+<span class="line"><span style="--shiki-light:#D32F2F;--shiki-dark:#C792EA">  const</span><span style="--shiki-light:#1976D2;--shiki-light-font-style:inherit;--shiki-dark:#82AAFF;--shiki-dark-font-style:italic"> compressor</span><span style="--shiki-light:#D32F2F;--shiki-dark:#C792EA"> =</span><span style="--shiki-light:#1976D2;--shiki-light-font-style:inherit;--shiki-dark:#7FDBCA;--shiki-dark-font-style:italic"> context</span><span style="--shiki-light:#6F42C1;--shiki-light-font-style:inherit;--shiki-dark:#C792EA;--shiki-dark-font-style:italic">.</span><span style="--shiki-light:#6F42C1;--shiki-light-font-style:inherit;--shiki-dark:#82AAFF;--shiki-dark-font-style:italic">createDynamicsCompressor</span><span style="--shiki-light:#24292EFF;--shiki-dark:#D6DEEB">();</span></span>
+<span class="line"><span style="--shiki-light:#1976D2;--shiki-light-font-style:inherit;--shiki-dark:#7FDBCA;--shiki-dark-font-style:italic">  compressor</span><span style="--shiki-light:#6F42C1;--shiki-light-font-style:inherit;--shiki-dark:#C792EA;--shiki-dark-font-style:italic">.</span><span style="--shiki-light:#1976D2;--shiki-light-font-style:inherit;--shiki-dark:#FAF39F;--shiki-dark-font-style:italic">threshold</span><span style="--shiki-light:#6F42C1;--shiki-light-font-style:inherit;--shiki-dark:#C792EA;--shiki-dark-font-style:italic">.</span><span style="--shiki-light:#6F42C1;--shiki-light-font-style:inherit;--shiki-dark:#82AAFF;--shiki-dark-font-style:italic">setValueAtTime</span><span style="--shiki-light:#24292EFF;--shiki-dark:#D6DEEB">(</span><span style="--shiki-light:#D32F2F;--shiki-dark:#C792EA">-</span><span style="--shiki-light:#1976D2;--shiki-dark:#F78C6C">50</span><span style="--shiki-light:#212121;--shiki-dark:#5F7E97">,</span><span style="--shiki-light:#1976D2;--shiki-light-font-style:inherit;--shiki-dark:#7FDBCA;--shiki-dark-font-style:italic"> context</span><span style="--shiki-light:#24292EFF;--shiki-light-font-style:inherit;--shiki-dark:#C792EA;--shiki-dark-font-style:italic">.</span><span style="--shiki-light:#24292EFF;--shiki-dark:#BAEBE2">currentTime</span><span style="--shiki-light:#24292EFF;--shiki-dark:#D6DEEB">);</span></span>
+<span class="line"><span style="--shiki-light:#1976D2;--shiki-light-font-style:inherit;--shiki-dark:#7FDBCA;--shiki-dark-font-style:italic">  compressor</span><span style="--shiki-light:#6F42C1;--shiki-light-font-style:inherit;--shiki-dark:#C792EA;--shiki-dark-font-style:italic">.</span><span style="--shiki-light:#1976D2;--shiki-light-font-style:inherit;--shiki-dark:#FAF39F;--shiki-dark-font-style:italic">knee</span><span style="--shiki-light:#6F42C1;--shiki-light-font-style:inherit;--shiki-dark:#C792EA;--shiki-dark-font-style:italic">.</span><span style="--shiki-light:#6F42C1;--shiki-light-font-style:inherit;--shiki-dark:#82AAFF;--shiki-dark-font-style:italic">setValueAtTime</span><span style="--shiki-light:#24292EFF;--shiki-dark:#D6DEEB">(</span><span style="--shiki-light:#1976D2;--shiki-dark:#F78C6C">40</span><span style="--shiki-light:#212121;--shiki-dark:#5F7E97">,</span><span style="--shiki-light:#1976D2;--shiki-light-font-style:inherit;--shiki-dark:#7FDBCA;--shiki-dark-font-style:italic"> context</span><span style="--shiki-light:#24292EFF;--shiki-light-font-style:inherit;--shiki-dark:#C792EA;--shiki-dark-font-style:italic">.</span><span style="--shiki-light:#24292EFF;--shiki-dark:#BAEBE2">currentTime</span><span style="--shiki-light:#24292EFF;--shiki-dark:#D6DEEB">);</span></span>
+<span class="line"><span style="--shiki-light:#1976D2;--shiki-light-font-style:inherit;--shiki-dark:#7FDBCA;--shiki-dark-font-style:italic">  compressor</span><span style="--shiki-light:#6F42C1;--shiki-light-font-style:inherit;--shiki-dark:#C792EA;--shiki-dark-font-style:italic">.</span><span style="--shiki-light:#1976D2;--shiki-light-font-style:inherit;--shiki-dark:#FAF39F;--shiki-dark-font-style:italic">ratio</span><span style="--shiki-light:#6F42C1;--shiki-light-font-style:inherit;--shiki-dark:#C792EA;--shiki-dark-font-style:italic">.</span><span style="--shiki-light:#6F42C1;--shiki-light-font-style:inherit;--shiki-dark:#82AAFF;--shiki-dark-font-style:italic">setValueAtTime</span><span style="--shiki-light:#24292EFF;--shiki-dark:#D6DEEB">(</span><span style="--shiki-light:#1976D2;--shiki-dark:#F78C6C">12</span><span style="--shiki-light:#212121;--shiki-dark:#5F7E97">,</span><span style="--shiki-light:#1976D2;--shiki-light-font-style:inherit;--shiki-dark:#7FDBCA;--shiki-dark-font-style:italic"> context</span><span style="--shiki-light:#24292EFF;--shiki-light-font-style:inherit;--shiki-dark:#C792EA;--shiki-dark-font-style:italic">.</span><span style="--shiki-light:#24292EFF;--shiki-dark:#BAEBE2">currentTime</span><span style="--shiki-light:#24292EFF;--shiki-dark:#D6DEEB">);</span></span>
+<span class="line"><span style="--shiki-light:#1976D2;--shiki-light-font-style:inherit;--shiki-dark:#7FDBCA;--shiki-dark-font-style:italic">  compressor</span><span style="--shiki-light:#6F42C1;--shiki-light-font-style:inherit;--shiki-dark:#C792EA;--shiki-dark-font-style:italic">.</span><span style="--shiki-light:#1976D2;--shiki-light-font-style:inherit;--shiki-dark:#FAF39F;--shiki-dark-font-style:italic">attack</span><span style="--shiki-light:#6F42C1;--shiki-light-font-style:inherit;--shiki-dark:#C792EA;--shiki-dark-font-style:italic">.</span><span style="--shiki-light:#6F42C1;--shiki-light-font-style:inherit;--shiki-dark:#82AAFF;--shiki-dark-font-style:italic">setValueAtTime</span><span style="--shiki-light:#24292EFF;--shiki-dark:#D6DEEB">(</span><span style="--shiki-light:#1976D2;--shiki-dark:#F78C6C">0</span><span style="--shiki-light:#212121;--shiki-dark:#5F7E97">,</span><span style="--shiki-light:#1976D2;--shiki-light-font-style:inherit;--shiki-dark:#7FDBCA;--shiki-dark-font-style:italic"> context</span><span style="--shiki-light:#24292EFF;--shiki-light-font-style:inherit;--shiki-dark:#C792EA;--shiki-dark-font-style:italic">.</span><span style="--shiki-light:#24292EFF;--shiki-dark:#BAEBE2">currentTime</span><span style="--shiki-light:#24292EFF;--shiki-dark:#D6DEEB">);</span></span>
+<span class="line"><span style="--shiki-light:#1976D2;--shiki-light-font-style:inherit;--shiki-dark:#7FDBCA;--shiki-dark-font-style:italic">  compressor</span><span style="--shiki-light:#6F42C1;--shiki-light-font-style:inherit;--shiki-dark:#C792EA;--shiki-dark-font-style:italic">.</span><span style="--shiki-light:#1976D2;--shiki-light-font-style:inherit;--shiki-dark:#FAF39F;--shiki-dark-font-style:italic">release</span><span style="--shiki-light:#6F42C1;--shiki-light-font-style:inherit;--shiki-dark:#C792EA;--shiki-dark-font-style:italic">.</span><span style="--shiki-light:#6F42C1;--shiki-light-font-style:inherit;--shiki-dark:#82AAFF;--shiki-dark-font-style:italic">setValueAtTime</span><span style="--shiki-light:#24292EFF;--shiki-dark:#D6DEEB">(</span><span style="--shiki-light:#1976D2;--shiki-dark:#F78C6C">0.25</span><span style="--shiki-light:#212121;--shiki-dark:#5F7E97">,</span><span style="--shiki-light:#1976D2;--shiki-light-font-style:inherit;--shiki-dark:#7FDBCA;--shiki-dark-font-style:italic"> context</span><span style="--shiki-light:#24292EFF;--shiki-light-font-style:inherit;--shiki-dark:#C792EA;--shiki-dark-font-style:italic">.</span><span style="--shiki-light:#24292EFF;--shiki-dark:#BAEBE2">currentTime</span><span style="--shiki-light:#24292EFF;--shiki-dark:#D6DEEB">);</span></span>
+<span class="line"></span>
+<span class="line"><span style="--shiki-light:#1976D2;--shiki-light-font-style:inherit;--shiki-dark:#7FDBCA;--shiki-dark-font-style:italic">  oscillator</span><span style="--shiki-light:#6F42C1;--shiki-light-font-style:inherit;--shiki-dark:#C792EA;--shiki-dark-font-style:italic">.</span><span style="--shiki-light:#6F42C1;--shiki-light-font-style:inherit;--shiki-dark:#82AAFF;--shiki-dark-font-style:italic">connect</span><span style="--shiki-light:#24292EFF;--shiki-dark:#D6DEEB">(</span><span style="--shiki-light:#24292EFF;--shiki-dark:#D7DBE0">compressor</span><span style="--shiki-light:#24292EFF;--shiki-dark:#D6DEEB">);</span></span>
+<span class="line"><span style="--shiki-light:#1976D2;--shiki-light-font-style:inherit;--shiki-dark:#7FDBCA;--shiki-dark-font-style:italic">  compressor</span><span style="--shiki-light:#6F42C1;--shiki-light-font-style:inherit;--shiki-dark:#C792EA;--shiki-dark-font-style:italic">.</span><span style="--shiki-light:#6F42C1;--shiki-light-font-style:inherit;--shiki-dark:#82AAFF;--shiki-dark-font-style:italic">connect</span><span style="--shiki-light:#24292EFF;--shiki-dark:#D6DEEB">(</span><span style="--shiki-light:#1976D2;--shiki-light-font-style:inherit;--shiki-dark:#7FDBCA;--shiki-dark-font-style:italic">context</span><span style="--shiki-light:#24292EFF;--shiki-light-font-style:inherit;--shiki-dark:#C792EA;--shiki-dark-font-style:italic">.</span><span style="--shiki-light:#24292EFF;--shiki-dark:#BAEBE2">destination</span><span style="--shiki-light:#24292EFF;--shiki-dark:#D6DEEB">);</span></span>
+<span class="line"><span style="--shiki-light:#1976D2;--shiki-light-font-style:inherit;--shiki-dark:#7FDBCA;--shiki-dark-font-style:italic">  oscillator</span><span style="--shiki-light:#6F42C1;--shiki-light-font-style:inherit;--shiki-dark:#C792EA;--shiki-dark-font-style:italic">.</span><span style="--shiki-light:#6F42C1;--shiki-light-font-style:inherit;--shiki-dark:#82AAFF;--shiki-dark-font-style:italic">start</span><span style="--shiki-light:#24292EFF;--shiki-dark:#D6DEEB">(</span><span style="--shiki-light:#1976D2;--shiki-dark:#F78C6C">0</span><span style="--shiki-light:#24292EFF;--shiki-dark:#D6DEEB">);</span></span>
+<span class="line"></span>
+<span class="line"><span style="--shiki-light:#1976D2;--shiki-light-font-style:inherit;--shiki-dark:#7FDBCA;--shiki-dark-font-style:italic">  context</span><span style="--shiki-light:#6F42C1;--shiki-light-font-style:inherit;--shiki-dark:#C792EA;--shiki-dark-font-style:italic">.</span><span style="--shiki-light:#6F42C1;--shiki-light-font-style:inherit;--shiki-dark:#82AAFF;--shiki-dark-font-style:italic">startRendering</span><span style="--shiki-light:#24292EFF;--shiki-dark:#D6DEEB">()</span><span style="--shiki-light:#6F42C1;--shiki-light-font-style:inherit;--shiki-dark:#C792EA;--shiki-dark-font-style:italic">.</span><span style="--shiki-light:#6F42C1;--shiki-light-font-style:inherit;--shiki-dark:#82AAFF;--shiki-dark-font-style:italic">then</span><span style="--shiki-light:#24292EFF;--shiki-dark:#D6DEEB">(</span><span style="--shiki-light:#24292EFF;--shiki-dark:#D7DBE0">renderedBuffer</span><span style="--shiki-light:#D32F2F;--shiki-dark:#C792EA"> =></span><span style="--shiki-light:#24292EFF;--shiki-dark:#D6DEEB"> {</span></span>
+<span class="line"><span style="--shiki-light:#D32F2F;--shiki-dark:#C792EA">    const</span><span style="--shiki-light:#1976D2;--shiki-light-font-style:inherit;--shiki-dark:#82AAFF;--shiki-dark-font-style:italic"> channelData</span><span style="--shiki-light:#D32F2F;--shiki-dark:#C792EA"> =</span><span style="--shiki-light:#1976D2;--shiki-light-font-style:inherit;--shiki-dark:#7FDBCA;--shiki-dark-font-style:italic"> renderedBuffer</span><span style="--shiki-light:#6F42C1;--shiki-light-font-style:inherit;--shiki-dark:#C792EA;--shiki-dark-font-style:italic">.</span><span style="--shiki-light:#6F42C1;--shiki-light-font-style:inherit;--shiki-dark:#82AAFF;--shiki-dark-font-style:italic">getChannelData</span><span style="--shiki-light:#24292EFF;--shiki-dark:#D6DEEB">(</span><span style="--shiki-light:#1976D2;--shiki-dark:#F78C6C">0</span><span style="--shiki-light:#24292EFF;--shiki-dark:#D6DEEB">);</span></span>
+<span class="line"><span style="--shiki-light:#D32F2F;--shiki-dark:#C792EA">    let</span><span style="--shiki-light:#24292EFF;--shiki-dark:#D7DBE0"> checksum</span><span style="--shiki-light:#D32F2F;--shiki-dark:#C792EA"> =</span><span style="--shiki-light:#1976D2;--shiki-dark:#F78C6C"> 0</span><span style="--shiki-light:#24292EFF;--shiki-dark:#D6DEEB">;</span></span>
+<span class="line"><span style="--shiki-light:#C2C3C5;--shiki-light-font-style:inherit;--shiki-dark:#637777;--shiki-dark-font-style:italic">    // 追踪脚本经验选取的样本窗口</span></span>
+<span class="line"><span style="--shiki-light:#D32F2F;--shiki-light-font-style:inherit;--shiki-dark:#C792EA;--shiki-dark-font-style:italic">    for</span><span style="--shiki-light:#24292EFF;--shiki-dark:#D6DEEB"> (</span><span style="--shiki-light:#D32F2F;--shiki-dark:#C792EA">let</span><span style="--shiki-light:#24292EFF;--shiki-dark:#D7DBE0"> i</span><span style="--shiki-light:#D32F2F;--shiki-dark:#C792EA"> =</span><span style="--shiki-light:#1976D2;--shiki-dark:#F78C6C"> 4500</span><span style="--shiki-light:#24292EFF;--shiki-dark:#D6DEEB">; </span><span style="--shiki-light:#24292EFF;--shiki-dark:#D7DBE0">i</span><span style="--shiki-light:#D32F2F;--shiki-dark:#C792EA"> &#x3C;</span><span style="--shiki-light:#1976D2;--shiki-dark:#F78C6C"> 5000</span><span style="--shiki-light:#24292EFF;--shiki-dark:#D6DEEB">; </span><span style="--shiki-light:#24292EFF;--shiki-dark:#D7DBE0">i</span><span style="--shiki-light:#D32F2F;--shiki-dark:#C792EA">++</span><span style="--shiki-light:#24292EFF;--shiki-dark:#D6DEEB">) {</span></span>
+<span class="line"><span style="--shiki-light:#24292EFF;--shiki-dark:#D7DBE0">      checksum</span><span style="--shiki-light:#D32F2F;--shiki-dark:#C792EA"> +=</span><span style="--shiki-light:#1976D2;--shiki-light-font-style:inherit;--shiki-dark:#7FDBCA;--shiki-dark-font-style:italic"> Math</span><span style="--shiki-light:#6F42C1;--shiki-light-font-style:inherit;--shiki-dark:#C792EA;--shiki-dark-font-style:italic">.</span><span style="--shiki-light:#6F42C1;--shiki-light-font-style:inherit;--shiki-dark:#82AAFF;--shiki-dark-font-style:italic">abs</span><span style="--shiki-light:#24292EFF;--shiki-dark:#D6DEEB">(</span><span style="--shiki-light:#24292EFF;--shiki-dark:#D7DBE0">channelData</span><span style="--shiki-light:#24292EFF;--shiki-dark:#D6DEEB">[</span><span style="--shiki-light:#24292EFF;--shiki-dark:#D7DBE0">i</span><span style="--shiki-light:#24292EFF;--shiki-dark:#D6DEEB">]);</span></span>
+<span class="line"><span style="--shiki-light:#24292EFF;--shiki-dark:#D6DEEB">    }</span></span>
+<span class="line"><span style="--shiki-light:#6F42C1;--shiki-light-font-style:inherit;--shiki-dark:#82AAFF;--shiki-dark-font-style:italic">    callback</span><span style="--shiki-light:#24292EFF;--shiki-dark:#D6DEEB">(</span><span style="--shiki-light:#1976D2;--shiki-light-font-style:inherit;--shiki-dark:#7FDBCA;--shiki-dark-font-style:italic">checksum</span><span style="--shiki-light:#6F42C1;--shiki-light-font-style:inherit;--shiki-dark:#C792EA;--shiki-dark-font-style:italic">.</span><span style="--shiki-light:#6F42C1;--shiki-light-font-style:inherit;--shiki-dark:#82AAFF;--shiki-dark-font-style:italic">toString</span><span style="--shiki-light:#24292EFF;--shiki-dark:#D6DEEB">());</span></span>
+<span class="line"><span style="--shiki-light:#24292EFF;--shiki-dark:#D6DEEB">  })</span><span style="--shiki-light:#6F42C1;--shiki-light-font-style:inherit;--shiki-dark:#C792EA;--shiki-dark-font-style:italic">.</span><span style="--shiki-light:#6F42C1;--shiki-light-font-style:inherit;--shiki-dark:#82AAFF;--shiki-dark-font-style:italic">catch</span><span style="--shiki-light:#24292EFF;--shiki-dark:#D6DEEB">(</span><span style="--shiki-light:#24292EFF;--shiki-dark:#D9F5DD">()</span><span style="--shiki-light:#D32F2F;--shiki-dark:#C792EA"> =></span><span style="--shiki-light:#6F42C1;--shiki-light-font-style:inherit;--shiki-dark:#82AAFF;--shiki-dark-font-style:italic"> callback</span><span style="--shiki-light:#24292EFF;--shiki-dark:#D6DEEB">(</span><span style="--shiki-light:#1976D2;--shiki-dark:#FF5874">null</span><span style="--shiki-light:#24292EFF;--shiki-dark:#D6DEEB">));</span></span>
+<span class="line"><span style="--shiki-light:#24292EFF;--shiki-dark:#D6DEEB">}</span></span></code></pre>
+<p>不同浏览器的音频处理实现及其底层计算路径，可能产生细微的浮点输出差异。数学库、编译优化与处理器计算路径都可能参与其中；动态压缩器（<code>DynamicsCompressorNode</code>）在对非线性音频信号进行包络计算与增益缩放时，其内部计算会放大这种细微差异。最终渲染出的 PCM 原始波形在特定时间窗口内产生数值分歧，追踪脚本通常选取其中的一段样本窗口（如第 4500 至 5000 个采样点）累加生成特征校验和。<a href="#ref-englehardt2016">[Englehardt 2016 §4]</a></p>
+<h2 id="字体检测与文本度量">字体检测与文本度量</h2>
+<p>本地安装的字体集合在指纹特征中往往具有较高的区分度。普通系统仅配备默认字体，而安装了特定软件套件、专业设计工具或多语言支持的设备，会载入特有的字体子集。</p>
+<p>历史上，页面可通过 Flash 插件调用 <code>flash.text.Font.enumerateFonts(true)</code>，返回包含设备字体与嵌入字体的 <code>Font</code> 对象数组，再读取各对象的字体名称。在插件全面淘汰后，网页转而采用基于 CSS 回退文本度量（font metrics）的启发式检测技术。<a href="#ref-fifield2015">[Fifield 2015 §2]</a></p>
+<p>该技术的基本测量步骤如下：</p>
+<ol>
+<li>构造一个包含特定宽度敏感字符的基准字符串，设置较大字号。</li>
+<li>将该字符串分别声明为三种通用回退字体族（<code>monospace</code>、<code>sans-serif</code>、<code>serif</code>），放入保持布局的屏幕外隐藏容器中，记录基准宽度与高度（或使用 2D Canvas 的 <code>ctx.measureText()</code>）。注意，若设置 <code>display: none</code> 会使元素无法计算几何尺寸。</li>
+<li>当检测目标字体（如 <code>Consolas</code>）时，将样式设置为 <code>‘Consolas’, monospace</code>。</li>
+<li>若目标字体未安装，浏览器回退至通用字体族，测量尺寸与基准值一致；若目标字体已安装，文本尺寸通常会发生偏移。</li>
+</ol>
+<p>该方法属于启发式检测：不同字体在特定字符上可能具有相同的度量值，或者字符可能回退至其他系统字体，因此存在假阴性（False Negatives）与假阳性（False Positives）。此外，David Fifield 与 Serge Egelman 的研究主要论证了利用精细字符字形度量本身直接构建指纹的可行性，与暴力遍历字体字典存在方法论差异。<a href="#ref-fifield2015">[Fifield 2015 §3]</a></p>
+<h2 id="浏览器防御机制的技术路线">浏览器防御机制的技术路线</h2>
+<p>针对无状态特征收集，主流浏览器采取了不同的防御策略。这些策略通常不是互斥的阵营，各大浏览器往往根据自身定位组合使用：</p>
+<h3 id="1-统一化uniformity--bucketization">1. 统一化（Uniformity / Bucketization）</h3>
+<p>以 Tor 浏览器为代表。其核心目标是缩小群体内个体的差异范围，使同一环境下的用户呈现高度趋同的特征：<a href="#ref-tor-protections">[Tor Browser Fingerprinting Protections]</a></p>
+<ul>
+<li><strong>视口外边框（Letterboxing）：</strong> 将页面视口限制在离散的整百像素尺寸档位，窗口空白区域填充灰色边框，降低屏幕分辨率与窗口大小暴露的熵值。</li>
+<li><strong>环境归一化：</strong> 默认将时区汇报为 UTC，规范常用标头，并严格限制网页对非内置字体的访问。</li>
+<li><strong>敏感接口拦截：</strong> 当页面调用 Canvas 像素读取操作时，浏览器默认进行阻断或弹出用户授权提示。</li>
+</ul>
+<p>统一化能够显著降低特定特征的辨识度，但牺牲了一定程度的网页兼容性与用户体验。</p>
+<h3 id="2-确定性加噪farbling--randomization">2. 确定性加噪（Farbling / Randomization）</h3>
+<p>以 Brave 浏览器为代表。该方案不直接完全切断接口，而是通过在输出数据中注入微小扰动来破坏跨站追踪的有效性：<a href="#ref-brave-farbling">[Brave Fingerprinting Defenses 2.0]</a></p>
+<ul>
+<li><strong>会话与站点绑定加噪：</strong> 当脚本调用 <code>toDataURL</code>、<code>getImageData</code>、音频缓冲区或文本度量接口时，浏览器以当前会话密钥和顶层站点（eTLD+1）为种子生成伪随机偏移，轻微修改像素通道值或音频采样点。</li>
+<li><strong>平衡站内可用性：</strong> 同一站点在单次会话内反复读取相同的绘图结果，返回的数据保持确定一致，避免破坏游戏或在线图像编辑等正常业务；而在不同站点间，输出数据会随站点种子变化，降低了受保护特征的直接可关联性。</li>
+</ul>
+<h3 id="3-高熵接口收敛与权限化">3. 高熵接口收敛与权限化</h3>
+<p>主流商业浏览器（如 Apple Safari 与 Google Chrome）更多采取收窄高熵接口暴露面的策略：<a href="#ref-webkit-tracking-prevention">[WebKit Tracking Prevention]</a></p>
+<ul>
+<li><strong>接口限制与防护：</strong> WebKit 将 Battery Status API 列为因指纹、安全等考虑而尚未实现的功能；Chrome 自 103 起将该接口限制在安全上下文中，接口访问还可受 <code>battery</code> Permissions Policy 控制。<a href="#ref-webkit-tracking-prevention">[WebKit Tracking Prevention]</a> · <a href="#ref-chrome103-battery">[Chrome 103 Deprecations]</a></li>
+<li><strong>降低时序精度：</strong> 为了防范利用高精度时钟探测 CPU 缓存与执行时序的侧信道攻击，浏览器对 <code>performance.now()</code> 进行了截断与抖动处理。</li>
+<li><strong>字体与硬件访问控制：</strong> Safari 默认仅允许网页使用内置系统字体与已声明的 Web 字体，阻止对本地已安装字体的随意探测；各浏览器逐步将硬件信息转入受权限管控的机制中。</li>
+</ul>
+<h2 id="指纹漂移与对抗边界">指纹漂移与对抗边界</h2>
+<p>在实际应用中，浏览器指纹并非长期稳定不变的物理硬件标识，它面临着指纹漂移（fingerprint drift）与技术对抗的局限。</p>
+<p>指纹特征会随着用户日常操作发生渐进或突发改变：<a href="#ref-vastel2018">[Vastel 2018 §3]</a></p>
+<ol>
+<li><strong>软件升级与配置演进：</strong> 操作系统更新、显卡驱动更新以及浏览器版本的频繁迭代，都可能改变字体光栅化或图形驱动内部的微小计算行为，导致 Canvas 与音频的哈希值发生变更。</li>
+<li><strong>环境重配置：</strong> 接入外部显示器、调整系统缩放比例或安装新字体，可能改变屏幕、布局或字体相关的观测值，进而使包含这些特征的指纹发生变化。</li>
+<li><strong>有效生命周期：</strong> Antoine Vastel 等人在针对 FP-STALKER 的实测研究中指出，约有一半的受测浏览器实例在不到五天内便发生了至少一项指纹特征改变。虽然依靠基于规则的算法及结合机器学习的混合算法可将平均追踪时长延长至数十天，但纯粹基于静态特征等值匹配的追踪在长周期下会快速衰减。<a href="#ref-vastel2018">[Vastel 2018 §4]</a></li>
+</ol>
+<p>此外，第三方隐私保护扩展往往陷入自暴露矛盾。部分扩展尝试在页面上下文中对 <code>HTMLCanvasElement.prototype.toDataURL</code> 等原生方法进行运行时替换（monkey patching）。这种做法容易被检测脚本发现：例如通过检查方法是否丢失了原生代码标记，或检验属性描述符的配置细节。一旦防御工具本身的特征被脚本识别，这种罕见性本身反而构成了高辨识度的新特征。</p>
+<p>在跨浏览器追踪（cross-browser fingerprinting）领域，浏览器之间可能采用不同引擎、图形后端或配置，同一台物理机在不同浏览器下生成的 Canvas 与音频原始哈希通常并不一致。Yinzhi Cao 等人于 NDSS 2017 发表的研究证实，虽然可通过底层 OS 与硬件级特定任务构建跨浏览器的关联模型，但这依赖较为复杂的联合特征分析，单纯基于 Web 常用 API 的朴素哈希在跨浏览器场景下面临明确的有效边界。<a href="#ref-cao2017">[Cao 2017 §1]</a></p>
+<hr>
+<h2 id="参考资料">参考资料</h2>
+<ul>
+  <li>
+    <a id="ref-w3c-fingerprinting" href="https://www.w3.org/TR/2025/NOTE-fingerprinting-guidance-20250925/" target="_blank" rel="noopener noreferrer">W3C Fingerprinting Guidance: Mitigating Browser Fingerprinting in Web Specifications</a>
+    <br>Nick Doty, Tom Ritter. <em>W3C Group Note</em>, September 2025. 体系化阐述了无状态浏览器指纹的定义（§1.1）、特征暴露分类（§3）与规范设计中的隐私保护原则。
+  </li>
+  <li>
+    <a id="ref-eckersley2010" href="https://coveryourtracks.eff.org/static/browser-uniqueness.pdf" target="_blank" rel="noopener noreferrer">How Unique Is Your Web Browser? (Panopticlick)</a>
+    <br>Peter Eckersley. <em>PETS 2010</em>, July 2010. 运用香农信息熵量化了 47 万个浏览器样本的特征分布，分析了特征组合在样本集中的辨识度。
+  </li>
+  <li>
+    <a id="ref-mowery2012" href="https://hovav.net/ucsd/dist/canvas.pdf" target="_blank" rel="noopener noreferrer">Pixel Perfect: Fingerprinting Canvas in HTML5</a>
+    <br>Keaton Mowery, Hovav Shacham. <em>W2SP 2012</em>, May 2012. 提出了基于 HTML5 Canvas 的绘图指纹技术，分析了字体光栅化、抗锯齿算法与图形管线对输出像素的影响。
+  </li>
+  <li>
+    <a id="ref-laperdrix2016" href="https://inria.hal.science/hal-01285470/document" target="_blank" rel="noopener noreferrer">Beauty and the Beast: Diverting modern web browsers to build unique browser fingerprints</a>
+    <br>Pierre Laperdrix, Walter Rudametkin, Benoit Baudry. <em>IEEE S&#x26;P 2016</em>, May 2016. 大规模测量了现代桌面与移动端指纹分布，分析了 WebGL、字体与扩展特征的辨识能力及其实验局限。
+  </li>
+  <li>
+    <a id="ref-webgl-debug-info" href="https://registry.khronos.org/webgl/extensions/WEBGL_debug_renderer_info/" target="_blank" rel="noopener noreferrer">Khronos WebGL Extension: WEBGL_debug_renderer_info</a>
+    <br>Khronos Group. 规范了获取底层图形厂商与渲染器描述字符串的常量与查询流程。
+  </li>
+  <li>
+    <a id="ref-englehardt2016" href="https://webtransparency.cs.princeton.edu/webcensus/" target="_blank" rel="noopener noreferrer">Online Tracking: A 1-million-site Measurement and Analysis</a>
+    <br>Steven Englehardt, Arvind Narayanan. <em>ACM CCS 2016</em>, October 2016. 针对全球前一百万网站展开全量测绘，记录了 Canvas、Web Audio API 与各类无状态追踪技术的实际应用情况。
+  </li>
+  <li>
+    <a id="ref-fifield2015" href="https://www.bamsoftware.com/papers/fontfp.pdf" target="_blank" rel="noopener noreferrer">Fingerprinting Web Users Through Font Metrics</a>
+    <br>David Fifield, Serge Egelman. <em>Financial Cryptography and Data Security 2015</em>, January 2015. 论证了利用精细字符字形度量（font metrics）直接构建浏览器指纹的方法与信息熵分布。
+  </li>
+  <li>
+    <a id="ref-chromium-ua-reduction" href="https://www.chromium.org/updates/ua-reduction/" target="_blank" rel="noopener noreferrer">Chromium: User-Agent Reduction</a>
+    <br>Chromium Projects Documentation. 记录了冻结 User-Agent 字符串、引入结构化 Client Hints 以收敛被动信息暴露的设计方案。
+  </li>
+  <li>
+    <a id="ref-tor-protections" href="https://support.torproject.org/tor-browser/features/fingerprinting-protections/" target="_blank" rel="noopener noreferrer">Tor Browser: Fingerprinting Protections</a>
+    <br>Tor Project Support Documentation. 介绍了 Tor 浏览器在视口外边框（Letterboxing）、时区固定与字体控制方面的防护措施。
+  </li>
+  <li>
+    <a id="ref-brave-farbling" href="https://brave.com/privacy-updates/4-fingerprinting-defenses-2.0/" target="_blank" rel="noopener noreferrer">Fingerprinting Defenses 2.0 (Farbling)</a>
+    <br>Peter Snyder. <em>Brave Privacy Updates</em>, 2020. 介绍了基于会话与顶层站点注入伪随机微小扰动以破坏指纹跨站关联性的防御设计。
+  </li>
+  <li>
+    <a id="ref-webkit-tracking-prevention" href="https://webkit.org/tracking-prevention/" target="_blank" rel="noopener noreferrer">Tracking Prevention in WebKit</a>
+    <br>WebKit Engineering. 介绍了 Safari 在限制本地字体枚举、防范时序侧信道与收敛指纹接口方面的具体实现策略。
+  </li>
+  <li>
+    <a id="ref-chrome103-battery" href="https://developer.chrome.com/blog/deps-rems-103" target="_blank" rel="noopener noreferrer">Chrome 103: Deprecations and Removals (Battery Status API)</a>
+    <br>Chrome for Developers, June 2022. 记录了从 Chrome 103 开始将 Battery Status API 严格限制在安全上下文（HTTPS）中的变更策略。
+  </li>
+  <li>
+    <a id="ref-vastel2018" href="https://inria.hal.science/hal-01652021/" target="_blank" rel="noopener noreferrer">FP-STALKER: Tracking Browser Fingerprint Evolutions</a>
+    <br>Antoine Vastel, Pierre Laperdrix, Walter Rudametkin, Romain Rouvoy. <em>IEEE S&#x26;P 2018</em>, May 2018. 基于长期实测数据量化了指纹漂移的时间规律（§3），评估了规则与混合关联算法的追踪时长（§4）。
+  </li>
+  <li>
+    <a id="ref-cao2017" href="https://www.ndss-symposium.org/ndss2017/ndss-2017-programme/cross-browser-fingerprinting-os-and-hardware-level-features/" target="_blank" rel="noopener noreferrer">(Cross-)Browser Fingerprinting via OS and Hardware Level Features</a>
+    <br>Yinzhi Cao, Song Li, Erik Wijmans. <em>NDSS 2017</em>, February 2017. 研究了利用操作系统与硬件层面特征实现跨浏览器指纹识别的方法与限制条件。
+  </li>
+</ul></article><hr class="my-8 border-dashed"><div id="btt-btn-container" class="fixed inset-e-4 bottom-8 z-50 md:sticky md:inset-e-auto md:float-end md:me-1 translate-y-14 opacity-0 transition duration-500"><button data-button="back-to-top" class="group bg-background relative px-2 py-1 size-14 rounded-full shadow-xl md:h-8 md:w-fit md:rounded-md md:shadow-none md:focus-visible:rounded-none md:bg-background/35 md:bg-clip-padding md:backdrop-blur-lg"><span id="progress-indicator" class="absolute inset-0 -z-10 block size-14 scale-110 rounded-full bg-transparent md:hidden md:h-8 md:rounded-md"></span><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="inline-block rotate-90 md:hidden" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M5 12h14M5 12l6 6M5 12l6-6" /></svg><span class="group-hover:text-accent sr-only text-sm md:not-sr-only"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="inline-block size-4" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M12 5v14M16 9l-4-4M8 9l4-4" /></svg> 回到顶部</span></button></div><script data-astro-rerun>
+  function backToTop() {
+    const rootElement = document.documentElement;
+    const btnContainer = document.querySelector("#btt-btn-container");
+    const backToTopBtn = document.querySelector("[data-button='back-to-top']");
+    const progressIndicator = document.querySelector("#progress-indicator");
+
+    if (!rootElement || !btnContainer || !backToTopBtn || !progressIndicator)
+      return;
+
+    backToTopBtn.addEventListener("click", () => {
+      document.body.scrollTop = 0;
+      document.documentElement.scrollTop = 0;
+    });
+
+    let lastVisible = null;
+    function handleScroll() {
+      const scrollTotal = rootElement.scrollHeight - rootElement.clientHeight;
+      const scrollTop = rootElement.scrollTop;
+      const scrollPercent = Math.floor((scrollTop / scrollTotal) * 100);
+
+      progressIndicator.style.setProperty(
+        "background-image",
+        `conic-gradient(var(--accent), var(--accent) ${scrollPercent}%, transparent ${scrollPercent}%)`
+      );
+
+      const isVisible = scrollTop / scrollTotal > 0.3;
+
+      if (isVisible !== lastVisible) {
+        btnContainer.classList.toggle("opacity-100", isVisible);
+        btnContainer.classList.toggle("translate-y-0", isVisible);
+        btnContainer.classList.toggle("opacity-0", !isVisible);
+        btnContainer.classList.toggle("translate-y-14", !isVisible);
+        lastVisible = isVisible;
+      }
+    }
+
+    let ticking = false;
+    document.addEventListener("scroll", () => {
+      if (!ticking) {
+        window.requestAnimationFrame(() => {
+          handleScroll();
+          ticking = false;
+        });
+        ticking = true;
+      }
+    });
+  }
+  backToTop();
+</script><ul class="mt-4 mb-8 flex flex-wrap gap-4 sm:my-8"><li><a data-astro-transition-scope="astro-bztu2lml-1" href="/tags/网络安全/" class="flex items-center gap-0.5 border-foreground border-b-2 border-dashed hover:border-accent hover:text-accent hover:-mt-0.5 focus-visible:text-accent focus-visible:border-none text-sm"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="opacity-80 size-4" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M5 9h14M5 15h14M11 4 7 20M17 4l-4 16" /></svg>网络安全</a></li><li><a data-astro-transition-scope="astro-bztu2lml-2" href="/tags/身份认证/" class="flex items-center gap-0.5 border-foreground border-b-2 border-dashed hover:border-accent hover:text-accent hover:-mt-0.5 focus-visible:text-accent focus-visible:border-none text-sm"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="opacity-80 size-4" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M5 9h14M5 15h14M11 4 7 20M17 4l-4 16" /></svg>身份认证</a></li></ul><hr class="my-8 border-dashed"><div data-pagefind-ignore class="my-8 grid grid-cols-1 gap-6 sm:grid-cols-2"><a href="/posts/llm-system-design-tradeoffs/" class="flex w-full gap-1 hover:opacity-75"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="inline-block flex-none rtl:rotate-180" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M5 12h14M5 12l6 6M5 12l6-6" /></svg><div><span>上一篇</span><div class="text-accent/85 text-sm">模型、检索与验证的组合</div></div></a></div></main><footer class="app-layout mt-auto"><div class="border-border flex flex-col items-center justify-between border-t py-6 sm:flex-row-reverse sm:py-4"><div class="flex flex-wrap items-center gap-1"><a href="https://github.com/SaromChars" title="Sarom Chars 的 GitHub" class="group inline-flex items-center gap-1 hover:text-accent p-2 hover:rotate-6 sm:p-1"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="inline-block size-6 scale-125 fill-transparent stroke-current stroke-2 opacity-90 group-hover:fill-transparent sm:scale-110" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M9 19c-4.3 1.4-4.3-2.5-6-3m12 5v-3.5c0-1 .1-1.4-.5-2 2.8-.3 5.5-1.4 5.5-6a4.6 4.6 0 0 0-1.3-3.2 4.2 4.2 0 0 0-.1-3.2s-1.1-.3-3.5 1.3a12.3 12.3 0 0 0-6.2 0C6.5 2.8 5.4 3.1 5.4 3.1a4.2 4.2 0 0 0-.1 3.2A4.6 4.6 0 0 0 4 9.5c0 4.6 2.7 5.7 5.5 6-.6.6-.6 1.2-.5 2V21" /></svg><span class="sr-only">Sarom Chars 的 GitHub</span></a></div><div class="my-2 flex flex-col items-center whitespace-nowrap sm:flex-row"><span>版权 &#169; 2026</span><span class="hidden sm:inline">&nbsp;|&nbsp;</span><span>保留所有权利。</span></div></div></footer><script type="module">var e=`theme`,t=`light`,n=`dark`;function r(){return localStorage.getItem(e)||(window.matchMedia(`(prefers-color-scheme: dark)`).matches?n:t)}var i=window.__theme?.value??r();function a(){localStorage.setItem(e,i),o()}function o(){let e=document.firstElementChild;e?.setAttribute(`data-theme`,i),e?.classList.toggle(`dark`,i===n),document.querySelector(`#theme-btn`)?.setAttribute(`aria-label`,i);let t=window.getComputedStyle(document.body).backgroundColor;document.querySelector(`meta[name='theme-color']`)?.setAttribute(`content`,t)}function s(){o(),document.querySelector(`#theme-btn`)?.addEventListener(`click`,()=>{i=i===t?n:t,a()})}s(),document.addEventListener(`astro:after-swap`,s),document.addEventListener(`astro:before-swap`,e=>{let t=document.querySelector(`meta[name='theme-color']`)?.getAttribute(`content`);t&&e.newDocument.querySelector(`meta[name='theme-color']`)?.setAttribute(`content`,t)}),window.matchMedia(`(prefers-color-scheme: dark)`).addEventListener(`change`,({matches:e})=>{i=e?n:t,a()});</script></body></html><script type="module">var e=document.querySelector(`#article`);if(e?.querySelector(`a[href^="#ref-"]`)){let t=null,n=!1,r=document.createElement(`button`);r.type=`button`,r.className=`citation-return`,r.textContent=`返回阅读位置`,r.setAttribute(`data-pagefind-ignore`,``),e.addEventListener(`click`,n=>{if(n.button!==0||n.metaKey||n.ctrlKey||n.shiftKey||n.altKey)return;let i=n.target instanceof Element?n.target.closest(`a[href^="#ref-"]`):null;if(!i||!e.contains(i))return;let a=i.hash,o=document.getElementById(decodeURIComponent(a.slice(1)));o&&e.contains(o)&&(t={source:i,url:window.location.href,top:window.scrollY,left:window.scrollX,targetHash:a},o.insertAdjacentElement(`afterend`,r))}),r.addEventListener(`click`,()=>{if(!t||n)return;let e=t,i=i=>{r.remove(),window.requestAnimationFrame(()=>{window.requestAnimationFrame(()=>{e.source.focus({preventScroll:!0}),window.scrollTo({top:e.top,left:e.left,behavior:`instant`}),t=null,n=!1,i?.()})})};window.location.href===e.url?i():(n=!0,window.addEventListener(`popstate`,()=>{let e=window.history.scrollRestoration;window.history.scrollRestoration=`manual`,window.setTimeout(()=>{i(()=>{window.history.scrollRestoration=e})},0)},{once:!0}),window.history.back())}),window.addEventListener(`hashchange`,()=>{!n&&t&&window.location.hash!==t.targetHash&&(r.remove(),t=null)})}</script><script data-astro-rerun>
+  function createProgressBar() {
+    const progressContainer = document.createElement("div");
+    progressContainer.className =
+      "progress-container fixed top-0 z-10 h-1 w-full bg-background";
+
+    const progressBar = document.createElement("div");
+    progressBar.className = "progress-bar h-1 w-0 bg-accent";
+    progressBar.id = "myBar";
+
+    progressContainer.appendChild(progressBar);
+    document.body.appendChild(progressContainer);
+  }
+  createProgressBar();
+
+  function updateScrollProgress() {
+    document.addEventListener("scroll", () => {
+      const winScroll =
+        document.body.scrollTop || document.documentElement.scrollTop;
+      const height =
+        document.documentElement.scrollHeight -
+        document.documentElement.clientHeight;
+      const scrolled = (winScroll / height) * 100;
+      if (document) {
+        const myBar = document.getElementById("myBar");
+        if (myBar) {
+          myBar.style.width = scrolled + "%";
+        }
+      }
+    });
+  }
+  updateScrollProgress();
+
+  function addHeadingLinks() {
+    const headings = Array.from(
+      document.querySelectorAll("h2, h3, h4, h5, h6")
+    );
+    for (const heading of headings) {
+      heading.classList.add("group");
+      const link = document.createElement("a");
+      link.className =
+        "heading-link ms-2 no-underline opacity-75 md:opacity-0 md:group-hover:opacity-100 md:focus:opacity-100";
+      link.href = "#" + heading.id;
+
+      const span = document.createElement("span");
+      span.ariaHidden = "true";
+      span.innerText = "#";
+      link.appendChild(span);
+      heading.appendChild(link);
+    }
+  }
+  addHeadingLinks();
+
+  function attachCopyButtons() {
+    const copyButtonLabel = "Copy";
+    const codeBlocks = Array.from(document.querySelectorAll("pre"));
+
+    for (const codeBlock of codeBlocks) {
+      const wrapper = document.createElement("div");
+      wrapper.style.position = "relative";
+
+      const computedStyle = getComputedStyle(codeBlock);
+      const hasFileNameOffset =
+        computedStyle.getPropertyValue("--file-name-offset").trim() !== "";
+
+      const topClass = hasFileNameOffset
+        ? "top-(--file-name-offset)"
+        : "-top-3";
+
+      const copyButton = document.createElement("button");
+      copyButton.className = `copy-code absolute end-3 ${topClass} rounded bg-muted border border-muted px-2 py-1 text-xs leading-4 text-foreground font-medium`;
+      copyButton.innerHTML = copyButtonLabel;
+      codeBlock.setAttribute("tabindex", "0");
+      codeBlock.appendChild(copyButton);
+
+      codeBlock?.parentNode?.insertBefore(wrapper, codeBlock);
+      wrapper.appendChild(codeBlock);
+
+      copyButton.addEventListener("click", async () => {
+        await copyCode(codeBlock, copyButton);
+      });
+    }
+
+    async function copyCode(block, button) {
+      const code = block.querySelector("code");
+      const text = code?.innerText;
+
+      await navigator.clipboard.writeText(text ?? "");
+
+      button.innerText = "Copied";
+
+      setTimeout(() => {
+        button.innerText = copyButtonLabel;
+      }, 700);
+    }
+  }
+  attachCopyButtons();
+
+  /** Accessible image lightbox for article images. */
+  function initLightbox() {
+    const article = document.getElementById("article");
+    if (!article) return;
+
+    const prefersReducedMotion = () =>
+      window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+    let overlay = null;
+    let lastFocused = null;
+    let removeDragListeners = null;
+
+    // Defer attribute mutations so they don't push the LCP timestamp.
+    // Event listeners below use delegation and don't need the attributes to exist yet.
+    requestAnimationFrame(() => {
+      const images = Array.from(article.querySelectorAll("img"));
+      for (const image of images) {
+        if (image.closest("a")) continue;
+        image.setAttribute("role", "button");
+        image.setAttribute("tabindex", "0");
+        image.setAttribute("aria-haspopup", "dialog");
+        image.setAttribute(
+          "aria-label",
+          image.alt ? `Zoom image: ${image.alt}` : "Zoom image"
+        );
+      }
+    });
+
+    function open(src, alt, trigger) {
+      if (overlay) return;
+      lastFocused = trigger ?? document.activeElement;
+
+      overlay = document.createElement("div");
+      overlay.setAttribute("role", "dialog");
+      overlay.setAttribute("aria-modal", "true");
+      overlay.setAttribute(
+        "aria-label",
+        alt ? `Image preview: ${alt}` : "Image preview"
+      );
+      overlay.className =
+        "fixed inset-0 z-50 flex cursor-zoom-out items-center justify-center bg-black/70 backdrop-blur-sm opacity-0 transition-opacity duration-200 motion-reduce:transition-none";
+
+      const closeButton = document.createElement("button");
+      closeButton.type = "button";
+      closeButton.setAttribute("aria-label", "Close image preview");
+      closeButton.className =
+        "absolute end-4 top-4 z-1 flex size-11 items-center justify-center rounded bg-black/50 text-3xl leading-none text-white";
+      closeButton.innerHTML = "&#10005;";
+      closeButton.addEventListener("click", close);
+
+      const image = document.createElement("img");
+      image.src = src;
+      image.alt = "";
+      image.className =
+        "max-h-[90dvh] max-w-[90dvw] cursor-default object-contain transition-transform duration-100 ease-out motion-reduce:transition-none data-[zoom=drag]:cursor-grabbing data-[zoom=drag]:transition-none data-[zoom=in]:cursor-grab";
+
+      overlay.append(closeButton, image);
+      overlay.addEventListener("click", e => {
+        if (e.target === overlay && currentScale <= 1) close();
+      });
+
+      let currentScale = 1;
+      let translateX = 0;
+      let translateY = 0;
+      let initialDist = 0;
+      let initialScale = 1;
+      let panStartX = 0;
+      let panStartY = 0;
+      let panStartTranslateX = 0;
+      let panStartTranslateY = 0;
+      let lastTapTime = 0;
+
+      function applyTransform() {
+        image.style.transform = `scale(${currentScale}) translate(${translateX}px, ${translateY}px)`;
+        // A backdrop click only closes at fit size, so drop the zoom-out cursor while zoomed.
+        overlay?.classList.toggle("cursor-zoom-out", currentScale <= 1);
+      }
+
+      function resetTransform() {
+        currentScale = 1;
+        translateX = 0;
+        translateY = 0;
+        image.style.transform = "";
+        image.removeAttribute("data-zoom");
+        overlay?.classList.add("cursor-zoom-out");
+      }
+
+      // Keep the zoomed image from being panned past its edges.
+      function clampTranslate() {
+        if (!overlay) return;
+        const maxX = Math.max(
+          0,
+          (image.clientWidth - overlay.clientWidth / currentScale) / 2
+        );
+        const maxY = Math.max(
+          0,
+          (image.clientHeight - overlay.clientHeight / currentScale) / 2
+        );
+        translateX = Math.min(maxX, Math.max(-maxX, translateX));
+        translateY = Math.min(maxY, Math.max(-maxY, translateY));
+      }
+
+      overlay.addEventListener(
+        "touchstart",
+        e => {
+          const t = e.touches;
+          if (t.length === 2) {
+            image.setAttribute("data-zoom", "drag");
+            initialDist = Math.hypot(
+              t[1].clientX - t[0].clientX,
+              t[1].clientY - t[0].clientY
+            );
+            initialScale = currentScale;
+          } else if (t.length === 1) {
+            const now = Date.now();
+            if (now - lastTapTime < 300) {
+              e.preventDefault();
+              if (currentScale > 1) {
+                resetTransform();
+              } else {
+                currentScale = 2;
+                translateX = 0;
+                translateY = 0;
+                applyTransform();
+                image.setAttribute("data-zoom", "in");
+              }
+              lastTapTime = 0;
+              panStartX = t[0].clientX;
+              panStartY = t[0].clientY;
+              panStartTranslateX = translateX;
+              panStartTranslateY = translateY;
+            } else {
+              lastTapTime = now;
+              if (currentScale > 1) {
+                image.setAttribute("data-zoom", "drag");
+                panStartX = t[0].clientX;
+                panStartY = t[0].clientY;
+                panStartTranslateX = translateX;
+                panStartTranslateY = translateY;
+              }
+            }
+          }
+        },
+        { passive: false }
+      );
+
+      overlay.addEventListener(
+        "touchmove",
+        e => {
+          const t = e.touches;
+          if (t.length === 2) {
+            e.preventDefault();
+            const dist = Math.hypot(
+              t[1].clientX - t[0].clientX,
+              t[1].clientY - t[0].clientY
+            );
+            const oldScale = currentScale;
+            currentScale = Math.min(
+              4,
+              Math.max(1, initialScale * (dist / initialDist))
+            );
+
+            // Zoom to the geometric center of the two fingers
+            const midX = (t[0].clientX + t[1].clientX) / 2;
+            const midY = (t[0].clientY + t[1].clientY) / 2;
+            const ox = overlay.clientWidth / 2;
+            const oy = overlay.clientHeight / 2;
+            translateX =
+              (midX - ox) * (1 / currentScale - 1 / oldScale) + translateX;
+            translateY =
+              (midY - oy) * (1 / currentScale - 1 / oldScale) + translateY;
+            clampTranslate();
+            applyTransform();
+          } else if (t.length === 1) {
+            if (currentScale > 1) {
+              e.preventDefault();
+              image.setAttribute("data-zoom", "drag");
+              translateX =
+                panStartTranslateX + (t[0].clientX - panStartX) / currentScale;
+              translateY =
+                panStartTranslateY + (t[0].clientY - panStartY) / currentScale;
+              clampTranslate();
+              applyTransform();
+            } else {
+              e.preventDefault();
+            }
+          }
+        },
+        { passive: false }
+      );
+
+      overlay.addEventListener("touchend", e => {
+        if (e.touches.length === 0) {
+          if (currentScale > 1) {
+            image.setAttribute("data-zoom", "in");
+          } else {
+            image.removeAttribute("data-zoom");
+          }
+          if (currentScale <= 1.05) resetTransform();
+        }
+      });
+
+      overlay.addEventListener("touchcancel", e => {
+        if (e.touches.length === 0) {
+          if (currentScale > 1) {
+            image.setAttribute("data-zoom", "in");
+          } else {
+            image.removeAttribute("data-zoom");
+          }
+          if (currentScale <= 1.05) resetTransform();
+        }
+      });
+
+      overlay.addEventListener(
+        "wheel",
+        e => {
+          e.preventDefault();
+          const oldScale = currentScale;
+          const delta = -e.deltaY * 0.001;
+          currentScale = Math.min(4, Math.max(1, currentScale * (1 + delta)));
+
+          if (currentScale <= 1.05) {
+            resetTransform();
+          } else {
+            image.setAttribute("data-zoom", "in");
+            // Zoom to cursor: adjust translate so the point under cursor stays fixed
+            const ox = overlay.clientWidth / 2;
+            const oy = overlay.clientHeight / 2;
+            translateX =
+              (e.clientX - ox) * (1 / currentScale - 1 / oldScale) + translateX;
+            translateY =
+              (e.clientY - oy) * (1 / currentScale - 1 / oldScale) + translateY;
+            clampTranslate();
+            applyTransform();
+          }
+        },
+        { passive: false }
+      );
+
+      let isMouseDown = false;
+      let mouseStartX = 0;
+      let mouseStartY = 0;
+
+      overlay.addEventListener("mousedown", e => {
+        if (e.button !== 0 || currentScale <= 1) return;
+        if (e.target.closest("button")) return;
+        isMouseDown = true;
+        mouseStartX = e.clientX;
+        mouseStartY = e.clientY;
+        panStartTranslateX = translateX;
+        panStartTranslateY = translateY;
+        image.setAttribute("data-zoom", "drag");
+        e.preventDefault();
+      });
+
+      function onMouseMove(e) {
+        if (!isMouseDown || !overlay) return;
+        translateX =
+          panStartTranslateX + (e.clientX - mouseStartX) / currentScale;
+        translateY =
+          panStartTranslateY + (e.clientY - mouseStartY) / currentScale;
+        clampTranslate();
+        applyTransform();
+      }
+
+      function onMouseUp() {
+        if (!isMouseDown) return;
+        isMouseDown = false;
+        if (currentScale > 1) {
+          image.setAttribute("data-zoom", "in");
+        } else {
+          image.removeAttribute("data-zoom");
+        }
+      }
+
+      document.addEventListener("mousemove", onMouseMove);
+      document.addEventListener("mouseup", onMouseUp);
+      removeDragListeners = () => {
+        document.removeEventListener("mousemove", onMouseMove);
+        document.removeEventListener("mouseup", onMouseUp);
+      };
+
+      document.body.appendChild(overlay);
+      document.documentElement.style.overflow = "hidden";
+      document.addEventListener("keydown", onKeyDown);
+      window.__closeLightbox = close;
+
+      requestAnimationFrame(() => overlay?.classList.add("opacity-100"));
+      closeButton.focus();
+    }
+
+    function close() {
+      if (!overlay) return;
+      const el = overlay;
+      overlay = null;
+      el.classList.add("pointer-events-none");
+      window.__closeLightbox = null;
+
+      document.removeEventListener("keydown", onKeyDown);
+      removeDragListeners?.();
+      removeDragListeners = null;
+      document.documentElement.style.overflow = "";
+      lastFocused?.focus();
+      lastFocused = null;
+
+      if (prefersReducedMotion()) {
+        el.remove();
+        return;
+      }
+      const remove = () => el.remove();
+      el.addEventListener("transitionend", remove, { once: true });
+      setTimeout(remove, 250); // fallback in case transitionend never fires
+      el.classList.remove("opacity-100");
+    }
+
+    function onKeyDown(e) {
+      if (e.key === "Escape") {
+        close();
+      } else if (e.key === "Tab") {
+        trapFocus(e);
+      }
+    }
+
+    // Keep keyboard focus inside the open dialog.
+    function trapFocus(e) {
+      if (!overlay) return;
+      const focusables = overlay.querySelectorAll(
+        'a[href], button, [tabindex]:not([tabindex="-1"])'
+      );
+      if (focusables.length === 0) return;
+      const first = focusables[0];
+      const last = focusables[focusables.length - 1];
+      if (e.shiftKey && document.activeElement === first) {
+        e.preventDefault();
+        last.focus();
+      } else if (!e.shiftKey && document.activeElement === last) {
+        e.preventDefault();
+        first.focus();
+      }
+    }
+
+    function triggerFromEvent(e) {
+      const image = e.target.closest("img");
+      if (!image || !article.contains(image) || image.closest("a")) return null;
+      return image;
+    }
+
+    function activate(image) {
+      open(image.currentSrc || image.src, image.alt, image);
+    }
+
+    article.addEventListener("click", e => {
+      const image = triggerFromEvent(e);
+      if (!image) return;
+      e.preventDefault();
+      activate(image);
+    });
+
+    article.addEventListener("keydown", e => {
+      if (e.key !== "Enter" && e.key !== " " && e.key !== "Spacebar") return;
+      const image = triggerFromEvent(e);
+      if (!image) return;
+      e.preventDefault();
+      activate(image);
+    });
+  }
+  initLightbox();
+
+  if (!window.__lightboxSwapBound) {
+    window.__lightboxSwapBound = true;
+    document.addEventListener("astro:before-swap", () =>
+      window.__closeLightbox?.()
+    );
+  }
+
+  document.addEventListener("astro:after-swap", () =>
+    window.scrollTo({ left: 0, top: 0, behavior: "instant" })
+  );
+</script>

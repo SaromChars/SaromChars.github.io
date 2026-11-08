@@ -1,0 +1,74 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 380 690" width="100%" height="100%">
+  <title>PKIX 证书链与主机名双重校验判定流程</title>
+  <desc>教学示意图：展示客户端在验证服务端证书时的双重关卡判定。第一关为基于 RFC 5280 的证书链与多维约束核验，第二关为基于 RFC 6125 的主机名服务身份校验，双重校验通过方可确认对端公钥并继续握手。</desc>
+  <defs>
+    <style>
+      .bg { fill: #f8fafc; }
+      .box { fill: #ffffff; stroke: #94a3b8; stroke-width: 1.5; rx: 8px; }
+      .start-box { fill: #e2e8f0; stroke: #475569; stroke-width: 1.5; rx: 6px; }
+      .step-box { fill: #eff6ff; stroke: #3b82f6; stroke-width: 1.5; rx: 6px; }
+      .fail-box { fill: #fee2e2; stroke: #ef4444; stroke-width: 1.5; rx: 6px; }
+      .pass-box { fill: #dcfce7; stroke: #10b981; stroke-width: 2; rx: 6px; }
+      .h1 { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; font-size: 19.5px; font-weight: bold; fill: #0f172a; text-anchor: middle; }
+      .h2 { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; font-size: 18.5px; font-weight: bold; fill: #1e293b; }
+      .text { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; font-size: 18px; fill: #334155; }
+      .btn-err { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; font-size: 18px; font-weight: bold; fill: #b91c1c; text-anchor: middle; }
+      .btn-ok { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; font-size: 18px; font-weight: bold; fill: #047857; text-anchor: middle; }
+      .arrow { stroke: #475569; stroke-width: 2; marker-end: url(#arr); }
+      .err-arrow { stroke: #ef4444; stroke-width: 2; marker-end: url(#r-arr); }
+    </style>
+    <marker id="arr" markerWidth="7" markerHeight="7" refX="6" refY="3.5" orient="auto">
+      <polygon points="0 0, 7 3.5, 0 7" fill="#475569" />
+    </marker>
+    <marker id="r-arr" markerWidth="7" markerHeight="7" refX="6" refY="3.5" orient="auto">
+      <polygon points="0 0, 7 3.5, 0 7" fill="#ef4444" />
+    </marker>
+  </defs>
+
+  <rect width="380" height="690" class="bg" rx="10" />
+
+  <!-- 起点 -->
+  <rect x="25" y="15" width="330" height="50" class="start-box" />
+  <text x="190" y="47" class="h1">接收服务端出示证书序列</text>
+
+  <line x1="190" y1="65" x2="190" y2="95" class="arrow" />
+
+  <!-- 第一道防线：RFC 5280 -->
+  <rect x="15" y="95" width="350" height="235" class="step-box" />
+  <text x="25" y="125" class="h2" style="fill:#1d4ed8;">第一道防线：证书链验证</text>
+  <text x="25" y="155" class="text">• 终结于本地受信任的信任锚</text>
+  <text x="25" y="183" class="text">• 逐级核验颁发者数字签名</text>
+  <text x="25" y="211" class="text">• notBefore/notAfter 有效期</text>
+  <text x="25" y="239" class="text">• cA 标志与 pathLen 深度约束</text>
+  <text x="25" y="267" class="text">• 若有 EKU，须允许目标用途</text>
+  <text x="25" y="295" class="text">• 吊销核验 (证实吊销直接阻断)</text>
+  <text x="25" y="321" class="text">• 未知关键扩展直接拒绝</text>
+
+  <!-- 第一关判定分支 -->
+  <line x1="285" y1="330" x2="285" y2="355" class="err-arrow" />
+  <rect x="210" y="355" width="155" height="42" class="fail-box" />
+  <text x="287" y="382" class="btn-err">不合规 → 拒绝</text>
+
+  <line x1="95" y1="330" x2="95" y2="415" class="arrow" />
+  <text x="105" y="375" class="text" style="fill:#047857; font-weight:bold;">通过 ↓</text>
+
+  <!-- 第二道防线：RFC 6125 -->
+  <rect x="15" y="415" width="350" height="150" class="step-box" />
+  <text x="25" y="445" class="h2" style="fill:#1d4ed8;">第二道防线：服务身份校验</text>
+  <text x="25" y="475" class="text">• 提取期望目标域名 (FQDN)</text>
+  <text x="25" y="503" class="text">• 匹配 SAN (dNSName 标识符)</text>
+  <text x="25" y="531" class="text">• 存在受支持标识符不回退 CN</text>
+  <text x="25" y="557" class="text">• 示例：*.a.com 仅匹配单层</text>
+
+  <!-- 第二关判定分支 -->
+  <line x1="285" y1="565" x2="285" y2="585" class="err-arrow" />
+  <rect x="210" y="585" width="155" height="42" class="fail-box" />
+  <text x="287" y="612" class="btn-err">不匹配 → 拒绝</text>
+
+  <line x1="95" y1="565" x2="95" y2="635" class="arrow" />
+  <text x="105" y="605" class="text" style="fill:#047857; font-weight:bold;">通过 ↓</text>
+
+  <!-- 最终通过状态 -->
+  <rect x="15" y="635" width="350" height="45" class="pass-box" />
+  <text x="190" y="663" class="btn-ok">双重校验通过，握手继续</text>
+</svg>

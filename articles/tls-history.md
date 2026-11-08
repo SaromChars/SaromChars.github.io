@@ -5,7 +5,7 @@ pubDatetime: 2018-08-08T16:40:00+08:00
 description: "梳理 SSL 与 TLS 的起源、TLS 1.2 及 TLS 1.3 draft-28 的握手设计，用 Canvas 动画解释证书、密钥交换与 0-RTT。"
 author: Sarom Chars
 draft: false
-tags: [TLS, SSL, HTTPS, 网络安全, 协议历史]
+tags: [TLS, 网络安全]
 ---
 
 上一篇记了[数字签名、证书和中间人攻击](/2018/08/04/thinking_about_ruanyifeng_signature/)。这篇接着看 SSL 和 TLS：证书怎样参与建立连接，两端又怎样得到保护数据的密钥。

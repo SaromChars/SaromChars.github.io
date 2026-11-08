@@ -1,0 +1,67 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 700" width="100%" height="100%">
+  <title>SFT与RLHF三阶段对齐流程图（竖排手机适配）</title>
+  <desc>展示预训练模型、阶段1监督微调SFT、阶段2A奖励模型成对训练、阶段2B结合PPO强化学习与KL惩罚约束的对齐流水线。</desc>
+
+  <rect x="0" y="0" width="400" height="700" rx="12" fill="#f8fafc" stroke="#cbd5e1" stroke-width="2"/>
+
+  <!-- 顶部标题 -->
+  <text x="200" y="38" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="20" font-weight="700" fill="#0f172a">三阶段对齐训练流程</text>
+  <text x="200" y="66" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="18" fill="#475569">SFT 与 RLHF 阶段流向</text>
+
+  <!-- 阶段 0: 预训练模型 -->
+  <g transform="translate(20, 85)">
+    <rect x="0" y="0" width="360" height="74" rx="8" fill="#ffffff" stroke="#94a3b8" stroke-width="2"/>
+    <text x="180" y="28" text-anchor="middle" font-family="sans-serif" font-size="18" font-weight="700" fill="#334155">预训练基础模型 (Base LLM)</text>
+    <text x="180" y="54" text-anchor="middle" font-family="sans-serif" font-size="18" fill="#0f172a">海量无标注语料自回归续写</text>
+  </g>
+
+  <!-- 箭头 1 -->
+  <path d="M 200 159 L 200 177" fill="none" stroke="#64748b" stroke-width="3"/>
+  <polygon points="193,177 200,187 207,177" fill="#64748b"/>
+
+  <!-- 阶段 1: SFT -->
+  <g transform="translate(20, 189)">
+    <rect x="0" y="0" width="360" height="88" rx="8" fill="#ffffff" stroke="#2563eb" stroke-width="2"/>
+    <text x="180" y="28" text-anchor="middle" font-family="sans-serif" font-size="18" font-weight="700" fill="#1e3a8a">阶段 1：监督微调 (SFT)</text>
+    <text x="180" y="54" text-anchor="middle" font-family="sans-serif" font-size="18" fill="#1d4ed8">高质量人工示范数据监督</text>
+    <text x="180" y="78" text-anchor="middle" font-family="sans-serif" font-size="18" fill="#1d4ed8">建立指令遵循的基础范式</text>
+  </g>
+
+  <!-- 箭头 2 -->
+  <path d="M 200 277 L 200 295" fill="none" stroke="#64748b" stroke-width="3"/>
+  <polygon points="193,295 200,305 207,295" fill="#64748b"/>
+
+  <!-- 阶段 2A: 奖励建模 RM -->
+  <g transform="translate(20, 307)">
+    <rect x="0" y="0" width="360" height="88" rx="8" fill="#ffffff" stroke="#d97706" stroke-width="2"/>
+    <text x="180" y="28" text-anchor="middle" font-family="sans-serif" font-size="18" font-weight="700" fill="#92400e">阶段 2A：奖励模型 (RM)</text>
+    <text x="180" y="54" text-anchor="middle" font-family="sans-serif" font-size="18" fill="#b45309">标注员对候选回答成对排序</text>
+    <text x="180" y="78" text-anchor="middle" font-family="sans-serif" font-size="18" fill="#b45309">训练独立 RM 输出标量奖励</text>
+  </g>
+
+  <!-- 箭头 3 -->
+  <path d="M 200 395 L 200 413" fill="none" stroke="#64748b" stroke-width="3"/>
+  <polygon points="193,413 200,423 207,413" fill="#64748b"/>
+
+  <!-- 阶段 2B: 强化学习 PPO -->
+  <g transform="translate(20, 425)">
+    <rect x="0" y="0" width="360" height="126" rx="8" fill="#ffffff" stroke="#6366f1" stroke-width="2"/>
+    <text x="180" y="28" text-anchor="middle" font-family="sans-serif" font-size="18" font-weight="700" fill="#312e81">阶段 2B：强化学习 (PPO)</text>
+    <text x="180" y="52" text-anchor="middle" font-family="sans-serif" font-size="18" fill="#4338ca">RM 标量奖励驱动探索</text>
+    <text x="180" y="74" text-anchor="middle" font-family="sans-serif" font-size="18" fill="#4338ca">KL 惩罚项约束策略漂移</text>
+    <text x="180" y="96" text-anchor="middle" font-family="sans-serif" font-size="18" fill="#4338ca">PPO-ptx 可选：</text>
+    <text x="180" y="118" text-anchor="middle" font-family="sans-serif" font-size="18" fill="#4338ca">加入预训练损失</text>
+  </g>
+
+  <!-- 箭头 4 -->
+  <path d="M 200 551 L 200 569" fill="none" stroke="#64748b" stroke-width="3"/>
+  <polygon points="193,569 200,579 207,569" fill="#64748b"/>
+
+  <!-- 最终对齐产物 -->
+  <g transform="translate(20, 581)">
+    <rect x="0" y="0" width="360" height="88" rx="8" fill="#f0fdf4" stroke="#22c55e" stroke-width="2"/>
+    <text x="180" y="28" text-anchor="middle" font-family="sans-serif" font-size="18" font-weight="700" fill="#14532d">最终对齐模型 (InstructGPT)</text>
+    <text x="180" y="54" text-anchor="middle" font-family="sans-serif" font-size="18" fill="#15803d">在线推理直接前向生成</text>
+    <text x="180" y="78" text-anchor="middle" font-family="sans-serif" font-size="18" fill="#15803d">无需即时人工或 RM 打分</text>
+  </g>
+</svg>
