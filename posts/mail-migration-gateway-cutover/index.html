@@ -1,0 +1,796 @@
+<!DOCTYPE html><html dir="ltr" lang="zh-CN" class="overflow-y-scroll scroll-smooth"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1"><link rel="icon" type="image/png" href="/images/favicon-32x32-next.png"><link rel="icon" href="/favicon.ico"><link rel="canonical" href="https://www.saromchars.tech/posts/mail-migration-gateway-cutover/"><meta name="generator" content="Astro v7.4.5"><!-- Primary meta --><title>邮箱迁移与网关切换 | Sarom&#39;s Blog</title><meta name="title" content="邮箱迁移与网关切换 | Sarom's Blog"><meta name="description" content="面向准备自建与自研邮件系统的工程师，剖析邮箱存量增量同步边界、所有权交接时点、网关路由切换及防循环过滤架构。"><meta name="author" content="Sarom Chars"><link rel="sitemap" href="/sitemap-index.xml"><!-- Open Graph --><meta property="og:type" content="article"><meta property="og:site_name" content="Sarom's Blog"><meta property="og:title" content="邮箱迁移与网关切换 | Sarom's Blog"><meta property="og:description" content="面向准备自建与自研邮件系统的工程师，剖析邮箱存量增量同步边界、所有权交接时点、网关路由切换及防循环过滤架构。"><meta property="og:url" content="https://www.saromchars.tech/posts/mail-migration-gateway-cutover/"><meta property="og:image" content="https://www.saromchars.tech/og.png"><!-- Twitter / X --><meta property="twitter:card" content="summary_large_image"><meta property="twitter:url" content="https://www.saromchars.tech/posts/mail-migration-gateway-cutover/"><meta property="twitter:title" content="邮箱迁移与网关切换 | Sarom's Blog"><meta property="twitter:description" content="面向准备自建与自研邮件系统的工程师，剖析邮箱存量增量同步边界、所有权交接时点、网关路由切换及防循环过滤架构。"><meta property="twitter:image" content="https://www.saromchars.tech/og.png"><!-- RSS autodiscovery --><link rel="alternate" type="application/rss+xml" title="Sarom's Blog" href="https://www.saromchars.tech/rss.xml"><!-- Filled at runtime by theme.ts to match the current background colour --><meta name="theme-color" content=""><!-- Extra head content injected by child layouts (e.g. JSON-LD, article meta) --><meta property="article:published_time" content="2022-01-19T02:00:00.000Z"><script type="application/ld+json">{"@context":"https://schema.org","@type":"BlogPosting","headline":"邮箱迁移与网关切换","mainEntityOfPage":"https://www.saromchars.tech/posts/mail-migration-gateway-cutover/","datePublished":"2022-01-19T02:00:00.000Z","author":[{"@type":"Person","name":"Sarom Chars","url":"https://github.com/SaromChars"}]}</script><!--
+      Inline FOUC-prevention script: sets data-theme on <html> before
+      the browser paints. Runs synchronously, no defer/async.
+    --><script>
+      (function () {
+        const stored = localStorage.getItem("theme");
+        const prefersDark = window.matchMedia(
+          "(prefers-color-scheme: dark)"
+        ).matches;
+        const theme = stored ?? (prefersDark ? "dark" : "light");
+        const root = document.firstElementChild;
+        root?.setAttribute("data-theme", theme);
+        root?.classList.toggle("dark", theme === "dark");
+        // Expose value so theme.ts can skip re-detection.
+        window.__theme = { value: theme };
+      })();
+    </script><meta name="robots" content="index, follow"><script async src="https://www.googletagmanager.com/gtag/js?id=G-WJJJTJ4FWX"></script><script>(function(){const measurementId = "G-WJJJTJ4FWX";
+
+    window.dataLayer = window.dataLayer || [];
+    function gtag(){ window.dataLayer.push(arguments); }
+    gtag('js', new Date());
+    gtag('config', measurementId);
+  })();</script><style>@keyframes astroFadeInOut{0%{opacity:1}to{opacity:0}}@keyframes astroFadeIn{0%{opacity:0;mix-blend-mode:plus-lighter}to{opacity:1;mix-blend-mode:plus-lighter}}@keyframes astroFadeOut{0%{opacity:1;mix-blend-mode:plus-lighter}to{opacity:0;mix-blend-mode:plus-lighter}}@keyframes astroSlideFromRight{0%{transform:translate(100%)}}@keyframes astroSlideFromLeft{0%{transform:translate(-100%)}}@keyframes astroSlideToRight{to{transform:translate(100%)}}@keyframes astroSlideToLeft{to{transform:translate(-100%)}}@media (prefers-reduced-motion){::view-transition-group(*),::view-transition-old(*),::view-transition-new(*),[data-astro-transition-scope]{animation:none!important}}
+</style><link rel="stylesheet" href="/_astro/Footer.wlxowfqU.css"><style>[data-astro-transition-scope="astro-bztu2lml-1"] { view-transition-name: \90AE\7BB1\7CFB\7EDF; }@layer astro { ::view-transition-old(\90AE\7BB1\7CFB\7EDF) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }::view-transition-new(\90AE\7BB1\7CFB\7EDF) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }[data-astro-transition=back]::view-transition-old(\90AE\7BB1\7CFB\7EDF) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition=back]::view-transition-new(\90AE\7BB1\7CFB\7EDF) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; } }[data-astro-transition-fallback="old"] [data-astro-transition-scope="astro-bztu2lml-1"],
+			[data-astro-transition-fallback="old"][data-astro-transition-scope="astro-bztu2lml-1"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition-fallback="new"] [data-astro-transition-scope="astro-bztu2lml-1"],
+			[data-astro-transition-fallback="new"][data-astro-transition-scope="astro-bztu2lml-1"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }[data-astro-transition=back][data-astro-transition-fallback="old"] [data-astro-transition-scope="astro-bztu2lml-1"],
+			[data-astro-transition=back][data-astro-transition-fallback="old"][data-astro-transition-scope="astro-bztu2lml-1"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition=back][data-astro-transition-fallback="new"] [data-astro-transition-scope="astro-bztu2lml-1"],
+			[data-astro-transition=back][data-astro-transition-fallback="new"][data-astro-transition-scope="astro-bztu2lml-1"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }</style><style>[data-astro-transition-scope="astro-bztu2lml-2"] { view-transition-name: \5907\4EFD\6062\590D; }@layer astro { ::view-transition-old(\5907\4EFD\6062\590D) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }::view-transition-new(\5907\4EFD\6062\590D) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }[data-astro-transition=back]::view-transition-old(\5907\4EFD\6062\590D) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition=back]::view-transition-new(\5907\4EFD\6062\590D) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; } }[data-astro-transition-fallback="old"] [data-astro-transition-scope="astro-bztu2lml-2"],
+			[data-astro-transition-fallback="old"][data-astro-transition-scope="astro-bztu2lml-2"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition-fallback="new"] [data-astro-transition-scope="astro-bztu2lml-2"],
+			[data-astro-transition-fallback="new"][data-astro-transition-scope="astro-bztu2lml-2"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }[data-astro-transition=back][data-astro-transition-fallback="old"] [data-astro-transition-scope="astro-bztu2lml-2"],
+			[data-astro-transition=back][data-astro-transition-fallback="old"][data-astro-transition-scope="astro-bztu2lml-2"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition=back][data-astro-transition-fallback="new"] [data-astro-transition-scope="astro-bztu2lml-2"],
+			[data-astro-transition=back][data-astro-transition-fallback="new"][data-astro-transition-scope="astro-bztu2lml-2"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }</style><style>[data-astro-transition-scope="astro-bztu2lml-3"] { view-transition-name: \53CD\5783\573E\90AE\4EF6; }@layer astro { ::view-transition-old(\53CD\5783\573E\90AE\4EF6) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }::view-transition-new(\53CD\5783\573E\90AE\4EF6) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }[data-astro-transition=back]::view-transition-old(\53CD\5783\573E\90AE\4EF6) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition=back]::view-transition-new(\53CD\5783\573E\90AE\4EF6) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; } }[data-astro-transition-fallback="old"] [data-astro-transition-scope="astro-bztu2lml-3"],
+			[data-astro-transition-fallback="old"][data-astro-transition-scope="astro-bztu2lml-3"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition-fallback="new"] [data-astro-transition-scope="astro-bztu2lml-3"],
+			[data-astro-transition-fallback="new"][data-astro-transition-scope="astro-bztu2lml-3"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }[data-astro-transition=back][data-astro-transition-fallback="old"] [data-astro-transition-scope="astro-bztu2lml-3"],
+			[data-astro-transition=back][data-astro-transition-fallback="old"][data-astro-transition-scope="astro-bztu2lml-3"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition=back][data-astro-transition-fallback="new"] [data-astro-transition-scope="astro-bztu2lml-3"],
+			[data-astro-transition=back][data-astro-transition-fallback="new"][data-astro-transition-scope="astro-bztu2lml-3"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }</style></head><body class="bg-background font-app text-foreground selection:bg-accent/75 selection:text-accent-foreground flex min-h-svh flex-col"><a id="skip-to-content" href="#main-content" class="bg-background text-accent absolute inset-s-16 -top-full z-50 px-3 py-2 backdrop-blur-lg transition-all focus:top-4">跳到正文</a><header class="app-layout flex flex-col items-center justify-between sm:flex-row"><div class="border-border bg-background relative flex w-full items-baseline justify-between border-b py-4 sm:items-center sm:py-6"><a href="/" class="absolute py-1 text-xl leading-8 font-semibold whitespace-nowrap sm:static sm:my-auto sm:text-2xl sm:leading-none">Sarom&#39;s Blog</a><nav id="nav-menu" class="flex w-full flex-col items-center sm:ms-2 sm:flex-row sm:justify-end sm:space-x-4 sm:py-0"><button id="menu-btn" class="focus-outline self-end p-2 sm:hidden" aria-label="展开菜单" aria-expanded="false" aria-controls="menu-items" data-label-open="展开菜单" data-label-close="收起菜单"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="hidden" viewBox="0 0 24 24" id="close-icon"><path stroke="none" d="M0 0h24v24H0z" /><path d="M18 6 6 18M6 6l12 12" /></svg><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="icon icon-tabler icons-tabler-outline icon-tabler-menu-deep" viewBox="0 0 24 24" id="menu-icon"><path stroke="none" d="M0 0h24v24H0z" /><path d="M4 6h16M7 12h13M10 18h10" /></svg></button><ul id="menu-items" class="[&amp;&gt;li&gt;a]:hover:text-accent mt-4 hidden w-44 grid-cols-2 place-content-center gap-2 sm:mt-0 sm:flex sm:w-auto sm:gap-x-5 sm:gap-y-0 sm:[&amp;&gt;li]:h-8 [&amp;&gt;li&gt;a]:block [&amp;&gt;li&gt;a]:px-4 [&amp;&gt;li&gt;a]:py-3 [&amp;&gt;li&gt;a]:text-center [&amp;&gt;li&gt;a]:font-medium sm:[&amp;&gt;li&gt;a]:px-2 sm:[&amp;&gt;li&gt;a]:py-1"><li class="col-span-2"><a href="/posts/" class="active-nav">文章</a></li><li class="col-span-2"><a href="/tags/">标签</a></li><li class="col-span-2"><a href="/about/">关于</a></li><li class="col-span-2"><a href="/archives/" title="归档" aria-label="归档" class="group inline-flex items-center gap-1 hover:text-accent focus-outline flex size-full justify-center p-3 sm:relative sm:size-8 sm:p-0"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="hidden sm:absolute sm:top-1/2 sm:left-1/2 sm:block sm:size-6 sm:-translate-x-1/2 sm:-translate-y-1/2" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M3 6a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2 2 2 0 0 1-2 2H5a2 2 0 0 1-2-2M5 8v10a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8M10 12h4" /></svg><span class="sm:sr-only">归档</span></a></li><li class="col-span-1 flex items-center justify-center"><a href="/search/" title="搜索" aria-label="搜索" class="group inline-flex items-center gap-1 hover:text-accent focus-outline relative size-8"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="absolute top-1/2 left-1/2 size-6 -translate-x-1/2 -translate-y-1/2" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M3 10a7 7 0 1 0 14 0 7 7 0 1 0-14 0M21 21l-6-6" /></svg><span class="sr-only">搜索</span></a></li><li class="col-span-1 flex items-center justify-center"><button id="theme-btn" class="focus-outline hover:[&amp;&gt;svg]:stroke-accent relative size-12 p-4 sm:size-8" title="切换主题" aria-label="auto" aria-live="polite"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="absolute top-[50%] left-[50%] translate-[-50%] scale-100 rotate-0 transition-all dark:scale-0 dark:-rotate-90" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M12 3h.393a7.5 7.5 0 0 0 7.92 12.446A9 9 0 1 1 12 2.992z" /></svg><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="absolute top-[50%] left-[50%] translate-[-50%] scale-0 rotate-90 transition-all dark:scale-100 dark:rotate-0" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M14.828 14.828a4 4 0 1 0-5.656-5.656 4 4 0 0 0 5.656 5.656M6.343 17.657l-1.414 1.414M6.343 6.343 4.929 4.929M17.657 6.343l1.414-1.414M17.657 17.657l1.414 1.414M4 12H2M12 4V2M20 12h2M12 20v2" /></svg></button></li></ul></nav></div></header><script type="module">function e(){let e=document.querySelector(`#menu-btn`),t=document.querySelector(`#menu-items`),n=document.querySelector(`#menu-icon`),r=document.querySelector(`#close-icon`);if(!e||!t||!n||!r)return;let i=e.dataset.labelOpen??`Open menu`,a=e.dataset.labelClose??`Close menu`;e.addEventListener(`click`,()=>{let o=e.getAttribute(`aria-expanded`)===`true`;e.setAttribute(`aria-expanded`,o?`false`:`true`),e.setAttribute(`aria-label`,o?i:a),t.classList.toggle(`hidden`),t.classList.toggle(`grid`),n.classList.toggle(`hidden`),r.classList.toggle(`hidden`)})}function t(){let e=document.getElementById(`skip-to-content`);e&&e.addEventListener(`click`,e=>{if(e.defaultPrevented||e.metaKey||e.ctrlKey||e.shiftKey||e.button!==0)return;e.preventDefault();let t=document.getElementById(`main-content`);t&&(t.setAttribute(`tabindex`,`-1`),t.addEventListener(`blur`,()=>t.removeAttribute(`tabindex`),{once:!0}),t.focus(),t.scrollIntoView({behavior:`smooth`}))})}e(),document.addEventListener(`astro:after-swap`,e),t(),document.addEventListener(`astro:after-swap`,t);</script><div class="app-layout flex items-center justify-start"><a id="back-button" href="/" class="group inline-flex items-center gap-1 hover:text-accent focus-outline hover:text-foreground/75 -ms-2 mt-8 mb-2"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="inline-block size-6 rtl:rotate-180" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="m15 6-6 6 6 6" /></svg><span>返回</span></a></div><script type="module">function e(){let e=document.querySelector(`#back-button`),t=sessionStorage.getItem(`backUrl`);t&&e&&(e.href=t)}document.addEventListener(`astro:page-load`,e),e();</script><main id="main-content" class="app-layout" data-pagefind-body><h1 style="view-transition-name:mail-migration-gateway-cutover" class="text-accent inline-block text-2xl font-bold sm:text-3xl">邮箱迁移与网关切换</h1><div class="my-2 flex items-center gap-2"><div class="text-muted-foreground flex flex-wrap items-center gap-x-2 gap-y-1"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="inline-block size-6 min-w-5.5" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M4 7a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2zM16 3v4M8 3v4M4 11h16M7 14h.013M10.01 14h.005M13.01 14h.005M16.015 14h.005M13.015 17h.005M7.01 17h.005M10.01 17h.005" /></svg><time class="text-sm sm:text-base" datetime="2022-01-19T02:00:00.000Z">2022年1月19日</time></div><span aria-hidden="true" class="text-muted-foreground max-sm:hidden hidden">|</span></div><article id="article" class="mt-8 w-full app-prose max-w-app prose-pre:bg-(--shiki-light-bg) dark:prose-pre:bg-(--shiki-dark-bg)"><!--email_off-->
+<p>历史邮件复制完成之后，旧入口仍可能收到外来信件，用户也会在旧客户端上继续标记已读或移动目录。在自建或自研邮件系统的架构演进中，将存量邮箱搬迁至新存储并切换公网邮件交换记录，必须处理存储数据收敛与网络路由所有权转移的交错。</p>
+<p>如果在状态转移窗口内未能界定写入权，或是网关转发流转中缺少对过滤链路的隔离，容易引发信箱状态分叉、邮件丢失、客户端缓存错乱以及重注入死循环。本文面向自建与自研邮件系统的工程师，梳理存储同步机制、状态标识边界、网关割接与控制面补偿设计。</p>
+<hr>
+<h2 id="存量邮箱增量追平与-uid-语义边界">存量邮箱增量追平与 UID 语义边界</h2>
+<p>邮箱数据迁移并非简单的底层文件复制。对于支持互联网邮件访问协议（Internet Message Access Protocol，IMAP）的系统，协议层状态与存储层标识紧密耦合。</p>
+<p>根据 <a href="#ref-rfc3501">RFC 3501</a> 第 2.3.1.1 节与第 6.3.1 节规定，IMAP 消息的唯一标识符（unique identifier，UID）并不是全局独立的，它被严格限定在特定的邮箱名与 32 位无符号整数——唯一标识符有效性（unique identifier validity，UIDVALIDITY）的作用域内。客户端在本地持久化缓存消息的 UID 映射时，前提是该邮箱的 <code>UIDVALIDITY</code> 保持不变。</p>
+<p>一旦服务端的 <code>UIDVALIDITY</code> 发生变更，协议规定客户端必须废弃本地该邮箱的 UID 映射并重新同步。这并不意味着客户端必然无条件全量重新下载所有邮件体（具体行为取决于客户端自身的缓存与条件同步策略），但会引发大规模的元数据对齐与状态重核。在自研或自建目标系统时：</p>
+<ul>
+<li><strong>正确处理代际变更</strong>：如果目标存储无法完全保持与源端一致的 <code>UIDVALIDITY</code> 和单调递增 UID 空间，应按协议规范分配新的 <code>UIDVALIDITY</code> 并让客户端重新对齐，而不应强行捏造一个表面相同但内部映射完全混乱的旧有效性标识。</li>
+<li><strong>内部 GUID 与局部 UID 的分层</strong>：在 Dovecot 等系统内部，底层消息会拥有全局唯一标识符（global unique identifier，GUID）。IMAP UID 是特定文件夹视图下的单调递增序号，而工具（如 <code>dsync</code>）通过消息的 GUID 来识别不同存储端之间存在的 UID 冲突。</li>
+<li><strong>避免用 Message-ID 作为全局去重键</strong>：RFC 5322 格式规范中的 <code>Message-ID</code> 头字段由发信客户端生成。在同一邮件被分发到多个文件夹、定时重试投递、或在不同文件夹间复制时，合法邮件拥有完全相同的 <code>Message-ID</code> 是常见现象。直接以 <code>Message-ID</code> 去重会导致合法邮件丢失。</li>
+</ul>
+<p>在开源实现中，Dovecot 2.3.16 的 <code>dsync</code> 工具集（参见官方包手册 <a href="#ref-doveadm-sync">doveadm-sync(1)</a> 与源码实现 <a href="#ref-dsync-code">doveadm-dsync.c</a>）明确划分了同步语义：</p>
+<ul>
+<li><strong>单向覆盖备份（<code>doveadm backup</code>）</strong>：执行单向同步。目标端独有的修改会被清除，使目标端严格拟合源端。在正式切写入前可用于全量基线铺底。</li>
+<li><strong>双向合并同步（<code>doveadm sync</code>）</strong>：双向合并两端更改。</li>
+<li><strong>增量单向合并（<code>doveadm sync -1</code>）</strong>：在源码 <code>cmd_mailbox_dsync_parse_arg</code> 中，<code>-1</code> 参数将 <code>oneway</code> 与 <code>backup</code> 均设为真，并在运行时通过 <code>DSYNC_BRAIN_FLAG_NO_BACKUP_OVERWRITE</code> 限制覆盖行为。手册明确指出其合并在实现上存在局限，仅作为“多次 backup 铺底、切断源端写流量后、在短暂窗口内把最后一批新信扫入目标端”的特定过渡手段，不可作为无限制的任意并发合并方案。手册举例说明：若源与目的两端各自生成了内容不同的 UID 6 邮件，系统可能为两封邮件重新分配更高的 UID 7 和 UID 8，以避免客户端对原有 UID 6 产生混淆；这说明即使两封信件都被保留，原有的局部 UID 身份也无法保证不变。</li>
+</ul>
+<p>在增量同步算法上：</p>
+<ol>
+<li><strong>全量扫描（<code>-f</code>）</strong>：遍历所有文件夹与消息，计算完备但耗费 I/O；</li>
+<li><strong>快速同步（默认 fast 模式）</strong>：通过比较元数据中的 <code>NEXTUID</code> 与最高修改序号（highest modification sequence，HIGHESTMODSEQ）。若两端恰好发生等量异动，元数据可能显示相同数值而漏过具体变化；</li>
+<li><strong>状态化同步（<code>-s</code>）</strong>：传入前一次运行保存的状态标记。该状态代表内部状态机快照，并非单纯的单调递增 UID 水位。状态损坏或无法核对时，本方案停止推进，核实后再选择重新扫描或重建基线。在源码 <code>cmd_dsync_run</code> 中，若同步运行中实际检查到非预期的底层变动，系统会输出告警并设定退出码 2。</li>
+</ol>
+<hr>
+<h2 id="网关切换与流量残留控制">网关切换与流量残留控制</h2>
+<p><a href="#ref-rfc5321">RFC 5321</a> 第 5 节规定通过域名系统（Domain Name System，DNS）查询处理邮件交换记录（Mail Exchange record，MX 记录）的路由。切换设计还须考虑尚未到期的 DNS 缓存、已有简单邮件传输协议（Simple Mail Transfer Protocol，SMTP）连接以及旧队列的重试目标；降低生存时间（Time to Live，TTL）不能撤回已经缓存的旧记录。同时，部分外部邮件传输代理（Mail Transfer Agent，MTA）可能持有尚未结束的 SMTP 长连接，或处于本地重试队列的投递周期中。因此，在 DNS 变更后的一段时间内，旧网关入口仍可能收到残留投递。</p>
+<p>为了避免新旧存储同时承接写入造成状态分叉，系统必须在切换窗口内明确划分写入权：</p>
+<ol>
+<li><strong>清点所有写入口</strong>：不能仅寄希望于前端认证代理切为只读。必须全面拦截或冻结交互式 IMAP 标记与移动、客户端 SMTP 提交附带的已发送副本写入、入站投递以及后台定时任务。</li>
+<li><strong>切流排队与尾部同步</strong>：在执行最终增量对齐期间，新旧两套存储均应禁止业务写入。入口可持久接收后在本机队列暂存，也可在接受责任前返回 SMTP 4xx 由发送方保留重试；后者不是已进入本机队列。避免在已确认 <code>250 OK</code>（以 <code>DATA</code> 命令结束确认责任）后又假装未接收。最终同步完成前，不得将转发流量写入新存储。</li>
+<li><strong>放行新写入</strong>：验收确认后，将新存储设为权威读写端，恢复客户端交互认证，并逐步排空和转发旧网关暂存队列，严禁在最终底层同步仍在运行的过程中向新存储并发写入业务数据。</li>
+</ol>
+<hr>
+<h2 id="网关内容过滤与防循环架构">网关内容过滤与防循环架构</h2>
+<p>邮件网关通常集成了反垃圾邮件、反病毒与安全审计组件。新旧网关并行或多跳流转时，必须在拓扑上明确过滤职责，避免重复计算与投递死循环。</p>
+<h3 id="过滤路径明确化">过滤路径明确化</h3>
+<p>在教学与工程设计中，通常选择让整封邮件只经历一次完整的内容安全检查。若旧网关已完成全套检测，仅在具备内网隔离、双向认证且具备可信审计证据的前提下，新网关才可考虑跳过扫描；若缺乏完备的受信审计凭据，不得仅凭信件头部声称的标记直接免检，通常更清晰的做法是将旧网关配置为纯中继，将过滤策略统一收拢到新网关执行。</p>
+<h3 id="队列后内容过滤防循环以-postfix-为例">队列后内容过滤防循环：以 Postfix 为例</h3>
+<p>以 Postfix 3.6.2 为例（参见包内文档 <a href="#ref-postfix-filter">FILTER_README</a> 中关于高级队列后过滤器的说明），邮件在初次入队后交给内容过滤进程，过滤完成的合规邮件需要通过本地回注监听端口重新提交给邮件系统。</p>
+<p>在此类重注入链路中，必须显式重写配置以打断循环：</p>
+<pre class="astro-code astro-code-themes min-light night-owl" style="--shiki-light:#24292eff;--shiki-dark:#d6deeb;--shiki-light-bg:#ffffff;--shiki-dark-bg:#011627; overflow-x: auto;--file-name-offset: -0.75rem;" tabindex="0" data-language="text"><code><span class="line"><span># 示例截取自 Postfix 3.6.2 FILTER_README 队列后过滤高级配置说明</span></span>
+<span class="line"><span># 仅供本机隔离链路参考，非完整生产部署模板</span></span>
+<span class="line"><span>localhost:10026 inet  n       -       n       -       10      smtpd</span></span>
+<span class="line"><span>    -o content_filter=</span></span>
+<span class="line"><span>    -o receive_override_options=no_unknown_recipient_checks,no_header_body_checks,no_milters</span></span></code></pre>
+<p>参数原理解析：</p>
+<ul>
+<li><strong>清空过滤配置（<code>-o content_filter=</code>）</strong>：主配置全局开启了内容过滤，若在回注端未显式清空该项，重新注入的邮件会被再次标记为待过滤，从而在队列与过滤器之间陷入死循环。</li>
+<li><strong>覆盖选项设置（<code>receive_override_options</code>）</strong>：通过指定 <code>no_milters</code>、<code>no_header_body_checks</code> 与 <code>no_unknown_recipient_checks</code>，防止已完成检查的邮件被 Milter 应用程序或内置头部规则重复扫描。在该示例中不配置 <code>no_address_mappings</code>，以便在内容过滤完成后正常执行虚拟别名与地址映射展开。</li>
+<li><strong>FILTER 动作的优先级</strong>：文档特别强调，在访问表（access maps）或检查规则中触发的 <code>FILTER</code> 动作，其优先级<strong>高于</strong>静态配置的 <code>content_filter</code>。如果回注端的消息命中了带有 <code>FILTER</code> action 的访问映射，仍会再次强行指定过滤路由，引发死循环；此外，关闭 Milter 并不等同于关闭 <code>content_filter</code>。</li>
+<li><strong>网络访问控制安全</strong>：回注端口通常放宽了常规客户端限制。如果未施加严格的本机监听绑定或网络访问控制列表，非授权客户端一旦向该端口发送邮件，将可能绕过安全检测规则，因此必须确保非授权来源无法连接该接口。</li>
+</ul>
+<hr>
+<h2 id="配置数据模式与存储协议兼容">配置、数据模式与存储协议兼容</h2>
+<p>在版本跨度较大的迁移中，软件版本与元数据结构的演进需要平滑过渡。以下方案为工程教学设计，而非特定组件的原生强制机制：</p>
+<ol>
+<li><strong>配置指令与路由查询兼容</strong>：新旧版本之间常存在已废弃或新增的指令语法，直接复制配置文件易导致进程启动失败。用户目录服务在交替期应同时支持新旧字段查询，并能根据用户迁移状态正确返回其归属的主机路由。</li>
+<li><strong>数据库模式的扩展与收缩（Expand-Contract）</strong>：
+<ul>
+<li>增加新特性字段时，新列应设计为可空或带有安全默认值，保持旧版本程序依然能够正常读取与写入；</li>
+<li>必须在旧队列责任全部交接、备份恢复经验证、旧程序退出且兼容与回退需求已关闭后，才安排独立窗口删除废弃旧字段与存储，在此之前须完成完整备份与回滚演练。</li>
+</ul>
+</li>
+<li><strong>存储与索引元数据保全</strong>：存储格式迁移不仅要复制邮件体，更须完整保全 UID 映射、已读与标记（flags）状态、自定义关键字以及用户自定义元数据。部分私有状态直接持久化在专用索引或头文件中，一旦丢失将导致用户状态重置。</li>
+</ol>
+<hr>
+<h2 id="控制面迁移任务状态机与检查点设计">控制面迁移任务状态机与检查点设计</h2>
+<p>针对批量邮箱迁移，自研控制面应维护具备检查点（checkpoint）的任务状态机。</p>
+<pre class="astro-code astro-code-themes min-light night-owl" style="--shiki-light:#24292eff;--shiki-dark:#d6deeb;--shiki-light-bg:#ffffff;--shiki-dark-bg:#011627; overflow-x: auto;--file-name-offset: -0.75rem;" tabindex="0" data-language="plaintext"><code><span class="line"><span>[Init: 初始化任务]</span></span>
+<span class="line"><span>       |</span></span>
+<span class="line"><span>       v</span></span>
+<span class="line"><span>[Sync_Base: 冷数据全量基线铺底]</span></span>
+<span class="line"><span>       |</span></span>
+<span class="line"><span>       v</span></span>
+<span class="line"><span>[Lock_Source: 冻结写权限与队列暂存]</span></span>
+<span class="line"><span>       |</span></span>
+<span class="line"><span>       v</span></span>
+<span class="line"><span>[Sync_Tail: 最终增量对齐与校验]</span></span>
+<span class="line"><span>       |</span></span>
+<span class="line"><span>       v</span></span>
+<span class="line"><span>[Cutover_Route: 激活新路由与放行读写]</span></span>
+<span class="line"><span>       |</span></span>
+<span class="line"><span>       v</span></span>
+<span class="line"><span>[Observe_Completed: 监控长尾并收缩资源]</span></span></code></pre>
+<h3 id="任务跟踪与幂等推进">任务跟踪与幂等推进</h3>
+<p>控制面任务记录应包含唯一任务标识、账号标识、迁移方向、配置版本、尝试序号以及最后一次成功持久化的检查点位点。系统不能仅凭消息 GUID 假定多次重试完全等价；如果增量校验或执行发生失败，状态机<strong>不能自动退回 <code>Sync_Base</code></strong>，否则可能导致单向覆盖备份误将业务数据冲掉。正确的做法是暂停在当前检查点，人工或补偿程序核对两端独有数据与同步方向后，再行有条件重试。只有当底层同步成功返回且元数据清单对齐无误后，控制面才向前提交检查点。</p>
+<h3 id="回退路由与数据恢复的边界界定">回退路由与数据恢复的边界界定</h3>
+<p>当割接遇到严重异常时，必须区分路由回退与数据恢复：</p>
+<ul>
+<li><strong>SMTP 责任转移原则</strong>：根据 <a href="#ref-rfc5321">RFC 5321</a> 第 4.5.3.2.6 节与第 6.1 节，在 SMTP 会话中一旦服务端对 <code>DATA</code> 结束标记响应了 <code>250 OK</code>，投递责任便正式确立。新系统在接管期间收到的新邮件、用户产生的标记修改与删除操作，都已成为有效业务事实。</li>
+<li><strong>避免破坏性直接覆盖</strong>：若新系统已承接流量并产生独立业务写入，直接使用割接前的旧快照覆盖新系统会导致切流期接收的数据全部丢失。如果必须回退，正确的做法是先冻结新系统写入，保全新系统产生的新邮件、标记异动与未结队列；在确认旧程序与数据模式能够安全解析的前提下，通过经过校验的逆向增量同步将数据合入旧端，或选择向前修复。若无法安全合并，应保持队列暂存，进入离线恢复流程。</li>
+</ul>
+<hr>
+<h2 id="阶段检查与判定边界">阶段检查与判定边界</h2>
+<h3 id="分阶段检查要点">分阶段检查要点</h3>
+<ul>
+<li><strong>基线铺底阶段</strong>：验证源端与目标端各文件夹的 <code>UIDVALIDITY</code> 规划；核对用户目录服务对新旧路由的返回；检查存储写入权限与文件锁机制。</li>
+<li><strong>切写前夕阶段</strong>：核对回注端口的 <code>-o content_filter=</code> 与安全访问控制；排查是否存在带有 <code>FILTER</code> action 的规则干扰回注；检查各服务组件配置文件语法。</li>
+<li><strong>割接实施阶段</strong>：阻断源端交互式写操作；将旧网关配置为排队暂存或受控转发模式，但在最终同步完成前不得将转发流量写入新存储，只能转往受控暂存入口；执行尾部增量对齐，核对文件夹列表、<code>UIDVALIDITY</code>、UID 与消息内容的对应关系及单调分配（允许空洞）、抽样附件、关键字、访问权限、标记与删除状态及配额限制；切换认证与路由，放行新存储写入并结清暂存队列。</li>
+<li><strong>观察收缩阶段</strong>：监控新网关队列健康度，确认无异常堆积；监控旧网关残留连接与长尾转发情况；在旧队列责任全部交接、备份恢复经验证、旧程序退出且兼容与回退需求已关闭后，才按计划收缩旧系统资源与废弃字段。</li>
+</ul>
+<h3 id="继续暂停与终止边界">继续、暂停与终止边界</h3>
+<ul>
+<li><strong>终止切换</strong>：在执行尾部增量同步时，若发现源端仍有未隔离的写流量，或同步返回非零退出码且存在未解决的元数据冲突，必须终止切换，维持旧系统对外服务。只有在目标端未接管任何独有业务写入且保留排查证据的前提下，方可重置目标端测试数据。</li>
+<li><strong>暂停推进</strong>：网关切换后，若发现队列出现非预期堆积或重复转发迹象，应立即暂停公网继续流入，将邮件保持在前端排队缓冲，排查过滤配置与回注链路。</li>
+<li><strong>回退决策</strong>：若新系统承接流量后发生不可恢复的故障，须先封锁新端写入，保全已落盘邮件与队列，确认数据具备合并或归档条件后，再执行受控路由回退。</li>
+</ul>
+<hr>
+<h2 id="模拟验证场景设计">模拟验证场景设计</h2>
+<p>以下案例为工程架构验证设计，用于在测试演练环境中核对边界条件，非生产实际执行实录。</p>
+<h3 id="场景一验证队列后内容过滤防死循环配置">场景一：验证队列后内容过滤防死循环配置</h3>
+<ul>
+<li><strong>测试环境</strong>：单机部署 Postfix 3.6.2，配置高级队列后过滤，过滤完成后由 <code>127.0.0.1:10026</code> 回注。</li>
+<li><strong>人为注入故障</strong>：在 <code>localhost:10026</code> 服务定义中故意省略 <code>-o content_filter=</code>。</li>
+<li><strong>预期现象与检查方法</strong>：向系统注入一封测试邮件。由于回注时 SMTP 实例仍继承全局过滤参数，邮件将被反复投递给过滤器。检查时应注意：SMTP 重注入通常会生成新的队列标识（Queue-ID），因此不能仅靠单一队列 ID 判重，而应通过关联前后队列日志、自定义测试标记或特定信封属性观察重复入队事件。在配置修复并重新加载后，仅针对隔离的测试邮件路径进行复验，确认邮件经单次扫描后正常送达。</li>
+</ul>
+<h3 id="场景二验证并发变更下的-uid-编排现象">场景二：验证并发变更下的 UID 编排现象</h3>
+<ul>
+<li><strong>测试环境</strong>：部署源与目的两套 Dovecot 2.3.16 实例，源端包含 UID 1..5。</li>
+<li><strong>构造冲突操作</strong>：执行 <code>doveadm backup</code> 铺底后，模拟在源端写入新邮件（分配 UID 6），同时在目的端直接写入一封不同内容的消息（同样分配 UID 6），随后运行 <code>doveadm sync -1</code>。</li>
+<li><strong>预期现象与检查方法</strong>：检查目标端邮箱状态。根据手册说明，两封邮件预期均会被保全，但系统可能为冲突邮件分配更高的 UID（如 UID 7 和 UID 8），原有 UID 6 映射不再保持原样。使用 IMAP 测试客户端重新连接并同步，检查客户端能否依照协议标准正确处理新的 UID 映射，验证两端在缺乏互斥锁定时的状态收敛行为。</li>
+</ul>
+<h3 id="场景三数据模式不兼容时的回退阻断">场景三：数据模式不兼容时的回退阻断</h3>
+<ul>
+<li><strong>测试环境</strong>：自研存储服务升级，新版本引入了扩展字段与新的状态编码。</li>
+<li><strong>构造异常</strong>：新程序接管后写入了包含新字段的数据，此时因上游故障需紧急回退至旧版本程序，但旧程序遇到无法识别的数据模式直接崩溃或抛出解析异常。</li>
+<li><strong>预期判据</strong>：遇到数据模式不兼容时应立即阻止盲目回退旧版本程序；数据修补必须具备离线验证与备份支持，不能直接运行未经演练的修复脚本盲目修改数据。</li>
+</ul>
+<hr>
+<h2 id="参考文献与资料">参考文献与资料</h2>
+<ul>
+<li><a id="ref-rfc3501" href="https://www.rfc-editor.org/rfc/rfc3501" target="_blank" rel="noopener noreferrer">RFC 3501: INTERNET MESSAGE ACCESS PROTOCOL - VERSION 4rev1 (2003-03)</a></li>
+<li><a id="ref-rfc5321" href="https://www.rfc-editor.org/rfc/rfc5321" target="_blank" rel="noopener noreferrer">RFC 5321: Simple Mail Transfer Protocol (2008-10)</a></li>
+<li><a id="ref-doveadm-sync" href="https://dovecot.org/releases/2.3/dovecot-2.3.16.tar.gz" target="_blank" rel="noopener noreferrer">Dovecot 2.3.16 Source Release &#x26; doveadm-sync(1) Manual (2021-08)</a></li>
+<li><a id="ref-dsync-code" href="https://github.com/dovecot/core/blob/release-2.3.16/src/doveadm/doveadm-dsync.c#L670-L730" target="_blank" rel="noopener noreferrer">Dovecot Core release-2.3.16: src/doveadm/doveadm-dsync.c (Lines 670-730)</a></li>
+<li><a id="ref-postfix-filter" href="https://archive.mgm51.com/mirrors/postfix-source/official/postfix-3.6.2.tar.gz" target="_blank" rel="noopener noreferrer">Postfix 3.6.2 Source Release &#x26; FILTER_README: After-Queue Content Filter (2021-07)</a></li>
+</ul>
+<!--/email_off--></article><hr class="my-8 border-dashed"><div id="btt-btn-container" class="fixed inset-e-4 bottom-8 z-50 md:sticky md:inset-e-auto md:float-end md:me-1 translate-y-14 opacity-0 transition duration-500"><button data-button="back-to-top" class="group bg-background relative px-2 py-1 size-14 rounded-full shadow-xl md:h-8 md:w-fit md:rounded-md md:shadow-none md:focus-visible:rounded-none md:bg-background/35 md:bg-clip-padding md:backdrop-blur-lg"><span id="progress-indicator" class="absolute inset-0 -z-10 block size-14 scale-110 rounded-full bg-transparent md:hidden md:h-8 md:rounded-md"></span><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="inline-block rotate-90 md:hidden" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M5 12h14M5 12l6 6M5 12l6-6" /></svg><span class="group-hover:text-accent sr-only text-sm md:not-sr-only"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="inline-block size-4" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M12 5v14M16 9l-4-4M8 9l4-4" /></svg> 回到顶部</span></button></div><script data-astro-rerun>
+  function backToTop() {
+    const rootElement = document.documentElement;
+    const btnContainer = document.querySelector("#btt-btn-container");
+    const backToTopBtn = document.querySelector("[data-button='back-to-top']");
+    const progressIndicator = document.querySelector("#progress-indicator");
+
+    if (!rootElement || !btnContainer || !backToTopBtn || !progressIndicator)
+      return;
+
+    backToTopBtn.addEventListener("click", () => {
+      document.body.scrollTop = 0;
+      document.documentElement.scrollTop = 0;
+    });
+
+    let lastVisible = null;
+    function handleScroll() {
+      const scrollTotal = rootElement.scrollHeight - rootElement.clientHeight;
+      const scrollTop = rootElement.scrollTop;
+      const scrollPercent = Math.floor((scrollTop / scrollTotal) * 100);
+
+      progressIndicator.style.setProperty(
+        "background-image",
+        `conic-gradient(var(--accent), var(--accent) ${scrollPercent}%, transparent ${scrollPercent}%)`
+      );
+
+      const isVisible = scrollTop / scrollTotal > 0.3;
+
+      if (isVisible !== lastVisible) {
+        btnContainer.classList.toggle("opacity-100", isVisible);
+        btnContainer.classList.toggle("translate-y-0", isVisible);
+        btnContainer.classList.toggle("opacity-0", !isVisible);
+        btnContainer.classList.toggle("translate-y-14", !isVisible);
+        lastVisible = isVisible;
+      }
+    }
+
+    let ticking = false;
+    document.addEventListener("scroll", () => {
+      if (!ticking) {
+        window.requestAnimationFrame(() => {
+          handleScroll();
+          ticking = false;
+        });
+        ticking = true;
+      }
+    });
+  }
+  backToTop();
+</script><ul class="mt-4 mb-8 flex flex-wrap gap-4 sm:my-8"><li><a data-astro-transition-scope="astro-bztu2lml-1" href="/tags/邮箱系统/" class="flex items-center gap-0.5 border-foreground border-b-2 border-dashed hover:border-accent hover:text-accent hover:-mt-0.5 focus-visible:text-accent focus-visible:border-none text-sm"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="opacity-80 size-4" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M5 9h14M5 15h14M11 4 7 20M17 4l-4 16" /></svg>邮箱系统</a></li><li><a data-astro-transition-scope="astro-bztu2lml-2" href="/tags/备份恢复/" class="flex items-center gap-0.5 border-foreground border-b-2 border-dashed hover:border-accent hover:text-accent hover:-mt-0.5 focus-visible:text-accent focus-visible:border-none text-sm"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="opacity-80 size-4" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M5 9h14M5 15h14M11 4 7 20M17 4l-4 16" /></svg>备份恢复</a></li><li><a data-astro-transition-scope="astro-bztu2lml-3" href="/tags/反垃圾邮件/" class="flex items-center gap-0.5 border-foreground border-b-2 border-dashed hover:border-accent hover:text-accent hover:-mt-0.5 focus-visible:text-accent focus-visible:border-none text-sm"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="opacity-80 size-4" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M5 9h14M5 15h14M11 4 7 20M17 4l-4 16" /></svg>反垃圾邮件</a></li></ul><hr class="my-8 border-dashed"><div data-pagefind-ignore class="my-8 grid grid-cols-1 gap-6 sm:grid-cols-2"><a href="/posts/mail-gateway-rule-rollout/" class="flex w-full gap-1 hover:opacity-75"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="inline-block flex-none rtl:rotate-180" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M5 12h14M5 12l6 6M5 12l6-6" /></svg><div><span>上一篇</span><div class="text-accent/85 text-sm">邮件网关规则发布、回放与效果观察</div></div></a><a href="/posts/mail-gateway-recovery-drill/" class="flex w-full justify-end gap-1 text-end hover:opacity-75 sm:col-start-2"><div><span>下一篇</span><div class="text-accent/85 text-sm">邮箱与网关的故障演练及恢复</div></div><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="inline-block flex-none rtl:rotate-180" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M5 12h14M13 18l6-6M13 6l6 6" /></svg></a></div></main><footer class="app-layout mt-auto"><div class="border-border flex flex-col items-center justify-between border-t py-6 sm:flex-row-reverse sm:py-4"><div class="flex flex-wrap items-center gap-1"><a href="https://github.com/SaromChars" title="Sarom Chars 的 GitHub" class="group inline-flex items-center gap-1 hover:text-accent p-2 hover:rotate-6 sm:p-1"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="inline-block size-6 scale-125 fill-transparent stroke-current stroke-2 opacity-90 group-hover:fill-transparent sm:scale-110" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M9 19c-4.3 1.4-4.3-2.5-6-3m12 5v-3.5c0-1 .1-1.4-.5-2 2.8-.3 5.5-1.4 5.5-6a4.6 4.6 0 0 0-1.3-3.2 4.2 4.2 0 0 0-.1-3.2s-1.1-.3-3.5 1.3a12.3 12.3 0 0 0-6.2 0C6.5 2.8 5.4 3.1 5.4 3.1a4.2 4.2 0 0 0-.1 3.2A4.6 4.6 0 0 0 4 9.5c0 4.6 2.7 5.7 5.5 6-.6.6-.6 1.2-.5 2V21" /></svg><span class="sr-only">Sarom Chars 的 GitHub</span></a></div><div class="my-2 flex flex-col items-center whitespace-nowrap sm:flex-row"><span>版权 &#169; 2026</span><span class="hidden sm:inline">&nbsp;|&nbsp;</span><span>保留所有权利。</span></div></div></footer><script type="module">var e=`theme`,t=`light`,n=`dark`;function r(){return localStorage.getItem(e)||(window.matchMedia(`(prefers-color-scheme: dark)`).matches?n:t)}var i=window.__theme?.value??r();function a(){localStorage.setItem(e,i),o()}function o(){let e=document.firstElementChild;e?.setAttribute(`data-theme`,i),e?.classList.toggle(`dark`,i===n),document.querySelector(`#theme-btn`)?.setAttribute(`aria-label`,i);let t=window.getComputedStyle(document.body).backgroundColor;document.querySelector(`meta[name='theme-color']`)?.setAttribute(`content`,t)}function s(){o(),document.querySelector(`#theme-btn`)?.addEventListener(`click`,()=>{i=i===t?n:t,a()})}s(),document.addEventListener(`astro:after-swap`,s),document.addEventListener(`astro:before-swap`,e=>{let t=document.querySelector(`meta[name='theme-color']`)?.getAttribute(`content`);t&&e.newDocument.querySelector(`meta[name='theme-color']`)?.setAttribute(`content`,t)}),window.matchMedia(`(prefers-color-scheme: dark)`).addEventListener(`change`,({matches:e})=>{i=e?n:t,a()});</script></body></html><script type="module">var e=document.querySelector(`#article`);if(e?.querySelector(`a[href^="#ref-"]`)){let t=null,n=!1,r=document.createElement(`button`);r.type=`button`,r.className=`citation-return`,r.textContent=`返回阅读位置`,r.setAttribute(`data-pagefind-ignore`,``),e.addEventListener(`click`,n=>{if(n.button!==0||n.metaKey||n.ctrlKey||n.shiftKey||n.altKey)return;let i=n.target instanceof Element?n.target.closest(`a[href^="#ref-"]`):null;if(!i||!e.contains(i))return;let a=i.hash,o=document.getElementById(decodeURIComponent(a.slice(1)));o&&e.contains(o)&&(t={source:i,url:window.location.href,top:window.scrollY,left:window.scrollX,targetHash:a},o.insertAdjacentElement(`afterend`,r))}),r.addEventListener(`click`,()=>{if(!t||n)return;let e=t,i=i=>{r.remove(),window.requestAnimationFrame(()=>{window.requestAnimationFrame(()=>{e.source.focus({preventScroll:!0}),window.scrollTo({top:e.top,left:e.left,behavior:`instant`}),t=null,n=!1,i?.()})})};window.location.href===e.url?i():(n=!0,window.addEventListener(`popstate`,()=>{let e=window.history.scrollRestoration;window.history.scrollRestoration=`manual`,window.setTimeout(()=>{i(()=>{window.history.scrollRestoration=e})},0)},{once:!0}),window.history.back())}),window.addEventListener(`hashchange`,()=>{!n&&t&&window.location.hash!==t.targetHash&&(r.remove(),t=null)})}</script><script data-astro-rerun>
+  function createProgressBar() {
+    const progressContainer = document.createElement("div");
+    progressContainer.className =
+      "progress-container fixed top-0 z-10 h-1 w-full bg-background";
+
+    const progressBar = document.createElement("div");
+    progressBar.className = "progress-bar h-1 w-0 bg-accent";
+    progressBar.id = "myBar";
+
+    progressContainer.appendChild(progressBar);
+    document.body.appendChild(progressContainer);
+  }
+  createProgressBar();
+
+  function updateScrollProgress() {
+    document.addEventListener("scroll", () => {
+      const winScroll =
+        document.body.scrollTop || document.documentElement.scrollTop;
+      const height =
+        document.documentElement.scrollHeight -
+        document.documentElement.clientHeight;
+      const scrolled = (winScroll / height) * 100;
+      if (document) {
+        const myBar = document.getElementById("myBar");
+        if (myBar) {
+          myBar.style.width = scrolled + "%";
+        }
+      }
+    });
+  }
+  updateScrollProgress();
+
+  function addHeadingLinks() {
+    const headings = Array.from(
+      document.querySelectorAll("h2, h3, h4, h5, h6")
+    );
+    for (const heading of headings) {
+      heading.classList.add("group");
+      const link = document.createElement("a");
+      link.className =
+        "heading-link ms-2 no-underline opacity-75 md:opacity-0 md:group-hover:opacity-100 md:focus:opacity-100";
+      link.href = "#" + heading.id;
+
+      const span = document.createElement("span");
+      span.ariaHidden = "true";
+      span.innerText = "#";
+      link.appendChild(span);
+      heading.appendChild(link);
+    }
+  }
+  addHeadingLinks();
+
+  function attachCopyButtons() {
+    const copyButtonLabel = "Copy";
+    const codeBlocks = Array.from(document.querySelectorAll("pre"));
+
+    for (const codeBlock of codeBlocks) {
+      const wrapper = document.createElement("div");
+      wrapper.style.position = "relative";
+
+      const computedStyle = getComputedStyle(codeBlock);
+      const hasFileNameOffset =
+        computedStyle.getPropertyValue("--file-name-offset").trim() !== "";
+
+      const topClass = hasFileNameOffset
+        ? "top-(--file-name-offset)"
+        : "-top-3";
+
+      const copyButton = document.createElement("button");
+      copyButton.className = `copy-code absolute end-3 ${topClass} rounded bg-muted border border-muted px-2 py-1 text-xs leading-4 text-foreground font-medium`;
+      copyButton.innerHTML = copyButtonLabel;
+      codeBlock.setAttribute("tabindex", "0");
+      codeBlock.appendChild(copyButton);
+
+      codeBlock?.parentNode?.insertBefore(wrapper, codeBlock);
+      wrapper.appendChild(codeBlock);
+
+      copyButton.addEventListener("click", async () => {
+        await copyCode(codeBlock, copyButton);
+      });
+    }
+
+    async function copyCode(block, button) {
+      const code = block.querySelector("code");
+      const text = code?.innerText;
+
+      await navigator.clipboard.writeText(text ?? "");
+
+      button.innerText = "Copied";
+
+      setTimeout(() => {
+        button.innerText = copyButtonLabel;
+      }, 700);
+    }
+  }
+  attachCopyButtons();
+
+  /** Accessible image lightbox for article images. */
+  function initLightbox() {
+    const article = document.getElementById("article");
+    if (!article) return;
+
+    const prefersReducedMotion = () =>
+      window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+    let overlay = null;
+    let lastFocused = null;
+    let removeDragListeners = null;
+
+    // Defer attribute mutations so they don't push the LCP timestamp.
+    // Event listeners below use delegation and don't need the attributes to exist yet.
+    requestAnimationFrame(() => {
+      const images = Array.from(article.querySelectorAll("img"));
+      for (const image of images) {
+        if (image.closest("a")) continue;
+        image.setAttribute("role", "button");
+        image.setAttribute("tabindex", "0");
+        image.setAttribute("aria-haspopup", "dialog");
+        image.setAttribute(
+          "aria-label",
+          image.alt ? `Zoom image: ${image.alt}` : "Zoom image"
+        );
+      }
+    });
+
+    function open(src, alt, trigger) {
+      if (overlay) return;
+      lastFocused = trigger ?? document.activeElement;
+
+      overlay = document.createElement("div");
+      overlay.setAttribute("role", "dialog");
+      overlay.setAttribute("aria-modal", "true");
+      overlay.setAttribute(
+        "aria-label",
+        alt ? `Image preview: ${alt}` : "Image preview"
+      );
+      overlay.className =
+        "fixed inset-0 z-50 flex cursor-zoom-out items-center justify-center bg-black/70 backdrop-blur-sm opacity-0 transition-opacity duration-200 motion-reduce:transition-none";
+
+      const closeButton = document.createElement("button");
+      closeButton.type = "button";
+      closeButton.setAttribute("aria-label", "Close image preview");
+      closeButton.className =
+        "absolute end-4 top-4 z-1 flex size-11 items-center justify-center rounded bg-black/50 text-3xl leading-none text-white";
+      closeButton.innerHTML = "&#10005;";
+      closeButton.addEventListener("click", close);
+
+      const image = document.createElement("img");
+      image.src = src;
+      image.alt = "";
+      image.className =
+        "max-h-[90dvh] max-w-[90dvw] cursor-default object-contain transition-transform duration-100 ease-out motion-reduce:transition-none data-[zoom=drag]:cursor-grabbing data-[zoom=drag]:transition-none data-[zoom=in]:cursor-grab";
+
+      overlay.append(closeButton, image);
+      overlay.addEventListener("click", e => {
+        if (e.target === overlay && currentScale <= 1) close();
+      });
+
+      let currentScale = 1;
+      let translateX = 0;
+      let translateY = 0;
+      let initialDist = 0;
+      let initialScale = 1;
+      let panStartX = 0;
+      let panStartY = 0;
+      let panStartTranslateX = 0;
+      let panStartTranslateY = 0;
+      let lastTapTime = 0;
+
+      function applyTransform() {
+        image.style.transform = `scale(${currentScale}) translate(${translateX}px, ${translateY}px)`;
+        // A backdrop click only closes at fit size, so drop the zoom-out cursor while zoomed.
+        overlay?.classList.toggle("cursor-zoom-out", currentScale <= 1);
+      }
+
+      function resetTransform() {
+        currentScale = 1;
+        translateX = 0;
+        translateY = 0;
+        image.style.transform = "";
+        image.removeAttribute("data-zoom");
+        overlay?.classList.add("cursor-zoom-out");
+      }
+
+      // Keep the zoomed image from being panned past its edges.
+      function clampTranslate() {
+        if (!overlay) return;
+        const maxX = Math.max(
+          0,
+          (image.clientWidth - overlay.clientWidth / currentScale) / 2
+        );
+        const maxY = Math.max(
+          0,
+          (image.clientHeight - overlay.clientHeight / currentScale) / 2
+        );
+        translateX = Math.min(maxX, Math.max(-maxX, translateX));
+        translateY = Math.min(maxY, Math.max(-maxY, translateY));
+      }
+
+      overlay.addEventListener(
+        "touchstart",
+        e => {
+          const t = e.touches;
+          if (t.length === 2) {
+            image.setAttribute("data-zoom", "drag");
+            initialDist = Math.hypot(
+              t[1].clientX - t[0].clientX,
+              t[1].clientY - t[0].clientY
+            );
+            initialScale = currentScale;
+          } else if (t.length === 1) {
+            const now = Date.now();
+            if (now - lastTapTime < 300) {
+              e.preventDefault();
+              if (currentScale > 1) {
+                resetTransform();
+              } else {
+                currentScale = 2;
+                translateX = 0;
+                translateY = 0;
+                applyTransform();
+                image.setAttribute("data-zoom", "in");
+              }
+              lastTapTime = 0;
+              panStartX = t[0].clientX;
+              panStartY = t[0].clientY;
+              panStartTranslateX = translateX;
+              panStartTranslateY = translateY;
+            } else {
+              lastTapTime = now;
+              if (currentScale > 1) {
+                image.setAttribute("data-zoom", "drag");
+                panStartX = t[0].clientX;
+                panStartY = t[0].clientY;
+                panStartTranslateX = translateX;
+                panStartTranslateY = translateY;
+              }
+            }
+          }
+        },
+        { passive: false }
+      );
+
+      overlay.addEventListener(
+        "touchmove",
+        e => {
+          const t = e.touches;
+          if (t.length === 2) {
+            e.preventDefault();
+            const dist = Math.hypot(
+              t[1].clientX - t[0].clientX,
+              t[1].clientY - t[0].clientY
+            );
+            const oldScale = currentScale;
+            currentScale = Math.min(
+              4,
+              Math.max(1, initialScale * (dist / initialDist))
+            );
+
+            // Zoom to the geometric center of the two fingers
+            const midX = (t[0].clientX + t[1].clientX) / 2;
+            const midY = (t[0].clientY + t[1].clientY) / 2;
+            const ox = overlay.clientWidth / 2;
+            const oy = overlay.clientHeight / 2;
+            translateX =
+              (midX - ox) * (1 / currentScale - 1 / oldScale) + translateX;
+            translateY =
+              (midY - oy) * (1 / currentScale - 1 / oldScale) + translateY;
+            clampTranslate();
+            applyTransform();
+          } else if (t.length === 1) {
+            if (currentScale > 1) {
+              e.preventDefault();
+              image.setAttribute("data-zoom", "drag");
+              translateX =
+                panStartTranslateX + (t[0].clientX - panStartX) / currentScale;
+              translateY =
+                panStartTranslateY + (t[0].clientY - panStartY) / currentScale;
+              clampTranslate();
+              applyTransform();
+            } else {
+              e.preventDefault();
+            }
+          }
+        },
+        { passive: false }
+      );
+
+      overlay.addEventListener("touchend", e => {
+        if (e.touches.length === 0) {
+          if (currentScale > 1) {
+            image.setAttribute("data-zoom", "in");
+          } else {
+            image.removeAttribute("data-zoom");
+          }
+          if (currentScale <= 1.05) resetTransform();
+        }
+      });
+
+      overlay.addEventListener("touchcancel", e => {
+        if (e.touches.length === 0) {
+          if (currentScale > 1) {
+            image.setAttribute("data-zoom", "in");
+          } else {
+            image.removeAttribute("data-zoom");
+          }
+          if (currentScale <= 1.05) resetTransform();
+        }
+      });
+
+      overlay.addEventListener(
+        "wheel",
+        e => {
+          e.preventDefault();
+          const oldScale = currentScale;
+          const delta = -e.deltaY * 0.001;
+          currentScale = Math.min(4, Math.max(1, currentScale * (1 + delta)));
+
+          if (currentScale <= 1.05) {
+            resetTransform();
+          } else {
+            image.setAttribute("data-zoom", "in");
+            // Zoom to cursor: adjust translate so the point under cursor stays fixed
+            const ox = overlay.clientWidth / 2;
+            const oy = overlay.clientHeight / 2;
+            translateX =
+              (e.clientX - ox) * (1 / currentScale - 1 / oldScale) + translateX;
+            translateY =
+              (e.clientY - oy) * (1 / currentScale - 1 / oldScale) + translateY;
+            clampTranslate();
+            applyTransform();
+          }
+        },
+        { passive: false }
+      );
+
+      let isMouseDown = false;
+      let mouseStartX = 0;
+      let mouseStartY = 0;
+
+      overlay.addEventListener("mousedown", e => {
+        if (e.button !== 0 || currentScale <= 1) return;
+        if (e.target.closest("button")) return;
+        isMouseDown = true;
+        mouseStartX = e.clientX;
+        mouseStartY = e.clientY;
+        panStartTranslateX = translateX;
+        panStartTranslateY = translateY;
+        image.setAttribute("data-zoom", "drag");
+        e.preventDefault();
+      });
+
+      function onMouseMove(e) {
+        if (!isMouseDown || !overlay) return;
+        translateX =
+          panStartTranslateX + (e.clientX - mouseStartX) / currentScale;
+        translateY =
+          panStartTranslateY + (e.clientY - mouseStartY) / currentScale;
+        clampTranslate();
+        applyTransform();
+      }
+
+      function onMouseUp() {
+        if (!isMouseDown) return;
+        isMouseDown = false;
+        if (currentScale > 1) {
+          image.setAttribute("data-zoom", "in");
+        } else {
+          image.removeAttribute("data-zoom");
+        }
+      }
+
+      document.addEventListener("mousemove", onMouseMove);
+      document.addEventListener("mouseup", onMouseUp);
+      removeDragListeners = () => {
+        document.removeEventListener("mousemove", onMouseMove);
+        document.removeEventListener("mouseup", onMouseUp);
+      };
+
+      document.body.appendChild(overlay);
+      document.documentElement.style.overflow = "hidden";
+      document.addEventListener("keydown", onKeyDown);
+      window.__closeLightbox = close;
+
+      requestAnimationFrame(() => overlay?.classList.add("opacity-100"));
+      closeButton.focus();
+    }
+
+    function close() {
+      if (!overlay) return;
+      const el = overlay;
+      overlay = null;
+      el.classList.add("pointer-events-none");
+      window.__closeLightbox = null;
+
+      document.removeEventListener("keydown", onKeyDown);
+      removeDragListeners?.();
+      removeDragListeners = null;
+      document.documentElement.style.overflow = "";
+      lastFocused?.focus();
+      lastFocused = null;
+
+      if (prefersReducedMotion()) {
+        el.remove();
+        return;
+      }
+      const remove = () => el.remove();
+      el.addEventListener("transitionend", remove, { once: true });
+      setTimeout(remove, 250); // fallback in case transitionend never fires
+      el.classList.remove("opacity-100");
+    }
+
+    function onKeyDown(e) {
+      if (e.key === "Escape") {
+        close();
+      } else if (e.key === "Tab") {
+        trapFocus(e);
+      }
+    }
+
+    // Keep keyboard focus inside the open dialog.
+    function trapFocus(e) {
+      if (!overlay) return;
+      const focusables = overlay.querySelectorAll(
+        'a[href], button, [tabindex]:not([tabindex="-1"])'
+      );
+      if (focusables.length === 0) return;
+      const first = focusables[0];
+      const last = focusables[focusables.length - 1];
+      if (e.shiftKey && document.activeElement === first) {
+        e.preventDefault();
+        last.focus();
+      } else if (!e.shiftKey && document.activeElement === last) {
+        e.preventDefault();
+        first.focus();
+      }
+    }
+
+    function triggerFromEvent(e) {
+      const image = e.target.closest("img");
+      if (!image || !article.contains(image) || image.closest("a")) return null;
+      return image;
+    }
+
+    function activate(image) {
+      open(image.currentSrc || image.src, image.alt, image);
+    }
+
+    article.addEventListener("click", e => {
+      const image = triggerFromEvent(e);
+      if (!image) return;
+      e.preventDefault();
+      activate(image);
+    });
+
+    article.addEventListener("keydown", e => {
+      if (e.key !== "Enter" && e.key !== " " && e.key !== "Spacebar") return;
+      const image = triggerFromEvent(e);
+      if (!image) return;
+      e.preventDefault();
+      activate(image);
+    });
+  }
+  initLightbox();
+
+  if (!window.__lightboxSwapBound) {
+    window.__lightboxSwapBound = true;
+    document.addEventListener("astro:before-swap", () =>
+      window.__closeLightbox?.()
+    );
+  }
+
+  document.addEventListener("astro:after-swap", () =>
+    window.scrollTo({ left: 0, top: 0, behavior: "instant" })
+  );
+</script>

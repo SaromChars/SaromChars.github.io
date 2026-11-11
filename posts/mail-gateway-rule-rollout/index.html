@@ -1,0 +1,875 @@
+<!DOCTYPE html><html dir="ltr" lang="zh-CN" class="overflow-y-scroll scroll-smooth"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1"><link rel="icon" type="image/png" href="/images/favicon-32x32-next.png"><link rel="icon" href="/favicon.ico"><link rel="canonical" href="https://www.saromchars.tech/posts/mail-gateway-rule-rollout/"><meta name="generator" content="Astro v7.4.5"><!-- Primary meta --><title>邮件网关规则发布、回放与效果观察 | Sarom&#39;s Blog</title><meta name="title" content="邮件网关规则发布、回放与效果观察 | Sarom's Blog"><meta name="description" content="从开源垃圾过滤引擎边界出发，梳理反垃圾邮件网关规则发布的不可变清单、仅观察评估、脱敏回放、灰度回退与可观测闭环方案。"><meta name="author" content="Sarom Chars"><link rel="sitemap" href="/sitemap-index.xml"><!-- Open Graph --><meta property="og:type" content="article"><meta property="og:site_name" content="Sarom's Blog"><meta property="og:title" content="邮件网关规则发布、回放与效果观察 | Sarom's Blog"><meta property="og:description" content="从开源垃圾过滤引擎边界出发，梳理反垃圾邮件网关规则发布的不可变清单、仅观察评估、脱敏回放、灰度回退与可观测闭环方案。"><meta property="og:url" content="https://www.saromchars.tech/posts/mail-gateway-rule-rollout/"><meta property="og:image" content="https://www.saromchars.tech/og.png"><!-- Twitter / X --><meta property="twitter:card" content="summary_large_image"><meta property="twitter:url" content="https://www.saromchars.tech/posts/mail-gateway-rule-rollout/"><meta property="twitter:title" content="邮件网关规则发布、回放与效果观察 | Sarom's Blog"><meta property="twitter:description" content="从开源垃圾过滤引擎边界出发，梳理反垃圾邮件网关规则发布的不可变清单、仅观察评估、脱敏回放、灰度回退与可观测闭环方案。"><meta property="twitter:image" content="https://www.saromchars.tech/og.png"><!-- RSS autodiscovery --><link rel="alternate" type="application/rss+xml" title="Sarom's Blog" href="https://www.saromchars.tech/rss.xml"><!-- Filled at runtime by theme.ts to match the current background colour --><meta name="theme-color" content=""><!-- Extra head content injected by child layouts (e.g. JSON-LD, article meta) --><meta property="article:published_time" content="2022-01-16T02:00:00.000Z"><script type="application/ld+json">{"@context":"https://schema.org","@type":"BlogPosting","headline":"邮件网关规则发布、回放与效果观察","mainEntityOfPage":"https://www.saromchars.tech/posts/mail-gateway-rule-rollout/","datePublished":"2022-01-16T02:00:00.000Z","author":[{"@type":"Person","name":"Sarom Chars","url":"https://github.com/SaromChars"}]}</script><!--
+      Inline FOUC-prevention script: sets data-theme on <html> before
+      the browser paints. Runs synchronously, no defer/async.
+    --><script>
+      (function () {
+        const stored = localStorage.getItem("theme");
+        const prefersDark = window.matchMedia(
+          "(prefers-color-scheme: dark)"
+        ).matches;
+        const theme = stored ?? (prefersDark ? "dark" : "light");
+        const root = document.firstElementChild;
+        root?.setAttribute("data-theme", theme);
+        root?.classList.toggle("dark", theme === "dark");
+        // Expose value so theme.ts can skip re-detection.
+        window.__theme = { value: theme };
+      })();
+    </script><meta name="robots" content="index, follow"><script async src="https://www.googletagmanager.com/gtag/js?id=G-WJJJTJ4FWX"></script><script>(function(){const measurementId = "G-WJJJTJ4FWX";
+
+    window.dataLayer = window.dataLayer || [];
+    function gtag(){ window.dataLayer.push(arguments); }
+    gtag('js', new Date());
+    gtag('config', measurementId);
+  })();</script><style>@keyframes astroFadeInOut{0%{opacity:1}to{opacity:0}}@keyframes astroFadeIn{0%{opacity:0;mix-blend-mode:plus-lighter}to{opacity:1;mix-blend-mode:plus-lighter}}@keyframes astroFadeOut{0%{opacity:1;mix-blend-mode:plus-lighter}to{opacity:0;mix-blend-mode:plus-lighter}}@keyframes astroSlideFromRight{0%{transform:translate(100%)}}@keyframes astroSlideFromLeft{0%{transform:translate(-100%)}}@keyframes astroSlideToRight{to{transform:translate(100%)}}@keyframes astroSlideToLeft{to{transform:translate(-100%)}}@media (prefers-reduced-motion){::view-transition-group(*),::view-transition-old(*),::view-transition-new(*),[data-astro-transition-scope]{animation:none!important}}
+</style><link rel="stylesheet" href="/_astro/Footer.wlxowfqU.css"><style>[data-astro-transition-scope="astro-bztu2lml-1"] { view-transition-name: \90AE\7BB1\7CFB\7EDF; }@layer astro { ::view-transition-old(\90AE\7BB1\7CFB\7EDF) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }::view-transition-new(\90AE\7BB1\7CFB\7EDF) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }[data-astro-transition=back]::view-transition-old(\90AE\7BB1\7CFB\7EDF) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition=back]::view-transition-new(\90AE\7BB1\7CFB\7EDF) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; } }[data-astro-transition-fallback="old"] [data-astro-transition-scope="astro-bztu2lml-1"],
+			[data-astro-transition-fallback="old"][data-astro-transition-scope="astro-bztu2lml-1"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition-fallback="new"] [data-astro-transition-scope="astro-bztu2lml-1"],
+			[data-astro-transition-fallback="new"][data-astro-transition-scope="astro-bztu2lml-1"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }[data-astro-transition=back][data-astro-transition-fallback="old"] [data-astro-transition-scope="astro-bztu2lml-1"],
+			[data-astro-transition=back][data-astro-transition-fallback="old"][data-astro-transition-scope="astro-bztu2lml-1"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition=back][data-astro-transition-fallback="new"] [data-astro-transition-scope="astro-bztu2lml-1"],
+			[data-astro-transition=back][data-astro-transition-fallback="new"][data-astro-transition-scope="astro-bztu2lml-1"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }</style><style>[data-astro-transition-scope="astro-bztu2lml-2"] { view-transition-name: \53CD\5783\573E\90AE\4EF6; }@layer astro { ::view-transition-old(\53CD\5783\573E\90AE\4EF6) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }::view-transition-new(\53CD\5783\573E\90AE\4EF6) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }[data-astro-transition=back]::view-transition-old(\53CD\5783\573E\90AE\4EF6) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition=back]::view-transition-new(\53CD\5783\573E\90AE\4EF6) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; } }[data-astro-transition-fallback="old"] [data-astro-transition-scope="astro-bztu2lml-2"],
+			[data-astro-transition-fallback="old"][data-astro-transition-scope="astro-bztu2lml-2"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition-fallback="new"] [data-astro-transition-scope="astro-bztu2lml-2"],
+			[data-astro-transition-fallback="new"][data-astro-transition-scope="astro-bztu2lml-2"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }[data-astro-transition=back][data-astro-transition-fallback="old"] [data-astro-transition-scope="astro-bztu2lml-2"],
+			[data-astro-transition=back][data-astro-transition-fallback="old"][data-astro-transition-scope="astro-bztu2lml-2"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition=back][data-astro-transition-fallback="new"] [data-astro-transition-scope="astro-bztu2lml-2"],
+			[data-astro-transition=back][data-astro-transition-fallback="new"][data-astro-transition-scope="astro-bztu2lml-2"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }</style><style>[data-astro-transition-scope="astro-bztu2lml-3"] { view-transition-name: \53EF\89C2\6D4B\6027; }@layer astro { ::view-transition-old(\53EF\89C2\6D4B\6027) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }::view-transition-new(\53EF\89C2\6D4B\6027) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }[data-astro-transition=back]::view-transition-old(\53EF\89C2\6D4B\6027) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition=back]::view-transition-new(\53EF\89C2\6D4B\6027) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; } }[data-astro-transition-fallback="old"] [data-astro-transition-scope="astro-bztu2lml-3"],
+			[data-astro-transition-fallback="old"][data-astro-transition-scope="astro-bztu2lml-3"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition-fallback="new"] [data-astro-transition-scope="astro-bztu2lml-3"],
+			[data-astro-transition-fallback="new"][data-astro-transition-scope="astro-bztu2lml-3"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }[data-astro-transition=back][data-astro-transition-fallback="old"] [data-astro-transition-scope="astro-bztu2lml-3"],
+			[data-astro-transition=back][data-astro-transition-fallback="old"][data-astro-transition-scope="astro-bztu2lml-3"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition=back][data-astro-transition-fallback="new"] [data-astro-transition-scope="astro-bztu2lml-3"],
+			[data-astro-transition=back][data-astro-transition-fallback="new"][data-astro-transition-scope="astro-bztu2lml-3"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }</style></head><body class="bg-background font-app text-foreground selection:bg-accent/75 selection:text-accent-foreground flex min-h-svh flex-col"><a id="skip-to-content" href="#main-content" class="bg-background text-accent absolute inset-s-16 -top-full z-50 px-3 py-2 backdrop-blur-lg transition-all focus:top-4">跳到正文</a><header class="app-layout flex flex-col items-center justify-between sm:flex-row"><div class="border-border bg-background relative flex w-full items-baseline justify-between border-b py-4 sm:items-center sm:py-6"><a href="/" class="absolute py-1 text-xl leading-8 font-semibold whitespace-nowrap sm:static sm:my-auto sm:text-2xl sm:leading-none">Sarom&#39;s Blog</a><nav id="nav-menu" class="flex w-full flex-col items-center sm:ms-2 sm:flex-row sm:justify-end sm:space-x-4 sm:py-0"><button id="menu-btn" class="focus-outline self-end p-2 sm:hidden" aria-label="展开菜单" aria-expanded="false" aria-controls="menu-items" data-label-open="展开菜单" data-label-close="收起菜单"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="hidden" viewBox="0 0 24 24" id="close-icon"><path stroke="none" d="M0 0h24v24H0z" /><path d="M18 6 6 18M6 6l12 12" /></svg><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="icon icon-tabler icons-tabler-outline icon-tabler-menu-deep" viewBox="0 0 24 24" id="menu-icon"><path stroke="none" d="M0 0h24v24H0z" /><path d="M4 6h16M7 12h13M10 18h10" /></svg></button><ul id="menu-items" class="[&amp;&gt;li&gt;a]:hover:text-accent mt-4 hidden w-44 grid-cols-2 place-content-center gap-2 sm:mt-0 sm:flex sm:w-auto sm:gap-x-5 sm:gap-y-0 sm:[&amp;&gt;li]:h-8 [&amp;&gt;li&gt;a]:block [&amp;&gt;li&gt;a]:px-4 [&amp;&gt;li&gt;a]:py-3 [&amp;&gt;li&gt;a]:text-center [&amp;&gt;li&gt;a]:font-medium sm:[&amp;&gt;li&gt;a]:px-2 sm:[&amp;&gt;li&gt;a]:py-1"><li class="col-span-2"><a href="/posts/" class="active-nav">文章</a></li><li class="col-span-2"><a href="/tags/">标签</a></li><li class="col-span-2"><a href="/about/">关于</a></li><li class="col-span-2"><a href="/archives/" title="归档" aria-label="归档" class="group inline-flex items-center gap-1 hover:text-accent focus-outline flex size-full justify-center p-3 sm:relative sm:size-8 sm:p-0"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="hidden sm:absolute sm:top-1/2 sm:left-1/2 sm:block sm:size-6 sm:-translate-x-1/2 sm:-translate-y-1/2" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M3 6a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2 2 2 0 0 1-2 2H5a2 2 0 0 1-2-2M5 8v10a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8M10 12h4" /></svg><span class="sm:sr-only">归档</span></a></li><li class="col-span-1 flex items-center justify-center"><a href="/search/" title="搜索" aria-label="搜索" class="group inline-flex items-center gap-1 hover:text-accent focus-outline relative size-8"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="absolute top-1/2 left-1/2 size-6 -translate-x-1/2 -translate-y-1/2" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M3 10a7 7 0 1 0 14 0 7 7 0 1 0-14 0M21 21l-6-6" /></svg><span class="sr-only">搜索</span></a></li><li class="col-span-1 flex items-center justify-center"><button id="theme-btn" class="focus-outline hover:[&amp;&gt;svg]:stroke-accent relative size-12 p-4 sm:size-8" title="切换主题" aria-label="auto" aria-live="polite"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="absolute top-[50%] left-[50%] translate-[-50%] scale-100 rotate-0 transition-all dark:scale-0 dark:-rotate-90" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M12 3h.393a7.5 7.5 0 0 0 7.92 12.446A9 9 0 1 1 12 2.992z" /></svg><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="absolute top-[50%] left-[50%] translate-[-50%] scale-0 rotate-90 transition-all dark:scale-100 dark:rotate-0" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M14.828 14.828a4 4 0 1 0-5.656-5.656 4 4 0 0 0 5.656 5.656M6.343 17.657l-1.414 1.414M6.343 6.343 4.929 4.929M17.657 6.343l1.414-1.414M17.657 17.657l1.414 1.414M4 12H2M12 4V2M20 12h2M12 20v2" /></svg></button></li></ul></nav></div></header><script type="module">function e(){let e=document.querySelector(`#menu-btn`),t=document.querySelector(`#menu-items`),n=document.querySelector(`#menu-icon`),r=document.querySelector(`#close-icon`);if(!e||!t||!n||!r)return;let i=e.dataset.labelOpen??`Open menu`,a=e.dataset.labelClose??`Close menu`;e.addEventListener(`click`,()=>{let o=e.getAttribute(`aria-expanded`)===`true`;e.setAttribute(`aria-expanded`,o?`false`:`true`),e.setAttribute(`aria-label`,o?i:a),t.classList.toggle(`hidden`),t.classList.toggle(`grid`),n.classList.toggle(`hidden`),r.classList.toggle(`hidden`)})}function t(){let e=document.getElementById(`skip-to-content`);e&&e.addEventListener(`click`,e=>{if(e.defaultPrevented||e.metaKey||e.ctrlKey||e.shiftKey||e.button!==0)return;e.preventDefault();let t=document.getElementById(`main-content`);t&&(t.setAttribute(`tabindex`,`-1`),t.addEventListener(`blur`,()=>t.removeAttribute(`tabindex`),{once:!0}),t.focus(),t.scrollIntoView({behavior:`smooth`}))})}e(),document.addEventListener(`astro:after-swap`,e),t(),document.addEventListener(`astro:after-swap`,t);</script><div class="app-layout flex items-center justify-start"><a id="back-button" href="/" class="group inline-flex items-center gap-1 hover:text-accent focus-outline hover:text-foreground/75 -ms-2 mt-8 mb-2"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="inline-block size-6 rtl:rotate-180" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="m15 6-6 6 6 6" /></svg><span>返回</span></a></div><script type="module">function e(){let e=document.querySelector(`#back-button`),t=sessionStorage.getItem(`backUrl`);t&&e&&(e.href=t)}document.addEventListener(`astro:page-load`,e),e();</script><main id="main-content" class="app-layout" data-pagefind-body><h1 style="view-transition-name:mail-gateway-rule-rollout" class="text-accent inline-block text-2xl font-bold sm:text-3xl">邮件网关规则发布、回放与效果观察</h1><div class="my-2 flex items-center gap-2"><div class="text-muted-foreground flex flex-wrap items-center gap-x-2 gap-y-1"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="inline-block size-6 min-w-5.5" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M4 7a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2zM16 3v4M8 3v4M4 11h16M7 14h.013M10.01 14h.005M13.01 14h.005M16.015 14h.005M13.015 17h.005M7.01 17h.005M10.01 17h.005" /></svg><time class="text-sm sm:text-base" datetime="2022-01-16T02:00:00.000Z">2022年1月16日</time></div><span aria-hidden="true" class="text-muted-foreground max-sm:hidden hidden">|</span></div><article id="article" class="mt-8 w-full app-prose max-w-app prose-pre:bg-(--shiki-light-bg) dark:prose-pre:bg-(--shiki-dark-bg)"><!--email_off-->
+<p>在邮件传输代理（Mail Transfer Agent, MTA）接入内容安全过滤器的实际工程中，规则更新若缺乏安全发布与闭环验证，很容易引发业务中断。例如，将统一资源定位符（Uniform Resource Locator, URL）规则加三分，可能让正常通知跨过拒收阈值。当 MTA 在简单邮件传输协议（Simple Mail Transfer Protocol, SMTP）的 DATA 阶段后向对端发送 550 永久拒收响应后，本次接收便宣告失败。即便管理员紧急还原配置文件，已发送的拒收响应也无法撤销，网关更无法保证发信方一定会自动重发。</p>
+<p>为了降低规则迭代风险，本文以开源垃圾邮件过滤系统 Rspamd 2.7 的原生能力边界为对照底座，讨论一套针对邮件网关规则生命周期的发布控制与可观测闭环设计。下文涉及的发布控制器、影子模式、脱敏回放与事件审计均为教学工程方案，未在实际生产系统运行，不代表底层开源过滤引擎的原生支持。</p>
+<h2 id="开源引擎的原生边界与自研控制器的职责划分">开源引擎的原生边界与自研控制器的职责划分</h2>
+<p>在设计发布控制系统前，需要厘清底层垃圾过滤引擎（以 Rspamd 为例）的原生能力边界，避免对运行机制产生不切实际的安全假设。</p>
+<p>根据 Rspamd 2.7 源码（提交哈希 <code>4c56c1210dac78be727fc07d1c29c140034e4b19</code>）以及发布说明（<a href="#ref-release-mail">#ref-release-mail</a>），本节只检查它的配置解析、重载与计数实现：</p>
+<p>首先，<code>rspamadm configtest</code> 命令负责检查配置文件的静态语法有效性（<a href="#ref-configtest-c">#ref-configtest-c</a>）。在执行过程中，它会加载配置、初始化 Lua 脚本环境、初始化过滤器，并对符号缓存（Symbol Cache）的依赖拓扑展开校验；在 <code>-s</code>（strict，严格）模式下，如果记录器中累积的错误计数大于零，命令将返回失败并退出。但需要注意：配置测试通过仅代表完成了本进程内的静态语法解析、Lua 模块载入与符号缓存拓扑校验，并不足以证明外部动态依赖（如远程 DNSBL 服务器、Redis 集群、外部 HTTP 映射表）在生产网络中可正常通信，更无法证明规则分值调整后的分类质量安全。</p>
+<p>其次，Rspamd 主进程在收到 <code>SIGHUP</code> 信号后，其信号处理函数 <code>rspamd_hup_handler</code> 会启动重载流程（<a href="#ref-rspamd-reload">#ref-rspamd-reload</a>）。该流程先脱离（detach）现有工作进程（worker）并停止其心跳事件，调用 <code>reread_config</code> 构建临时配置对象并加载新配置。若加载配置阶段失败，主进程会回退恢复旧配置与日志对象，重新挂载（reattach）旧工作进程；若加载成功，则替换全局配置并初始化后加载动作，随后派生（spawn）一组加载了新配置的新工作进程，并通知关闭旧工作进程。这只是单机进程级别的平滑替换，并非跨节点的分布式原子切换；更重要的是，源码中旧工作进程的自动恢复逻辑仅存在于新配置加载（load）失败的分支，如果新工作进程在派生后因动态资源不足、网络超时或运行时崩溃，主进程并不能自动将集群整体状态无损回滚至旧版本。</p>
+<p>第三，Rspamd 控制器接口 <code>/stat</code> 返回的指标包括引擎版本、配置校验和 <code>config_id</code>、总扫描邮件数 <code>scanned</code>，以及按决策动作统计的直方图（如放行 <code>noaction</code>、添加标记头 <code>add_header</code>、重写主题 <code>rewrite_subject</code>、灰名单 <code>greylist</code>、拒收 <code>reject</code> 等），并汇总为 <code>spam_count</code> 与 <code>ham_count</code>（<a href="#ref-controller-stat">#ref-controller-stat</a>）。需要明确：<code>config_id</code> 字段取自 <code>session->ctx->cfg->checksum</code>，它仅代表当前内存配置对象的校验和，已读源码并未证明其能完整反映动态映射表（HTTP/FILE maps）、Redis 动态更新的模型或实时信誉库的内部状态变化；同时，接口统计的计数值只是引擎根据分值阈值做出的启发式判定分布，绝非真实的人工标注标签。</p>
+<p>最后，在扫描协议输出中，Rspamd 返回给调用方的响应包含总分 <code>score</code>、动作阈值 <code>required_score</code>、建议动作 <code>action</code> 和命中符号列表 <code>symbols</code>（<a href="#ref-protocol-result">#ref-protocol-result</a>）。协议返回的动作仅仅是过滤引擎计算出的建议动作（Suggested Action），并不等同于 MTA 最终执行的强制动作（Enforced Action）。MTA 可能根据本地白名单、合规旁路通道或限流降级策略修改最终行为；且在原生扫描协议输出中，单次扫描响应并未直接携带当前所属的规则包清单版本或节点工作进程代次。</p>
+<h2 id="不可变发布清单与节点生命周期">不可变发布清单与节点生命周期</h2>
+<p>为了保证集群各节点规则可追踪、可审计且可精确回退，任何规则更新都必须被打包为不可变发布清单（Manifest）。</p>
+<h3 id="清单结构与版本约束">清单结构与版本约束</h3>
+<p>一个规范的规则发布清单（Bundle）至少包含以下不可变元数据：</p>
+<ul>
+<li><code>bundle_id</code>：全局唯一版本标识符（例如采用内容哈希或递增版本号，如 <code>bundle-20220116-url-tune-v3</code>）。</li>
+<li><code>parent_bundle_id</code>：父版本标识，明确版本继承链路。</li>
+<li>静态配置内容摘要：核心配置文件、Lua 扩展脚本、本地静态字典文件的 SHA-256 哈希值列表。</li>
+<li>引擎版本约束：适用的底层过滤引擎基准（例如 <code>rspamd-2.7</code>）。</li>
+<li>外部动态依赖快照说明：对于远程动态映射表（Dynamic Maps），不能仅因为 HTTP URL 相同就判定为相同版本，清单必须固化引用的快照校验和，或明确记录其不可重现性；对于外部机器学习评分模型或信誉服务，记录对应的快照版本号。</li>
+<li>发布元数据：审批记录、变更说明、拟灰度阶段以及指定的回退目标版本（Fallback Target）。</li>
+</ul>
+<h3 id="节点状态转移与代次管理">节点状态转移与代次管理</h3>
+<p>网关控制平面通过目标代次（Desired Generation）与观测代次（Observed Generation）驱动节点集群。节点向控制平面汇报自身当前承载的规则包 ID、工作进程代次及健康度。</p>
+<p>发布生命周期状态机定义如下：</p>
+<ol>
+<li><code>PREPARED</code>（就绪）：指静态检查与依赖探测均已通过的候选版本（此时配置已分发至节点本地缓存暂存，但尚未向生产流量激活）。</li>
+<li><code>OBSERVE</code>（仅观察/影子测试）：节点在处理真实邮件流量时，同时执行候选版本过滤，但仅记录计算结果，不产生外部副作用。</li>
+<li><code>CANARY</code>（金丝雀灰度）：按设定的租户或流量策略，候选版本对指定流量真正执行动作，持续采集指标。</li>
+<li><code>ACTIVE</code>（全量激活）：所有节点完成配置激活，成为当前生产主版本。</li>
+<li><code>ROLLBACK_PENDING</code>（回退中）：当灰度或激活期间触发熔断阈值，控制器下发旧版本回退指令，状态转为回退中。</li>
+<li><code>ROLLED_BACK</code>（已回退）：只有当集群全部节点通过健康探测，且扫描适配器确认各节点汇报的观测代次均已恢复为目标旧版本时，才标记为已回退。</li>
+<li><code>HALTED</code>（熔断隔离）：若在更新或回退过程中，部分节点出现派生失败、工作进程异常退出或代次长期处于 <code>unknown</code>，控制器立即停止扩量，将异常节点从流量池摘除隔离，转入熔断挂起状态，由既定故障旁路策略接管。</li>
+</ol>
+<p>在此必须向运维团队明确：回退配置仅能改变未来新到达邮件的处理行为，绝不可能撤回已经在 SMTP 会话阶段向对端发送 550 错误而拒收的邮件，不可能追回已投递进收件箱的漏网垃圾邮件，也不会自动还原已写入 Redis 统计数据库的学习状态。若回退操作本身因磁盘损坏或配置损坏而执行失败，系统必须保持 <code>HALTED</code> 状态并冻结扩量，由值班工程师介入排查。</p>
+<h2 id="影子仅观察阶段与副作用隔离">影子仅观察阶段与副作用隔离</h2>
+<p>在规则对线上业务产生实际拦截前，将其置于仅观察模式（Observe Mode，亦称影子测试）是防范未知误杀的重要防线。</p>
+<p>在仅观察模式下，系统具有双重处理流：</p>
+<ul>
+<li><strong>在线主控路径</strong>：由当前已验证的旧版本规则执行扫描，返回实际拦截或放行建议，MTA 据此执行动作并响应客户端。</li>
+<li><strong>候选影子路径</strong>：网关在隔离环境中将同一邮件数据异步投递给加载了候选规则包的引擎，计算候选判定结果 <code>would_action</code> 与得分。</li>
+</ul>
+<h3 id="严格的无副作用约束">严格的无副作用约束</h3>
+<p>真正的副作用隔离必须在执行层切断以下行为：</p>
+<ol>
+<li><strong>禁止网络动作</strong>：严格禁止向 MTA 返回 SMTP 拒收指令、临时错误指令（4xx）或重写邮件信头。</li>
+<li><strong>禁止写外部信誉库与统计状态</strong>：在仅观察模式下，候选引擎严禁向线上共享 Redis 写入贝叶斯学习标记、模糊哈希（Fuzzy Storage）记录、自动白名单（Auto-whitelist）计数或动态限频计数器。</li>
+<li><strong>设置严格的计算预算</strong>：影子扫描必须运行在独立的资源沙箱或低优先级工作进程中，并设置超时熔断（例如 300 毫秒）。如果影子计算超时或系统负载升高，控制器必须无条件放弃影子计算，绝不允许影子计算拖慢或阻塞在线 SMTP 管道。</li>
+</ol>
+<h2 id="脱敏离线回放与成对差异比较">脱敏离线回放与成对差异比较</h2>
+<p>在进入生产环境影子测试前，利用历史流量数据进行离线回放（Replay）能够在受控实验室内暴露质量漂移。回放环境必须阻断真实投递、重注入和非受控外联，固定外部依赖响应；合成多用途互联网邮件扩展（Multipurpose Internet Mail Extensions，MIME）邮件（EML）需保留所需信封与连接上下文及标签来源时间。脱敏特征本身也需严格检查是否残留个人可识别信息。</p>
+<h3 id="数据脱敏的边界与特征回放">数据脱敏的边界与特征回放</h3>
+<p>脱敏回放的数据来源通常包括管理员授权保留的特定样本库、合成 EML 数据以及包含完整信封（Envelope）上下文的记录。然而，在邮件网关领域，脱敏具有技术破坏性：一旦为了保护用户隐私而修改发件人、收件人、主题或邮件正文，由于签名头字段选择、规范化算法或正文哈希变化，原本有效的域名密钥识别邮件（DomainKeys Identified Mail, DKIM）签名可能不再有效，因而脱敏后不能直接沿用原信的签名验证结论。</p>
+<p>因此，工程上需要区分两种回放策略：</p>
+<ol>
+<li><strong>录制特征评分回放（Feature Playback）</strong>：系统在初次扫描时，录制经授权且脱敏后的静态特征向量（如纯文本词元、域名特征散列、信封元数据与依赖组件的固定响应快照），在沙箱中重放评分逻辑。该模式速度快且不持有原始邮件全文，但其计算结果仅适用于保留下来的特征集合，无法完全等同于端到端的整信解析。</li>
+<li><strong>合成样本端到端回放（Synthetic E2E Playback）</strong>：采用专门生成的测试邮件样本（包含完整的合规通知样本与已知典型垃圾样本），严格配置测试环境的本地 DNS 与模拟依赖响应，执行完整的端到端协议解析。</li>
+</ol>
+<h3 id="成对差异分析paired-differential-analysis">成对差异分析（Paired Differential Analysis）</h3>
+<p>在离线回放中，新旧版本必须对完全相同的输入数据集进行并行评分，并输出成对比较结果：</p>
+<ul>
+<li>动作一致放行：<code>noaction -> noaction</code></li>
+<li>动作一致拦截：<code>reject -> reject</code></li>
+<li>拦截升级风险：<code>noaction -> reject</code> 或 <code>noaction -> add_header</code>（审查是否存在合法邮件误伤）</li>
+<li>拦截降级风险：<code>reject -> noaction</code>（审查是否存在典型垃圾漏防）</li>
+</ul>
+<p>回放系统必须独立记录冷缓存与暖缓存状态下的表现，避免因内存缓存预热差异干扰判定准确性。</p>
+<h2 id="典型教学变更案例url-规则分值调整">典型教学变更案例：URL 规则分值调整</h2>
+<p>为了直观展示规则调整的影响，我们引入一个受限的纯教学案例。此案例中出现的规则符号与分值均为教学示例，不代表 Rspamd 的原生默认规则或生产配置。</p>
+<h3 id="规则变更内容">规则变更内容</h3>
+<p>假设安全团队拟微调一条针对可疑财务链接的启发式规则分值：</p>
+<ul>
+<li>规则符号：<code>DEMO_FINANCE_LINK</code></li>
+<li>旧版配置分值：<code>score = 2.5</code></li>
+<li>候选版配置分值：<code>score = 5.5</code></li>
+<li>系统全局动作阈值：放行要求分值小于 6.0；标记主题 <code>[SPAM]</code> 要求分值为 <code>6.0 &#x3C;= score &#x3C; 14.0</code>；直接拒收（Reject）要求分值大于或等于 14.0。</li>
+</ul>
+<h3 id="教学输入示例">教学输入示例</h3>
+<p>我们准备一封模拟的企业间日常往来通知邮件，其特征评分由 4 个纯教学符号构成：</p>
+<ul>
+<li>发信身份基础认证通过：命中 <code>DEMO_AUTH_PASS (-1.0)</code></li>
+<li>正文排版触发通用结构提示：命中 <code>DEMO_MIME_NOTICE (+1.6)</code></li>
+<li>正文包含的外部链接属于低频域名，命中信誉观察规则：<code>DEMO_DOMAIN_GREY (+8.0)</code></li>
+<li>该链接同时命中了本次拟调整的目标规则 <code>DEMO_FINANCE_LINK</code></li>
+</ul>
+<h3 id="扫描结果差异计算">扫描结果差异计算</h3>
+<p>在旧版本规则下，各项分值进行线性累加：</p>
+<ul>
+<li>分值总计：<code>(-1.0) + 1.6 + 8.0 + 2.5 = 11.1</code></li>
+<li>触发动作：总分达到 11.1，处于 <code>6.0 &#x3C;= score &#x3C; 14.0</code> 区间，系统给出的建议动作为 <code>rewrite_subject</code>（添加垃圾主题标记并放行交付）。</li>
+</ul>
+<p>在候选版本规则下，同样进行线性累加：</p>
+<ul>
+<li>分值总计：<code>(-1.0) + 1.6 + 8.0 + 5.5 = 14.1</code></li>
+<li>触发动作：总分达到 14.1，超过 14.0 阈值，系统给出的建议动作跨越阈值升级为 <code>reject</code>（在 SMTP 会话期间直接拒收）。</li>
+</ul>
+<h3 id="误伤风险剖析">误伤风险剖析</h3>
+<p>在上述案例中，虽然各特征分值的数学叠加是线性的，但评分映射到决策动作时存在阶跃阈值。教学样本的标签设定为合法供应商通知。在旧版本下，本例假设 MTA 执行 rewrite_subject 后继续投递，收件人仍有机会在标记目录中检索到邮件并通过业务流程核对；而在候选版本下，由于单条规则分值上调了 3.0 分，导致整信越过拒收红线。</p>
+<p>这说明：绝不能仅凭人工构造的测试集或单一条目通过，就断言规则具备生产可用性；单条规则权重的调整会在复合评分体系中与其他弱特征叠加，进而引发跨越动作阈值的级联误杀。</p>
+<h2 id="灰度放量策略与缓存隔离设计">灰度放量策略与缓存隔离设计</h2>
+<p>当候选版本通过脱敏回放与仅观察阶段后，控制器开始将其推入金丝雀灰度（Canary）阶段。比较同一时间窗口、流量结构相近的候选组与对照组，并记录样本数；低样本或标签未成熟时不扩量。</p>
+<h3 id="稳定分桶与重试一致性边界">稳定分桶与重试一致性边界</h3>
+<p>在邮件网关中执行金丝雀灰度，不能使用完全随机的轮询分流，否则可能导致同一逻辑邮件在重试投递中遭遇完全不同的策略。然而，必须对两类重试场景做出严格区分：</p>
+<ol>
+<li><strong>本地内部队列绑定</strong>：对于本网关或本地 MTA 自有暂存队列中的延期重试邮件，由于具有明确的内部队列任务 ID，网关可以显式绑定其初次分配的灰度策略版本，保证重试全周期的一致性。</li>
+<li><strong>外部客户端 SMTP 重建连接</strong>：对于外部发件服务器因收到 4xx 软失败或网络中断而主动发起的重新投递，外部连接不一定会提供可靠的跨尝试关联标识（例如客户端声明的 <code>Message-ID</code> 易变且不唯一）。因此，网关不能假设外部重发必然能被自动识别为同一封信，仅能基于发件人租户假名、客户端 IP 或认证标识等稳定上下文进行散列分桶。</li>
+</ol>
+<p>鉴于直接拒收不可逆，灰度初期的强制动作策略应当严格限制在仅影响标记头或二次路由，严防不可逆拒收过早对真实流量生效。</p>
+<h3 id="缓存失效与跨版本隔离">缓存失效与跨版本隔离</h3>
+<p>在垃圾过滤系统中，重复邮件哈希缓存与外部查询结果缓存对吞吐量至关重要。需要说明的是，本篇并未全面穷尽 Rspamd 内部所有模块的缓存实现，未验证其原生缓存是否支持按完整 bundle 隔离，在工程落地时应逐类查证。自研网关在设计外部缓存层时，必须遵循以下原则：</p>
+<ol>
+<li><strong>复合缓存键设计</strong>：自研系统建立的缓存键必须将所有会影响扫描结果的维度纳入考量，建议拆分换行组织复合键：
+<pre class="astro-code astro-code-themes min-light night-owl" style="--shiki-light:#24292eff;--shiki-dark:#d6deeb;--shiki-light-bg:#ffffff;--shiki-dark-bg:#011627; overflow-x: auto;--file-name-offset: -0.75rem;" tabindex="0" data-language="text"><code><span class="line"><span>cache_key = hash(</span></span>
+<span class="line"><span>  engine_version,</span></span>
+<span class="line"><span>  bundle_id,</span></span>
+<span class="line"><span>  model_version,</span></span>
+<span class="line"><span>  message_signature,</span></span>
+<span class="line"><span>  tenant_context,</span></span>
+<span class="line"><span>  envelope_context,</span></span>
+<span class="line"><span>  connection_context,</span></span>
+<span class="line"><span>  auth_context,</span></span>
+<span class="line"><span>  external_dependency_freshness</span></span>
+<span class="line"><span>)</span></span></code></pre>
+</li>
+<li><strong>跨版本强制失效</strong>：当节点切换规则包时，旧版本的评分缓存严禁直接复用，必须做命名空间隔离或强制失效，防止新规则直接读取旧规则的计算缓存。</li>
+<li><strong>失败与未知不入纯净缓存</strong>：因网络超时、外部解析失败或依赖异常导致的降级扫描结果，严禁写入成功缓存，防止异常结果被扩散。</li>
+</ol>
+<h2 id="统一事件契约与可观测闭环">统一事件契约与可观测闭环</h2>
+<p>为了实现对规则变更的全生命周期监控，网关必须具备标准化的日志与事件输出结构。</p>
+<h3 id="结构化事件契约示例">结构化事件契约示例</h3>
+<p>以下为另一封合成邮件，适用独立的 add_header 策略，与前述阈值算例无关。网关对该次扫描尝试输出独立结构化事件（示例使用合成 ID，避免侵犯隐私）：</p>
+<pre class="astro-code astro-code-themes min-light night-owl" style="--shiki-light:#24292eff;--shiki-dark:#d6deeb;--shiki-light-bg:#ffffff;--shiki-dark-bg:#011627; overflow-x: auto;--file-name-offset: -0.75rem;" tabindex="0" data-language="text"><code><span class="line"><span>Event: ScanAuditLog</span></span>
+<span class="line"><span>event_id: "evt-7f8a9c2b-4e1d-4a88-8b9a-00129aef001"</span></span>
+<span class="line"><span>internal_message_id: "msg-int-20220116-092231-88491"</span></span>
+<span class="line"><span>scan_attempt_id: "att-001"</span></span>
+<span class="line"><span>tenant_pseudonym: "tenant-corp-alpha"</span></span>
+<span class="line"><span>node_id: "edge-node-04"</span></span>
+<span class="line"><span>worker_generation: "gen-4"</span></span>
+<span class="line"><span>bundle_id: "bundle-20220116-url-tune-v3"</span></span>
+<span class="line"><span>config_id: "a1c8f302b4"</span></span>
+<span class="line"><span>mode: "CANARY"</span></span>
+<span class="line"><span>dependency_snapshot: "dnsbl:20220116-0800,uribl:20220116-0830"</span></span>
+<span class="line"><span>cache_state: "WARM"</span></span>
+<span class="line"><span>symbols: [</span></span>
+<span class="line"><span>  "DEMO_AUTH_PASS(-1.0)",</span></span>
+<span class="line"><span>  "DEMO_MIME_NOTICE(1.6)",</span></span>
+<span class="line"><span>  "DEMO_FINANCE_LINK(5.5)"</span></span>
+<span class="line"><span>]</span></span>
+<span class="line"><span>total_score: 6.1</span></span>
+<span class="line"><span>would_action: "add_header"</span></span>
+<span class="line"><span>enforced_action: "add_header"</span></span>
+<span class="line"><span>enforcement_status: "EXECUTED"</span></span>
+<span class="line"><span>timestamps:</span></span>
+<span class="line"><span>  gateway_received_at: 1642308151.102</span></span>
+<span class="line"><span>  scan_finished_at: 1642308151.145</span></span>
+<span class="line"><span>duration_ms: 43.0</span></span>
+<span class="line"><span>error_class: "NONE"</span></span></code></pre>
+<p>特别需要强调：邮件头中的 <code>Message-ID</code> 是由客户端声明的，极易伪造或重复，在分布式审计中绝不能直接充当全局唯一主键，必须使用网关自身生成的 <code>internal_message_id</code>。事件日志中记录的 <code>config_id</code> 是通过配置探测接口获取的交叉核对值，并非底层过滤引擎原生单次扫描响应中直接携带的证明字段。</p>
+<p>此外，扫描适配器必须直接捕获实际处理该请求的 worker 与规则包代次。如果节点出现混版或版本代次返回 <code>unknown</code>，必须冻结灰度扩量；绝不能简单拿控制器的全局 <code>/stat</code> 接口来代替单次请求的代次证明。</p>
+<h3 id="迟到反馈标签修订与去重">迟到反馈、标签修订与去重</h3>
+<p>网关必须将安全引擎给出的建议动作日志与 MTA 最终投递系统的执行日志进行异步关联归因。用户在数小时或数天后的投诉或漏报申诉（迟到反馈），必须沿着追踪链反查至当次扫描所命中的确切 <code>internal_message_id</code>、<code>scan_attempt_id</code> 与 <code>bundle_id</code>。</p>
+<p>在反馈处理中，必须引入标签修订机制（<code>label_revision</code>）并基于 <code>event_id</code> 去重：</p>
+<ul>
+<li>重复传输的相同事件按相同的 <code>event_id</code> 进行幂等去重；若发生新的标签修订（例如用户二次申诉或管理端复核仲裁更正），必须生成全新的 <code>event_id</code> 并附带递增的 <code>label_revision</code>，同时关联原始 <code>internal_message_id</code>、<code>scan_attempt_id</code> 与 <code>bundle_id</code>。统计分析时保留全部历史留痕，但仅取当前最新的有效修订版本进行聚合计数。</li>
+<li>绝不能把未收到投诉的沉默邮件直接等同于“正常判定”，必须引入样本标签覆盖率指标：
+标签覆盖率 = 获得明确仲裁标签的邮件量 / 同一评估窗口的总处理邮件量。
+在灰度初期标签覆盖率极低时，统计数据存在强烈的存活者偏差（用户往往只对重要误杀申诉，对大量次要邮件误判保持沉默），不得轻易扩大放量比例。</li>
+</ul>
+<h3 id="核心质量与时延指标定义">核心质量与时延指标定义</h3>
+<p>为保证发布评估客观公允，指标计算公式与统计口径必须在全团队形成共识：</p>
+<ol>
+<li><strong>误杀率（False Positive Rate, FPR）</strong>：
+误杀率 = (已标正常样本中被策略拦截的数量) / (已标正常样本总数)</li>
+<li><strong>漏杀率（False Negative Rate, FNR）</strong>：
+漏杀率 = (已标垃圾样本中被策略放行的数量) / (已标垃圾样本总数)</li>
+</ol>
+<p>上述指标必须限定在相同成熟度的反馈窗口内按租户或动作细分计算。</p>
+<ol start="3">
+<li><strong>时延口径（Latency Metrics）</strong>：
+网关内部扫描时延必须使用操作系统单调时钟（Monotonic Clock）精确计量：从网关进程接收到完整多用途互联网邮件扩展数据请求开始，至完成打分并输出结构化结果为止；端到端包含网络传输与 SMTP 握手的等待耗时必须另行统计。时延统计（p50、p95、p99）必须按节点、规则版本及冷暖缓存状态分别聚合，严禁对分位数求算术平均。对于扫描超时的请求，必须作为超时率指标独立单列，超时仅代表时延下界，不能将未完成的超时伪造为具体的完成分位数值，更绝对不能从统计大盘中直接剔除。</li>
+</ol>
+<h3 id="自动化监控与告警基线教学预算">自动化监控与告警基线（教学预算）</h3>
+<p>在灰度发布期间，系统可建立参考告警基线。需要明确，下列阈值仅为本教学方案设计的参考预算，绝非行业通用强制标准：</p>
+<ul>
+<li><strong>计算资源预算</strong>：影子模式超时率大于 0.1%，或影子进程 CPU 占用超出配额。</li>
+<li><strong>服务健康度</strong>：规则执行引擎返回内部错误（5xx）或扫描超时率大于 0.05%。需注意，并非所有外部依赖故障都会必然表现为软错误，部分依赖可能导致降级跳过或局部误判，需结合规则命中率综合观测。</li>
+<li><strong>行为突变告警</strong>：候选版本的拒收动作（Reject）占比相对于基线版本突增超过 15%。</li>
+<li><strong>误伤熔断证据</strong>：在连续观察窗口内，经高信誉验证白名单流中出现单例拒收证据，立即触发回退流程。</li>
+<li><strong>集群漂移告警</strong>：集群内报告的目标代次与观测代次不一致持续超过预定重载窗口（例如 120 秒）。</li>
+</ul>
+<h2 id="最小端到端验证方案与建设取舍">最小端到端验证方案与建设取舍</h2>
+<p>为了在不侵入生产的前提下检验发布控制器自身的健壮性，工程团队可参考以下受控的最小验证设计。需要强调，以下这些方案均未实际执行，属于纯设计层面的教学验证逻辑：</p>
+<ol>
+<li><strong>静态错误配置拦截</strong>：
+向清单注入包含语法错误的 Lua 规则文件。预期控制平面的 <code>configtest -s</code> 返回失败，退出码非零；候选配置不能进入 <code>PREPARED</code> 状态，拒绝向生产环境激活。</li>
+<li><strong>工作进程启动失败与回退挂起</strong>：
+通过故障注入模拟工作进程异常退出或启动失败。预期主进程或控制器探测捕获工作进程不可用，发布状态不能进入激活，转入 <code>HALTED</code> 或由人工触发受控回退，在未完成全节点代次恢复前保持 <code>ROLLBACK_PENDING</code>。</li>
+<li><strong>回退自身失败场景</strong>：
+在回退执行过程中模拟磁盘只读或配置损坏。预期控制器捕获回退失败，立即停止任何流量扩量，将异常节点从流量池剔除并保持 <code>HALTED</code> 状态。</li>
+<li><strong>在途请求混版与代次未知</strong>：
+在压力测试流量下触发热重载，并模拟部分 worker 代次丢失。预期扫描适配器将无法识别代次的请求标记为 <code>unknown</code>，控制器捕获到未知代次即刻冻结灰度扩量，保证排障审计日志中每一笔请求的 <code>bundle_id</code> 真实可信。</li>
+<li><strong>依赖超时与降级样本</strong>：
+在沙箱中人为阻断外部 DNSBL 网络通信。预期引擎按配置执行降级；审计日志中 <code>error_class</code> 准确标记依赖超时，该结果严禁写入持久化无损缓存。</li>
+<li><strong>影子模式零写副作用</strong>：
+在影子观察模式下持续注入测试邮件。预期检查外部共享 Redis 统计键与模糊存储，记录计数保持完全不变，确认无线上状态污染。</li>
+<li><strong>跨版本缓存穿透与隔离</strong>：
+版本 A 生成缓存后热切换至版本 B，重放相同邮件。预期版本 B 未命中旧缓存，触发新规则重新计算并记录独立的版本 B 缓存键。</li>
+<li><strong>迟到反馈、重复传输与标签修订排查</strong>：
+模拟 MTA 由于本地合规策略放行了一封网关建议拒收的邮件。对于重复传输事件，系统依据相同 <code>event_id</code> 识别并幂等去重；对于后续人工仲裁纠正，系统接收包含全新 <code>event_id</code> 与递增 <code>label_revision</code> 的修订事件，准确追溯至当次扫描的原始版本并更新有效仲裁状态。</li>
+</ol>
+<h2 id="参考资料与开源源码">参考资料与开源源码</h2>
+<ul>
+<li><a id="ref-release-mail" href="https://lists.rspamd.com/pipermail/users/2021-January/001908.html" target="_blank" rel="noopener noreferrer">Rspamd 2.7 发布邮件公告（2021-01-08）</a></li>
+<li><a id="ref-configtest-c" href="https://github.com/rspamd/rspamd/blob/4c56c1210dac78be727fc07d1c29c140034e4b19/src/rspamadm/configtest.c#L140-L206" target="_blank" rel="noopener noreferrer">Rspamd 2.7 configtest 严格测试与符号缓存校验源码</a></li>
+<li><a id="ref-rspamd-reload" href="https://github.com/rspamd/rspamd/blob/4c56c1210dac78be727fc07d1c29c140034e4b19/src/rspamd.c#L304-L355" target="_blank" rel="noopener noreferrer">Rspamd 2.7 reread_config 配置重载与 SIGHUP 处理逻辑源码</a></li>
+<li><a id="ref-controller-stat" href="https://github.com/rspamd/rspamd/blob/4c56c1210dac78be727fc07d1c29c140034e4b19/src/controller.c#L2598-L2650" target="_blank" rel="noopener noreferrer">Rspamd 2.7 controller /stat 端点统计实现源码</a></li>
+<li><a id="ref-protocol-result" href="https://github.com/rspamd/rspamd/blob/4c56c1210dac78be727fc07d1c29c140034e4b19/src/libserver/protocol.c#L1180-L1268" target="_blank" rel="noopener noreferrer">Rspamd 2.7 扫描协议结果序列化源码</a></li>
+</ul>
+<!--/email_off--></article><hr class="my-8 border-dashed"><div id="btt-btn-container" class="fixed inset-e-4 bottom-8 z-50 md:sticky md:inset-e-auto md:float-end md:me-1 translate-y-14 opacity-0 transition duration-500"><button data-button="back-to-top" class="group bg-background relative px-2 py-1 size-14 rounded-full shadow-xl md:h-8 md:w-fit md:rounded-md md:shadow-none md:focus-visible:rounded-none md:bg-background/35 md:bg-clip-padding md:backdrop-blur-lg"><span id="progress-indicator" class="absolute inset-0 -z-10 block size-14 scale-110 rounded-full bg-transparent md:hidden md:h-8 md:rounded-md"></span><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="inline-block rotate-90 md:hidden" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M5 12h14M5 12l6 6M5 12l6-6" /></svg><span class="group-hover:text-accent sr-only text-sm md:not-sr-only"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="inline-block size-4" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M12 5v14M16 9l-4-4M8 9l4-4" /></svg> 回到顶部</span></button></div><script data-astro-rerun>
+  function backToTop() {
+    const rootElement = document.documentElement;
+    const btnContainer = document.querySelector("#btt-btn-container");
+    const backToTopBtn = document.querySelector("[data-button='back-to-top']");
+    const progressIndicator = document.querySelector("#progress-indicator");
+
+    if (!rootElement || !btnContainer || !backToTopBtn || !progressIndicator)
+      return;
+
+    backToTopBtn.addEventListener("click", () => {
+      document.body.scrollTop = 0;
+      document.documentElement.scrollTop = 0;
+    });
+
+    let lastVisible = null;
+    function handleScroll() {
+      const scrollTotal = rootElement.scrollHeight - rootElement.clientHeight;
+      const scrollTop = rootElement.scrollTop;
+      const scrollPercent = Math.floor((scrollTop / scrollTotal) * 100);
+
+      progressIndicator.style.setProperty(
+        "background-image",
+        `conic-gradient(var(--accent), var(--accent) ${scrollPercent}%, transparent ${scrollPercent}%)`
+      );
+
+      const isVisible = scrollTop / scrollTotal > 0.3;
+
+      if (isVisible !== lastVisible) {
+        btnContainer.classList.toggle("opacity-100", isVisible);
+        btnContainer.classList.toggle("translate-y-0", isVisible);
+        btnContainer.classList.toggle("opacity-0", !isVisible);
+        btnContainer.classList.toggle("translate-y-14", !isVisible);
+        lastVisible = isVisible;
+      }
+    }
+
+    let ticking = false;
+    document.addEventListener("scroll", () => {
+      if (!ticking) {
+        window.requestAnimationFrame(() => {
+          handleScroll();
+          ticking = false;
+        });
+        ticking = true;
+      }
+    });
+  }
+  backToTop();
+</script><ul class="mt-4 mb-8 flex flex-wrap gap-4 sm:my-8"><li><a data-astro-transition-scope="astro-bztu2lml-1" href="/tags/邮箱系统/" class="flex items-center gap-0.5 border-foreground border-b-2 border-dashed hover:border-accent hover:text-accent hover:-mt-0.5 focus-visible:text-accent focus-visible:border-none text-sm"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="opacity-80 size-4" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M5 9h14M5 15h14M11 4 7 20M17 4l-4 16" /></svg>邮箱系统</a></li><li><a data-astro-transition-scope="astro-bztu2lml-2" href="/tags/反垃圾邮件/" class="flex items-center gap-0.5 border-foreground border-b-2 border-dashed hover:border-accent hover:text-accent hover:-mt-0.5 focus-visible:text-accent focus-visible:border-none text-sm"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="opacity-80 size-4" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M5 9h14M5 15h14M11 4 7 20M17 4l-4 16" /></svg>反垃圾邮件</a></li><li><a data-astro-transition-scope="astro-bztu2lml-3" href="/tags/可观测性/" class="flex items-center gap-0.5 border-foreground border-b-2 border-dashed hover:border-accent hover:text-accent hover:-mt-0.5 focus-visible:text-accent focus-visible:border-none text-sm"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="opacity-80 size-4" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M5 9h14M5 15h14M11 4 7 20M17 4l-4 16" /></svg>可观测性</a></li></ul><hr class="my-8 border-dashed"><div data-pagefind-ignore class="my-8 grid grid-cols-1 gap-6 sm:grid-cols-2"><a href="/posts/mail-gateway-greylist-ratelimit/" class="flex w-full gap-1 hover:opacity-75"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="inline-block flex-none rtl:rotate-180" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M5 12h14M5 12l6 6M5 12l6-6" /></svg><div><span>上一篇</span><div class="text-accent/85 text-sm">邮件网关中的灰名单、速率限制与入口过载</div></div></a><a href="/posts/mail-migration-gateway-cutover/" class="flex w-full justify-end gap-1 text-end hover:opacity-75 sm:col-start-2"><div><span>下一篇</span><div class="text-accent/85 text-sm">邮箱迁移与网关切换</div></div><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="inline-block flex-none rtl:rotate-180" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M5 12h14M13 18l6-6M13 6l6 6" /></svg></a></div></main><footer class="app-layout mt-auto"><div class="border-border flex flex-col items-center justify-between border-t py-6 sm:flex-row-reverse sm:py-4"><div class="flex flex-wrap items-center gap-1"><a href="https://github.com/SaromChars" title="Sarom Chars 的 GitHub" class="group inline-flex items-center gap-1 hover:text-accent p-2 hover:rotate-6 sm:p-1"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="inline-block size-6 scale-125 fill-transparent stroke-current stroke-2 opacity-90 group-hover:fill-transparent sm:scale-110" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M9 19c-4.3 1.4-4.3-2.5-6-3m12 5v-3.5c0-1 .1-1.4-.5-2 2.8-.3 5.5-1.4 5.5-6a4.6 4.6 0 0 0-1.3-3.2 4.2 4.2 0 0 0-.1-3.2s-1.1-.3-3.5 1.3a12.3 12.3 0 0 0-6.2 0C6.5 2.8 5.4 3.1 5.4 3.1a4.2 4.2 0 0 0-.1 3.2A4.6 4.6 0 0 0 4 9.5c0 4.6 2.7 5.7 5.5 6-.6.6-.6 1.2-.5 2V21" /></svg><span class="sr-only">Sarom Chars 的 GitHub</span></a></div><div class="my-2 flex flex-col items-center whitespace-nowrap sm:flex-row"><span>版权 &#169; 2026</span><span class="hidden sm:inline">&nbsp;|&nbsp;</span><span>保留所有权利。</span></div></div></footer><script type="module">var e=`theme`,t=`light`,n=`dark`;function r(){return localStorage.getItem(e)||(window.matchMedia(`(prefers-color-scheme: dark)`).matches?n:t)}var i=window.__theme?.value??r();function a(){localStorage.setItem(e,i),o()}function o(){let e=document.firstElementChild;e?.setAttribute(`data-theme`,i),e?.classList.toggle(`dark`,i===n),document.querySelector(`#theme-btn`)?.setAttribute(`aria-label`,i);let t=window.getComputedStyle(document.body).backgroundColor;document.querySelector(`meta[name='theme-color']`)?.setAttribute(`content`,t)}function s(){o(),document.querySelector(`#theme-btn`)?.addEventListener(`click`,()=>{i=i===t?n:t,a()})}s(),document.addEventListener(`astro:after-swap`,s),document.addEventListener(`astro:before-swap`,e=>{let t=document.querySelector(`meta[name='theme-color']`)?.getAttribute(`content`);t&&e.newDocument.querySelector(`meta[name='theme-color']`)?.setAttribute(`content`,t)}),window.matchMedia(`(prefers-color-scheme: dark)`).addEventListener(`change`,({matches:e})=>{i=e?n:t,a()});</script></body></html><script type="module">var e=document.querySelector(`#article`);if(e?.querySelector(`a[href^="#ref-"]`)){let t=null,n=!1,r=document.createElement(`button`);r.type=`button`,r.className=`citation-return`,r.textContent=`返回阅读位置`,r.setAttribute(`data-pagefind-ignore`,``),e.addEventListener(`click`,n=>{if(n.button!==0||n.metaKey||n.ctrlKey||n.shiftKey||n.altKey)return;let i=n.target instanceof Element?n.target.closest(`a[href^="#ref-"]`):null;if(!i||!e.contains(i))return;let a=i.hash,o=document.getElementById(decodeURIComponent(a.slice(1)));o&&e.contains(o)&&(t={source:i,url:window.location.href,top:window.scrollY,left:window.scrollX,targetHash:a},o.insertAdjacentElement(`afterend`,r))}),r.addEventListener(`click`,()=>{if(!t||n)return;let e=t,i=i=>{r.remove(),window.requestAnimationFrame(()=>{window.requestAnimationFrame(()=>{e.source.focus({preventScroll:!0}),window.scrollTo({top:e.top,left:e.left,behavior:`instant`}),t=null,n=!1,i?.()})})};window.location.href===e.url?i():(n=!0,window.addEventListener(`popstate`,()=>{let e=window.history.scrollRestoration;window.history.scrollRestoration=`manual`,window.setTimeout(()=>{i(()=>{window.history.scrollRestoration=e})},0)},{once:!0}),window.history.back())}),window.addEventListener(`hashchange`,()=>{!n&&t&&window.location.hash!==t.targetHash&&(r.remove(),t=null)})}</script><script data-astro-rerun>
+  function createProgressBar() {
+    const progressContainer = document.createElement("div");
+    progressContainer.className =
+      "progress-container fixed top-0 z-10 h-1 w-full bg-background";
+
+    const progressBar = document.createElement("div");
+    progressBar.className = "progress-bar h-1 w-0 bg-accent";
+    progressBar.id = "myBar";
+
+    progressContainer.appendChild(progressBar);
+    document.body.appendChild(progressContainer);
+  }
+  createProgressBar();
+
+  function updateScrollProgress() {
+    document.addEventListener("scroll", () => {
+      const winScroll =
+        document.body.scrollTop || document.documentElement.scrollTop;
+      const height =
+        document.documentElement.scrollHeight -
+        document.documentElement.clientHeight;
+      const scrolled = (winScroll / height) * 100;
+      if (document) {
+        const myBar = document.getElementById("myBar");
+        if (myBar) {
+          myBar.style.width = scrolled + "%";
+        }
+      }
+    });
+  }
+  updateScrollProgress();
+
+  function addHeadingLinks() {
+    const headings = Array.from(
+      document.querySelectorAll("h2, h3, h4, h5, h6")
+    );
+    for (const heading of headings) {
+      heading.classList.add("group");
+      const link = document.createElement("a");
+      link.className =
+        "heading-link ms-2 no-underline opacity-75 md:opacity-0 md:group-hover:opacity-100 md:focus:opacity-100";
+      link.href = "#" + heading.id;
+
+      const span = document.createElement("span");
+      span.ariaHidden = "true";
+      span.innerText = "#";
+      link.appendChild(span);
+      heading.appendChild(link);
+    }
+  }
+  addHeadingLinks();
+
+  function attachCopyButtons() {
+    const copyButtonLabel = "Copy";
+    const codeBlocks = Array.from(document.querySelectorAll("pre"));
+
+    for (const codeBlock of codeBlocks) {
+      const wrapper = document.createElement("div");
+      wrapper.style.position = "relative";
+
+      const computedStyle = getComputedStyle(codeBlock);
+      const hasFileNameOffset =
+        computedStyle.getPropertyValue("--file-name-offset").trim() !== "";
+
+      const topClass = hasFileNameOffset
+        ? "top-(--file-name-offset)"
+        : "-top-3";
+
+      const copyButton = document.createElement("button");
+      copyButton.className = `copy-code absolute end-3 ${topClass} rounded bg-muted border border-muted px-2 py-1 text-xs leading-4 text-foreground font-medium`;
+      copyButton.innerHTML = copyButtonLabel;
+      codeBlock.setAttribute("tabindex", "0");
+      codeBlock.appendChild(copyButton);
+
+      codeBlock?.parentNode?.insertBefore(wrapper, codeBlock);
+      wrapper.appendChild(codeBlock);
+
+      copyButton.addEventListener("click", async () => {
+        await copyCode(codeBlock, copyButton);
+      });
+    }
+
+    async function copyCode(block, button) {
+      const code = block.querySelector("code");
+      const text = code?.innerText;
+
+      await navigator.clipboard.writeText(text ?? "");
+
+      button.innerText = "Copied";
+
+      setTimeout(() => {
+        button.innerText = copyButtonLabel;
+      }, 700);
+    }
+  }
+  attachCopyButtons();
+
+  /** Accessible image lightbox for article images. */
+  function initLightbox() {
+    const article = document.getElementById("article");
+    if (!article) return;
+
+    const prefersReducedMotion = () =>
+      window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+    let overlay = null;
+    let lastFocused = null;
+    let removeDragListeners = null;
+
+    // Defer attribute mutations so they don't push the LCP timestamp.
+    // Event listeners below use delegation and don't need the attributes to exist yet.
+    requestAnimationFrame(() => {
+      const images = Array.from(article.querySelectorAll("img"));
+      for (const image of images) {
+        if (image.closest("a")) continue;
+        image.setAttribute("role", "button");
+        image.setAttribute("tabindex", "0");
+        image.setAttribute("aria-haspopup", "dialog");
+        image.setAttribute(
+          "aria-label",
+          image.alt ? `Zoom image: ${image.alt}` : "Zoom image"
+        );
+      }
+    });
+
+    function open(src, alt, trigger) {
+      if (overlay) return;
+      lastFocused = trigger ?? document.activeElement;
+
+      overlay = document.createElement("div");
+      overlay.setAttribute("role", "dialog");
+      overlay.setAttribute("aria-modal", "true");
+      overlay.setAttribute(
+        "aria-label",
+        alt ? `Image preview: ${alt}` : "Image preview"
+      );
+      overlay.className =
+        "fixed inset-0 z-50 flex cursor-zoom-out items-center justify-center bg-black/70 backdrop-blur-sm opacity-0 transition-opacity duration-200 motion-reduce:transition-none";
+
+      const closeButton = document.createElement("button");
+      closeButton.type = "button";
+      closeButton.setAttribute("aria-label", "Close image preview");
+      closeButton.className =
+        "absolute end-4 top-4 z-1 flex size-11 items-center justify-center rounded bg-black/50 text-3xl leading-none text-white";
+      closeButton.innerHTML = "&#10005;";
+      closeButton.addEventListener("click", close);
+
+      const image = document.createElement("img");
+      image.src = src;
+      image.alt = "";
+      image.className =
+        "max-h-[90dvh] max-w-[90dvw] cursor-default object-contain transition-transform duration-100 ease-out motion-reduce:transition-none data-[zoom=drag]:cursor-grabbing data-[zoom=drag]:transition-none data-[zoom=in]:cursor-grab";
+
+      overlay.append(closeButton, image);
+      overlay.addEventListener("click", e => {
+        if (e.target === overlay && currentScale <= 1) close();
+      });
+
+      let currentScale = 1;
+      let translateX = 0;
+      let translateY = 0;
+      let initialDist = 0;
+      let initialScale = 1;
+      let panStartX = 0;
+      let panStartY = 0;
+      let panStartTranslateX = 0;
+      let panStartTranslateY = 0;
+      let lastTapTime = 0;
+
+      function applyTransform() {
+        image.style.transform = `scale(${currentScale}) translate(${translateX}px, ${translateY}px)`;
+        // A backdrop click only closes at fit size, so drop the zoom-out cursor while zoomed.
+        overlay?.classList.toggle("cursor-zoom-out", currentScale <= 1);
+      }
+
+      function resetTransform() {
+        currentScale = 1;
+        translateX = 0;
+        translateY = 0;
+        image.style.transform = "";
+        image.removeAttribute("data-zoom");
+        overlay?.classList.add("cursor-zoom-out");
+      }
+
+      // Keep the zoomed image from being panned past its edges.
+      function clampTranslate() {
+        if (!overlay) return;
+        const maxX = Math.max(
+          0,
+          (image.clientWidth - overlay.clientWidth / currentScale) / 2
+        );
+        const maxY = Math.max(
+          0,
+          (image.clientHeight - overlay.clientHeight / currentScale) / 2
+        );
+        translateX = Math.min(maxX, Math.max(-maxX, translateX));
+        translateY = Math.min(maxY, Math.max(-maxY, translateY));
+      }
+
+      overlay.addEventListener(
+        "touchstart",
+        e => {
+          const t = e.touches;
+          if (t.length === 2) {
+            image.setAttribute("data-zoom", "drag");
+            initialDist = Math.hypot(
+              t[1].clientX - t[0].clientX,
+              t[1].clientY - t[0].clientY
+            );
+            initialScale = currentScale;
+          } else if (t.length === 1) {
+            const now = Date.now();
+            if (now - lastTapTime < 300) {
+              e.preventDefault();
+              if (currentScale > 1) {
+                resetTransform();
+              } else {
+                currentScale = 2;
+                translateX = 0;
+                translateY = 0;
+                applyTransform();
+                image.setAttribute("data-zoom", "in");
+              }
+              lastTapTime = 0;
+              panStartX = t[0].clientX;
+              panStartY = t[0].clientY;
+              panStartTranslateX = translateX;
+              panStartTranslateY = translateY;
+            } else {
+              lastTapTime = now;
+              if (currentScale > 1) {
+                image.setAttribute("data-zoom", "drag");
+                panStartX = t[0].clientX;
+                panStartY = t[0].clientY;
+                panStartTranslateX = translateX;
+                panStartTranslateY = translateY;
+              }
+            }
+          }
+        },
+        { passive: false }
+      );
+
+      overlay.addEventListener(
+        "touchmove",
+        e => {
+          const t = e.touches;
+          if (t.length === 2) {
+            e.preventDefault();
+            const dist = Math.hypot(
+              t[1].clientX - t[0].clientX,
+              t[1].clientY - t[0].clientY
+            );
+            const oldScale = currentScale;
+            currentScale = Math.min(
+              4,
+              Math.max(1, initialScale * (dist / initialDist))
+            );
+
+            // Zoom to the geometric center of the two fingers
+            const midX = (t[0].clientX + t[1].clientX) / 2;
+            const midY = (t[0].clientY + t[1].clientY) / 2;
+            const ox = overlay.clientWidth / 2;
+            const oy = overlay.clientHeight / 2;
+            translateX =
+              (midX - ox) * (1 / currentScale - 1 / oldScale) + translateX;
+            translateY =
+              (midY - oy) * (1 / currentScale - 1 / oldScale) + translateY;
+            clampTranslate();
+            applyTransform();
+          } else if (t.length === 1) {
+            if (currentScale > 1) {
+              e.preventDefault();
+              image.setAttribute("data-zoom", "drag");
+              translateX =
+                panStartTranslateX + (t[0].clientX - panStartX) / currentScale;
+              translateY =
+                panStartTranslateY + (t[0].clientY - panStartY) / currentScale;
+              clampTranslate();
+              applyTransform();
+            } else {
+              e.preventDefault();
+            }
+          }
+        },
+        { passive: false }
+      );
+
+      overlay.addEventListener("touchend", e => {
+        if (e.touches.length === 0) {
+          if (currentScale > 1) {
+            image.setAttribute("data-zoom", "in");
+          } else {
+            image.removeAttribute("data-zoom");
+          }
+          if (currentScale <= 1.05) resetTransform();
+        }
+      });
+
+      overlay.addEventListener("touchcancel", e => {
+        if (e.touches.length === 0) {
+          if (currentScale > 1) {
+            image.setAttribute("data-zoom", "in");
+          } else {
+            image.removeAttribute("data-zoom");
+          }
+          if (currentScale <= 1.05) resetTransform();
+        }
+      });
+
+      overlay.addEventListener(
+        "wheel",
+        e => {
+          e.preventDefault();
+          const oldScale = currentScale;
+          const delta = -e.deltaY * 0.001;
+          currentScale = Math.min(4, Math.max(1, currentScale * (1 + delta)));
+
+          if (currentScale <= 1.05) {
+            resetTransform();
+          } else {
+            image.setAttribute("data-zoom", "in");
+            // Zoom to cursor: adjust translate so the point under cursor stays fixed
+            const ox = overlay.clientWidth / 2;
+            const oy = overlay.clientHeight / 2;
+            translateX =
+              (e.clientX - ox) * (1 / currentScale - 1 / oldScale) + translateX;
+            translateY =
+              (e.clientY - oy) * (1 / currentScale - 1 / oldScale) + translateY;
+            clampTranslate();
+            applyTransform();
+          }
+        },
+        { passive: false }
+      );
+
+      let isMouseDown = false;
+      let mouseStartX = 0;
+      let mouseStartY = 0;
+
+      overlay.addEventListener("mousedown", e => {
+        if (e.button !== 0 || currentScale <= 1) return;
+        if (e.target.closest("button")) return;
+        isMouseDown = true;
+        mouseStartX = e.clientX;
+        mouseStartY = e.clientY;
+        panStartTranslateX = translateX;
+        panStartTranslateY = translateY;
+        image.setAttribute("data-zoom", "drag");
+        e.preventDefault();
+      });
+
+      function onMouseMove(e) {
+        if (!isMouseDown || !overlay) return;
+        translateX =
+          panStartTranslateX + (e.clientX - mouseStartX) / currentScale;
+        translateY =
+          panStartTranslateY + (e.clientY - mouseStartY) / currentScale;
+        clampTranslate();
+        applyTransform();
+      }
+
+      function onMouseUp() {
+        if (!isMouseDown) return;
+        isMouseDown = false;
+        if (currentScale > 1) {
+          image.setAttribute("data-zoom", "in");
+        } else {
+          image.removeAttribute("data-zoom");
+        }
+      }
+
+      document.addEventListener("mousemove", onMouseMove);
+      document.addEventListener("mouseup", onMouseUp);
+      removeDragListeners = () => {
+        document.removeEventListener("mousemove", onMouseMove);
+        document.removeEventListener("mouseup", onMouseUp);
+      };
+
+      document.body.appendChild(overlay);
+      document.documentElement.style.overflow = "hidden";
+      document.addEventListener("keydown", onKeyDown);
+      window.__closeLightbox = close;
+
+      requestAnimationFrame(() => overlay?.classList.add("opacity-100"));
+      closeButton.focus();
+    }
+
+    function close() {
+      if (!overlay) return;
+      const el = overlay;
+      overlay = null;
+      el.classList.add("pointer-events-none");
+      window.__closeLightbox = null;
+
+      document.removeEventListener("keydown", onKeyDown);
+      removeDragListeners?.();
+      removeDragListeners = null;
+      document.documentElement.style.overflow = "";
+      lastFocused?.focus();
+      lastFocused = null;
+
+      if (prefersReducedMotion()) {
+        el.remove();
+        return;
+      }
+      const remove = () => el.remove();
+      el.addEventListener("transitionend", remove, { once: true });
+      setTimeout(remove, 250); // fallback in case transitionend never fires
+      el.classList.remove("opacity-100");
+    }
+
+    function onKeyDown(e) {
+      if (e.key === "Escape") {
+        close();
+      } else if (e.key === "Tab") {
+        trapFocus(e);
+      }
+    }
+
+    // Keep keyboard focus inside the open dialog.
+    function trapFocus(e) {
+      if (!overlay) return;
+      const focusables = overlay.querySelectorAll(
+        'a[href], button, [tabindex]:not([tabindex="-1"])'
+      );
+      if (focusables.length === 0) return;
+      const first = focusables[0];
+      const last = focusables[focusables.length - 1];
+      if (e.shiftKey && document.activeElement === first) {
+        e.preventDefault();
+        last.focus();
+      } else if (!e.shiftKey && document.activeElement === last) {
+        e.preventDefault();
+        first.focus();
+      }
+    }
+
+    function triggerFromEvent(e) {
+      const image = e.target.closest("img");
+      if (!image || !article.contains(image) || image.closest("a")) return null;
+      return image;
+    }
+
+    function activate(image) {
+      open(image.currentSrc || image.src, image.alt, image);
+    }
+
+    article.addEventListener("click", e => {
+      const image = triggerFromEvent(e);
+      if (!image) return;
+      e.preventDefault();
+      activate(image);
+    });
+
+    article.addEventListener("keydown", e => {
+      if (e.key !== "Enter" && e.key !== " " && e.key !== "Spacebar") return;
+      const image = triggerFromEvent(e);
+      if (!image) return;
+      e.preventDefault();
+      activate(image);
+    });
+  }
+  initLightbox();
+
+  if (!window.__lightboxSwapBound) {
+    window.__lightboxSwapBound = true;
+    document.addEventListener("astro:before-swap", () =>
+      window.__closeLightbox?.()
+    );
+  }
+
+  document.addEventListener("astro:after-swap", () =>
+    window.scrollTo({ left: 0, top: 0, behavior: "instant" })
+  );
+</script>

@@ -1,0 +1,807 @@
+<!DOCTYPE html><html dir="ltr" lang="zh-CN" class="overflow-y-scroll scroll-smooth"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1"><link rel="icon" type="image/png" href="/images/favicon-32x32-next.png"><link rel="icon" href="/favicon.ico"><link rel="canonical" href="https://www.saromchars.tech/posts/mail-gateway-async-auth-dns/"><meta name="generator" content="Astro v7.4.5"><!-- Primary meta --><title>Rspamd的DNS与身份认证异步检查 | Sarom&#39;s Blog</title><meta name="title" content="Rspamd的DNS与身份认证异步检查 | Sarom's Blog"><meta name="description" content="探讨邮件网关中Rspamd如何通过异步事件循环接入DNS查询，以及SPF、DKIM、DMARC与DNSBL对超时、临时错误与确定性状态的区分机制与缓存设计。"><meta name="author" content="Sarom Chars"><link rel="sitemap" href="/sitemap-index.xml"><!-- Open Graph --><meta property="og:type" content="article"><meta property="og:site_name" content="Sarom's Blog"><meta property="og:title" content="Rspamd的DNS与身份认证异步检查 | Sarom's Blog"><meta property="og:description" content="探讨邮件网关中Rspamd如何通过异步事件循环接入DNS查询，以及SPF、DKIM、DMARC与DNSBL对超时、临时错误与确定性状态的区分机制与缓存设计。"><meta property="og:url" content="https://www.saromchars.tech/posts/mail-gateway-async-auth-dns/"><meta property="og:image" content="https://www.saromchars.tech/og.png"><!-- Twitter / X --><meta property="twitter:card" content="summary_large_image"><meta property="twitter:url" content="https://www.saromchars.tech/posts/mail-gateway-async-auth-dns/"><meta property="twitter:title" content="Rspamd的DNS与身份认证异步检查 | Sarom's Blog"><meta property="twitter:description" content="探讨邮件网关中Rspamd如何通过异步事件循环接入DNS查询，以及SPF、DKIM、DMARC与DNSBL对超时、临时错误与确定性状态的区分机制与缓存设计。"><meta property="twitter:image" content="https://www.saromchars.tech/og.png"><!-- RSS autodiscovery --><link rel="alternate" type="application/rss+xml" title="Sarom's Blog" href="https://www.saromchars.tech/rss.xml"><!-- Filled at runtime by theme.ts to match the current background colour --><meta name="theme-color" content=""><!-- Extra head content injected by child layouts (e.g. JSON-LD, article meta) --><meta property="article:published_time" content="2021-12-26T02:00:00.000Z"><script type="application/ld+json">{"@context":"https://schema.org","@type":"BlogPosting","headline":"Rspamd的DNS与身份认证异步检查","mainEntityOfPage":"https://www.saromchars.tech/posts/mail-gateway-async-auth-dns/","datePublished":"2021-12-26T02:00:00.000Z","author":[{"@type":"Person","name":"Sarom Chars","url":"https://github.com/SaromChars"}]}</script><!--
+      Inline FOUC-prevention script: sets data-theme on <html> before
+      the browser paints. Runs synchronously, no defer/async.
+    --><script>
+      (function () {
+        const stored = localStorage.getItem("theme");
+        const prefersDark = window.matchMedia(
+          "(prefers-color-scheme: dark)"
+        ).matches;
+        const theme = stored ?? (prefersDark ? "dark" : "light");
+        const root = document.firstElementChild;
+        root?.setAttribute("data-theme", theme);
+        root?.classList.toggle("dark", theme === "dark");
+        // Expose value so theme.ts can skip re-detection.
+        window.__theme = { value: theme };
+      })();
+    </script><meta name="robots" content="index, follow"><script async src="https://www.googletagmanager.com/gtag/js?id=G-WJJJTJ4FWX"></script><script>(function(){const measurementId = "G-WJJJTJ4FWX";
+
+    window.dataLayer = window.dataLayer || [];
+    function gtag(){ window.dataLayer.push(arguments); }
+    gtag('js', new Date());
+    gtag('config', measurementId);
+  })();</script><style>@keyframes astroFadeInOut{0%{opacity:1}to{opacity:0}}@keyframes astroFadeIn{0%{opacity:0;mix-blend-mode:plus-lighter}to{opacity:1;mix-blend-mode:plus-lighter}}@keyframes astroFadeOut{0%{opacity:1;mix-blend-mode:plus-lighter}to{opacity:0;mix-blend-mode:plus-lighter}}@keyframes astroSlideFromRight{0%{transform:translate(100%)}}@keyframes astroSlideFromLeft{0%{transform:translate(-100%)}}@keyframes astroSlideToRight{to{transform:translate(100%)}}@keyframes astroSlideToLeft{to{transform:translate(-100%)}}@media (prefers-reduced-motion){::view-transition-group(*),::view-transition-old(*),::view-transition-new(*),[data-astro-transition-scope]{animation:none!important}}
+</style><link rel="stylesheet" href="/_astro/Footer.wlxowfqU.css"><style>[data-astro-transition-scope="astro-bztu2lml-1"] { view-transition-name: dns; }@layer astro { ::view-transition-old(dns) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }::view-transition-new(dns) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }[data-astro-transition=back]::view-transition-old(dns) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition=back]::view-transition-new(dns) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; } }[data-astro-transition-fallback="old"] [data-astro-transition-scope="astro-bztu2lml-1"],
+			[data-astro-transition-fallback="old"][data-astro-transition-scope="astro-bztu2lml-1"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition-fallback="new"] [data-astro-transition-scope="astro-bztu2lml-1"],
+			[data-astro-transition-fallback="new"][data-astro-transition-scope="astro-bztu2lml-1"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }[data-astro-transition=back][data-astro-transition-fallback="old"] [data-astro-transition-scope="astro-bztu2lml-1"],
+			[data-astro-transition=back][data-astro-transition-fallback="old"][data-astro-transition-scope="astro-bztu2lml-1"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition=back][data-astro-transition-fallback="new"] [data-astro-transition-scope="astro-bztu2lml-1"],
+			[data-astro-transition=back][data-astro-transition-fallback="new"][data-astro-transition-scope="astro-bztu2lml-1"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }</style><style>[data-astro-transition-scope="astro-bztu2lml-2"] { view-transition-name: \90AE\4EF6\8BA4\8BC1; }@layer astro { ::view-transition-old(\90AE\4EF6\8BA4\8BC1) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }::view-transition-new(\90AE\4EF6\8BA4\8BC1) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }[data-astro-transition=back]::view-transition-old(\90AE\4EF6\8BA4\8BC1) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition=back]::view-transition-new(\90AE\4EF6\8BA4\8BC1) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; } }[data-astro-transition-fallback="old"] [data-astro-transition-scope="astro-bztu2lml-2"],
+			[data-astro-transition-fallback="old"][data-astro-transition-scope="astro-bztu2lml-2"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition-fallback="new"] [data-astro-transition-scope="astro-bztu2lml-2"],
+			[data-astro-transition-fallback="new"][data-astro-transition-scope="astro-bztu2lml-2"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }[data-astro-transition=back][data-astro-transition-fallback="old"] [data-astro-transition-scope="astro-bztu2lml-2"],
+			[data-astro-transition=back][data-astro-transition-fallback="old"][data-astro-transition-scope="astro-bztu2lml-2"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition=back][data-astro-transition-fallback="new"] [data-astro-transition-scope="astro-bztu2lml-2"],
+			[data-astro-transition=back][data-astro-transition-fallback="new"][data-astro-transition-scope="astro-bztu2lml-2"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }</style><style>[data-astro-transition-scope="astro-bztu2lml-3"] { view-transition-name: \53CD\5783\573E\90AE\4EF6; }@layer astro { ::view-transition-old(\53CD\5783\573E\90AE\4EF6) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }::view-transition-new(\53CD\5783\573E\90AE\4EF6) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }[data-astro-transition=back]::view-transition-old(\53CD\5783\573E\90AE\4EF6) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition=back]::view-transition-new(\53CD\5783\573E\90AE\4EF6) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; } }[data-astro-transition-fallback="old"] [data-astro-transition-scope="astro-bztu2lml-3"],
+			[data-astro-transition-fallback="old"][data-astro-transition-scope="astro-bztu2lml-3"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition-fallback="new"] [data-astro-transition-scope="astro-bztu2lml-3"],
+			[data-astro-transition-fallback="new"][data-astro-transition-scope="astro-bztu2lml-3"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }[data-astro-transition=back][data-astro-transition-fallback="old"] [data-astro-transition-scope="astro-bztu2lml-3"],
+			[data-astro-transition=back][data-astro-transition-fallback="old"][data-astro-transition-scope="astro-bztu2lml-3"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition=back][data-astro-transition-fallback="new"] [data-astro-transition-scope="astro-bztu2lml-3"],
+			[data-astro-transition=back][data-astro-transition-fallback="new"][data-astro-transition-scope="astro-bztu2lml-3"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }</style></head><body class="bg-background font-app text-foreground selection:bg-accent/75 selection:text-accent-foreground flex min-h-svh flex-col"><a id="skip-to-content" href="#main-content" class="bg-background text-accent absolute inset-s-16 -top-full z-50 px-3 py-2 backdrop-blur-lg transition-all focus:top-4">跳到正文</a><header class="app-layout flex flex-col items-center justify-between sm:flex-row"><div class="border-border bg-background relative flex w-full items-baseline justify-between border-b py-4 sm:items-center sm:py-6"><a href="/" class="absolute py-1 text-xl leading-8 font-semibold whitespace-nowrap sm:static sm:my-auto sm:text-2xl sm:leading-none">Sarom&#39;s Blog</a><nav id="nav-menu" class="flex w-full flex-col items-center sm:ms-2 sm:flex-row sm:justify-end sm:space-x-4 sm:py-0"><button id="menu-btn" class="focus-outline self-end p-2 sm:hidden" aria-label="展开菜单" aria-expanded="false" aria-controls="menu-items" data-label-open="展开菜单" data-label-close="收起菜单"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="hidden" viewBox="0 0 24 24" id="close-icon"><path stroke="none" d="M0 0h24v24H0z" /><path d="M18 6 6 18M6 6l12 12" /></svg><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="icon icon-tabler icons-tabler-outline icon-tabler-menu-deep" viewBox="0 0 24 24" id="menu-icon"><path stroke="none" d="M0 0h24v24H0z" /><path d="M4 6h16M7 12h13M10 18h10" /></svg></button><ul id="menu-items" class="[&amp;&gt;li&gt;a]:hover:text-accent mt-4 hidden w-44 grid-cols-2 place-content-center gap-2 sm:mt-0 sm:flex sm:w-auto sm:gap-x-5 sm:gap-y-0 sm:[&amp;&gt;li]:h-8 [&amp;&gt;li&gt;a]:block [&amp;&gt;li&gt;a]:px-4 [&amp;&gt;li&gt;a]:py-3 [&amp;&gt;li&gt;a]:text-center [&amp;&gt;li&gt;a]:font-medium sm:[&amp;&gt;li&gt;a]:px-2 sm:[&amp;&gt;li&gt;a]:py-1"><li class="col-span-2"><a href="/posts/" class="active-nav">文章</a></li><li class="col-span-2"><a href="/tags/">标签</a></li><li class="col-span-2"><a href="/about/">关于</a></li><li class="col-span-2"><a href="/archives/" title="归档" aria-label="归档" class="group inline-flex items-center gap-1 hover:text-accent focus-outline flex size-full justify-center p-3 sm:relative sm:size-8 sm:p-0"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="hidden sm:absolute sm:top-1/2 sm:left-1/2 sm:block sm:size-6 sm:-translate-x-1/2 sm:-translate-y-1/2" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M3 6a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2 2 2 0 0 1-2 2H5a2 2 0 0 1-2-2M5 8v10a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8M10 12h4" /></svg><span class="sm:sr-only">归档</span></a></li><li class="col-span-1 flex items-center justify-center"><a href="/search/" title="搜索" aria-label="搜索" class="group inline-flex items-center gap-1 hover:text-accent focus-outline relative size-8"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="absolute top-1/2 left-1/2 size-6 -translate-x-1/2 -translate-y-1/2" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M3 10a7 7 0 1 0 14 0 7 7 0 1 0-14 0M21 21l-6-6" /></svg><span class="sr-only">搜索</span></a></li><li class="col-span-1 flex items-center justify-center"><button id="theme-btn" class="focus-outline hover:[&amp;&gt;svg]:stroke-accent relative size-12 p-4 sm:size-8" title="切换主题" aria-label="auto" aria-live="polite"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="absolute top-[50%] left-[50%] translate-[-50%] scale-100 rotate-0 transition-all dark:scale-0 dark:-rotate-90" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M12 3h.393a7.5 7.5 0 0 0 7.92 12.446A9 9 0 1 1 12 2.992z" /></svg><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="absolute top-[50%] left-[50%] translate-[-50%] scale-0 rotate-90 transition-all dark:scale-100 dark:rotate-0" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M14.828 14.828a4 4 0 1 0-5.656-5.656 4 4 0 0 0 5.656 5.656M6.343 17.657l-1.414 1.414M6.343 6.343 4.929 4.929M17.657 6.343l1.414-1.414M17.657 17.657l1.414 1.414M4 12H2M12 4V2M20 12h2M12 20v2" /></svg></button></li></ul></nav></div></header><script type="module">function e(){let e=document.querySelector(`#menu-btn`),t=document.querySelector(`#menu-items`),n=document.querySelector(`#menu-icon`),r=document.querySelector(`#close-icon`);if(!e||!t||!n||!r)return;let i=e.dataset.labelOpen??`Open menu`,a=e.dataset.labelClose??`Close menu`;e.addEventListener(`click`,()=>{let o=e.getAttribute(`aria-expanded`)===`true`;e.setAttribute(`aria-expanded`,o?`false`:`true`),e.setAttribute(`aria-label`,o?i:a),t.classList.toggle(`hidden`),t.classList.toggle(`grid`),n.classList.toggle(`hidden`),r.classList.toggle(`hidden`)})}function t(){let e=document.getElementById(`skip-to-content`);e&&e.addEventListener(`click`,e=>{if(e.defaultPrevented||e.metaKey||e.ctrlKey||e.shiftKey||e.button!==0)return;e.preventDefault();let t=document.getElementById(`main-content`);t&&(t.setAttribute(`tabindex`,`-1`),t.addEventListener(`blur`,()=>t.removeAttribute(`tabindex`),{once:!0}),t.focus(),t.scrollIntoView({behavior:`smooth`}))})}e(),document.addEventListener(`astro:after-swap`,e),t(),document.addEventListener(`astro:after-swap`,t);</script><div class="app-layout flex items-center justify-start"><a id="back-button" href="/" class="group inline-flex items-center gap-1 hover:text-accent focus-outline hover:text-foreground/75 -ms-2 mt-8 mb-2"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="inline-block size-6 rtl:rotate-180" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="m15 6-6 6 6 6" /></svg><span>返回</span></a></div><script type="module">function e(){let e=document.querySelector(`#back-button`),t=sessionStorage.getItem(`backUrl`);t&&e&&(e.href=t)}document.addEventListener(`astro:page-load`,e),e();</script><main id="main-content" class="app-layout" data-pagefind-body><h1 style="view-transition-name:mail-gateway-async-auth-dns" class="text-accent inline-block text-2xl font-bold sm:text-3xl">Rspamd的DNS与身份认证异步检查</h1><div class="my-2 flex items-center gap-2"><div class="text-muted-foreground flex flex-wrap items-center gap-x-2 gap-y-1"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="inline-block size-6 min-w-5.5" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M4 7a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2zM16 3v4M8 3v4M4 11h16M7 14h.013M10.01 14h.005M13.01 14h.005M16.015 14h.005M13.015 17h.005M7.01 17h.005M10.01 17h.005" /></svg><time class="text-sm sm:text-base" datetime="2021-12-26T02:00:00.000Z">2021年12月26日</time></div><span aria-hidden="true" class="text-muted-foreground max-sm:hidden hidden">|</span></div><article id="article" class="mt-8 w-full app-prose max-w-app prose-pre:bg-(--shiki-light-bg) dark:prose-pre:bg-(--shiki-dark-bg)"><!--email_off-->
+<p>SPF 查询超时，而 DKIM 验证通过且与 From 域对齐时，DMARC 仍可通过。这里需要区分认证失败和暂时无法完成检查。Rspamd 2.7 的实现提供了一条具体的阅读路线：DNS 请求如何挂接任务，结果如何变成符号，以及超时后谁负责收尾。<a href="#ref-announcement">1</a></p>
+<h2 id="异步查询与任务生命周期管理">异步查询与任务生命周期管理</h2>
+<p>在事件驱动的邮件处理流水线中，一条邮件检查任务（<code>struct rspamd_task</code>）需要触发多项并行的网络探测，包括拉取发件域的 SPF TXT 记录、提取 DKIM 签名的公钥 TXT 记录，以及查询发信 IP 在域名系统黑名单（Domain Name System-based Blackhole List，DNSBL）中的映射状态。这些网络请求均由底层的域名系统（Domain Name System，DNS）解析器异步调度。</p>
+<h3 id="会话计数与符号缓存回调">会话计数与符号缓存回调</h3>
+<p>Rspamd 的底层通过 <code>rspamd_async_session</code>（异步会话）与符号缓存 <code>symcache</code> 协同管理并发查询的生命周期。整个生命周期的调用顺序为：注册入口发起请求并增加挂起计数，解析器进入异步等待，底层应答触发回调并在安全的栈中执行业务逻辑，最后递减挂起计数完成收尾。</p>
+<p>在 Lua 层的解析器接口中，C 模块 <code>src/lua/lua_dns_resolver.c</code> 在向底层发起任务关联的 DNS 请求前，会检查当前执行环境关联的符号项，并调用 <code>rspamd_symcache_item_async_inc</code> 显式增加挂起事件计数。<a href="#ref-lua-resolver-inc">2</a> 若底层解析器请求创建失败（如任务处于阻断状态、未初始化解析器或域名非法），代码会转入错误处理分支，立即通过 <code>rspamd_symcache_item_async_dec_check</code> 递减计数并返回请求创建失败，避免符号项在缓存中永久挂起；<a href="#ref-lua-resolver-err">3</a> 自研网关的业务调用方在此类失败路径中应显式记录请求未能创建的具体原因。</p>
+<p>当底层通信完成或触发事件后，回调函数 <code>lua_dns_resolver_callback</code> 负责在准备好的协程环境内执行 Lua 脚本回调，并在退出前调用 <code>rspamd_symcache_item_async_dec_check</code> 递减挂起计数。<a href="#ref-lua-resolver-cb">4</a> 只有当注册在该符号上的所有异步操作全部返回后，该符号才会被标记为就绪状态。异步回调的职责边界在于：请求创建失败时立即就地完成自身分支；请求创建成功后则由任务会话持有该未决请求，无论网络正常返回还是会话清理均触发终结器释放资源，业务调用方不得在此计数归零前过早释放任务。</p>
+<h3 id="会话清理与超时伪造应答">会话清理与超时伪造应答</h3>
+<p>网络环境的不确定性意味着个别 DNS 查询可能因丢包而长期处于无应答状态。在 <code>src/libserver/dns.c</code> 中，Rspamd 为每个挂载在异步会话上的 DNS 请求包装了完成回调 <code>rspamd_dns_fin_cb</code>。</p>
+<p>当收到正常响应时，底层传入解析结果指针；但若在未收到实际响应（结果指针为空）的情况下会话超时被清理，Rspamd 构造一个状态码设为 <code>RDNS_RC_TIMEOUT</code> 的虚构应答对象回传给上层回调，并在释放请求后递减当前符号的异步计数。<a href="#ref-dns-fin-timeout">5</a> 通过这一层伪造应答，上层协议状态机无需感知底层的断连细节，统一按超时错误收尾。</p>
+<h3 id="任务超时推进与软拒绝条件">任务超时推进与软拒绝条件</h3>
+<p>当邮件处理耗时达到配置时限时，libev 定时器会触发 <code>rspamd_task_timeout</code>。在 <code>src/libserver/task.c</code> 中，系统会强制推进阶段流转：<a href="#ref-task-timeout-impl">6</a></p>
+<ol>
+<li>检查配置项 <code>task->cfg->soft_reject_on_timeout</code> 是否开启；若未开启，则不注入软拒绝。</li>
+<li>若开启了该选项，系统检查当前已累计评分所决定的动作；若已达到硬拒绝（<code>METRIC_ACTION_REJECT</code>），系统将保留硬拒绝动作；若尚未达到硬拒绝，则注入临时软拒绝结果。</li>
+<li>随后，处理逻辑调用 <code>ev_timer_again</code> 重新激活定时器，将阶段标记置位（<code>task->processed_stages |= RSPAMD_TASK_STAGE_FILTERS</code>），接着调用 <code>rspamd_session_cleanup</code> 注销当前会话中的未决事件，随后调用 <code>rspamd_task_process</code> 推进后续流水线，最后调用 <code>rspamd_session_pending</code> 检查状态。</li>
+</ol>
+<h2 id="身份认证协议中的-dns-状态区分">身份认证协议中的 DNS 状态区分</h2>
+<p>反垃圾邮件处理涉及多个维度的状态空间，在工程实现中必须分层对待：</p>
+<ul>
+<li><strong>网络与传输层</strong>：连接成功、网络超时、连接被拒。</li>
+<li><strong>DNS 协议层</strong>：正常应答（NOERROR）、域名不存在（NXDOMAIN）、NOREC（解析库内部标明的无记录分类，并非线上标准 DNS 响应码）、服务端临时故障（SERVFAIL）。</li>
+<li><strong>认证协议与调度层</strong>：前置检查跳过（白名单/本地网络）、语法或多重记录错误（PERMFAIL、BADPOLICY）、对齐通过（PASS）、临时故障（TEMPFAIL）。</li>
+<li><strong>综合决议层</strong>：黑名单命中判定、DMARC 聚合处置。</li>
+</ul>
+<h3 id="spf-状态映射与-dmarc-计数依赖">SPF 状态映射与 DMARC 计数依赖</h3>
+<p>在发件人策略框架（Sender Policy Framework，SPF）检查中，Lua 层的入口回调 <code>spf_check_callback</code> 调用 <code>rspamd_spf.resolve(task, spf_resolved_cb)</code> 发起异步解析；拿到解析记录对象后，再调用 <code>record:check_ip(ip)</code> 针对当前发信 IP 执行匹配，最终将策略结果映射为符号。<a href="#ref-spf-lua-resolve">7</a> 这表明系统并非对发信域缓存一个全局的最终结果，缓存下来的 SPF 记录依然用于针对本次具体 IP 进行运算。</p>
+<p>在 C 语言核心解析逻辑 <code>src/libserver/spf.c</code> 中：<a href="#ref-spf-dns-cb">8</a></p>
+<ul>
+<li>若响应码为 <code>RDNS_RC_NOREC</code> 或 <code>RDNS_RC_NXDOMAIN</code>，且为首次 DNS 请求，元素被赋予 <code>RSPAMD_SPF_FLAG_NA</code>（不适用/无记录）。</li>
+<li>若响应码既非无记录又非 NXDOMAIN，且非成功响应，则直接打上 <code>RSPAMD_SPF_FLAG_TEMPFAIL</code> 标记。</li>
+<li>在后续解析 <code>redirect</code> 修饰符时，若目标域名返回不存在，则状态会被置为 <code>RSPAMD_SPF_FLAG_PERMFAIL</code>。</li>
+</ul>
+<p>在 Lua 层插件 <code>src/plugins/lua/spf.lua</code> 中，这些标志最终被映射为具体符号：<code>R_SPF_ALLOW</code>（<code>+</code>）、<code>R_SPF_FAIL</code>（<code>-</code>）、<code>R_SPF_SOFTFAIL</code>（<code>~</code>）、<code>R_SPF_NEUTRAL</code>（<code>?</code>）、<code>R_SPF_DNSFAIL</code>（对应 <code>temp_fail</code>）、<code>R_SPF_PERMFAIL</code> 以及 <code>R_SPF_NA</code>。<a href="#ref-spf-lua-cb">9</a></p>
+<p>关于模块协作，DMARC 的执行依赖 SPF 与 DKIM 的前置评估，配置层明确注册了依赖关系：<a href="#ref-dmarc-register-dep">10</a></p>
+<pre class="astro-code astro-code-themes min-light night-owl" style="--shiki-light:#24292eff;--shiki-dark:#d6deeb;--shiki-light-bg:#ffffff;--shiki-dark-bg:#011627; overflow-x: auto;--file-name-offset: -0.75rem;" tabindex="0" data-language="lua"><code><span class="line"><span style="--shiki-light:#C2C3C5;--shiki-light-font-style:inherit;--shiki-dark:#637777;--shiki-dark-font-style:italic">-- 节选自 src/plugins/lua/dmarc.lua</span></span>
+<span class="line"><span style="--shiki-light:#24292EFF;--shiki-dark:#FFCB8B">rspamd_config</span><span style="--shiki-light:#24292EFF;--shiki-dark:#D6DEEB">:</span><span style="--shiki-light:#6F42C1;--shiki-dark:#C5E478">register_dependency</span><span style="--shiki-light:#24292EFF;--shiki-dark:#D6DEEB">(</span><span style="--shiki-light:#22863A;--shiki-dark:#D9F5DD">'</span><span style="--shiki-light:#22863A;--shiki-dark:#ECC48D">DMARC_CALLBACK</span><span style="--shiki-light:#22863A;--shiki-dark:#D9F5DD">'</span><span style="--shiki-light:#24292EFF;--shiki-dark:#D6DEEB">, </span><span style="--shiki-light:#24292EFF;--shiki-dark:#C5E478">symbols</span><span style="--shiki-light:#24292EFF;--shiki-dark:#D6DEEB">[</span><span style="--shiki-light:#22863A;--shiki-dark:#D9F5DD">'</span><span style="--shiki-light:#22863A;--shiki-dark:#ECC48D">spf_allow_symbol</span><span style="--shiki-light:#22863A;--shiki-dark:#D9F5DD">'</span><span style="--shiki-light:#24292EFF;--shiki-dark:#D6DEEB">])</span></span>
+<span class="line"><span style="--shiki-light:#24292EFF;--shiki-dark:#FFCB8B">rspamd_config</span><span style="--shiki-light:#24292EFF;--shiki-dark:#D6DEEB">:</span><span style="--shiki-light:#6F42C1;--shiki-dark:#C5E478">register_dependency</span><span style="--shiki-light:#24292EFF;--shiki-dark:#D6DEEB">(</span><span style="--shiki-light:#22863A;--shiki-dark:#D9F5DD">'</span><span style="--shiki-light:#22863A;--shiki-dark:#ECC48D">DMARC_CALLBACK</span><span style="--shiki-light:#22863A;--shiki-dark:#D9F5DD">'</span><span style="--shiki-light:#24292EFF;--shiki-dark:#D6DEEB">, </span><span style="--shiki-light:#24292EFF;--shiki-dark:#C5E478">symbols</span><span style="--shiki-light:#24292EFF;--shiki-dark:#D6DEEB">[</span><span style="--shiki-light:#22863A;--shiki-dark:#D9F5DD">'</span><span style="--shiki-light:#22863A;--shiki-dark:#ECC48D">dkim_allow_symbol</span><span style="--shiki-light:#22863A;--shiki-dark:#D9F5DD">'</span><span style="--shiki-light:#24292EFF;--shiki-dark:#D6DEEB">])</span></span></code></pre>
+<p>同时，在 <code>src/plugins/lua/spf.lua</code> 中维护着任务内存池变量 <code>dmarc_checks</code> 的计数，源码在此处留下 FIXME，提示这一计数并不等于真正执行了 SPF 认证。<a href="#ref-spf-dmarc-fixme">11</a> 细读具体路径可知：若发信 IP 命中了白名单（<code>whitelist</code>）或被判定为本地/授权网络（<code>is_skip_local_or_authed</code>），函数在此前已经直接 <code>return</code>，不会递增该计数；而若缺少发信 IP 地址，虽然无法发起解析，却依然会向下执行递增该计数。DKIM 符号回调中也存在对 <code>dmarc_checks</code> 的递增操作。<a href="#ref-dkim-async">12</a> DMARC 插件在 <code>dmarc_callback</code> 中通过判断 <code>dmarc_checks ~= 2</code> 来确定是否已调度前置检查。<a href="#ref-dmarc-callback">13</a> 这一计数的递增仅代表进入了特定调度路径，绝不代表 SPF 已经通过了验证或已完成实质性解析。</p>
+<h3 id="dkim-密钥查询与错误码分类">DKIM 密钥查询与错误码分类</h3>
+<p>域密钥识别邮件（DomainKeys Identified Mail，DKIM）的入口函数 <code>dkim_symbol_callback</code> 先按 DNS 键查公钥缓存；未命中时调用 <code>rspamd_get_dkim_key</code>，注册 <code>dkim_module_key_handler</code>。回调取得公钥或错误后调用 <code>dkim_module_check</code> 汇总签名结果，故函数发起查询后返回不等于认证已经结束。<a href="#ref-dkim-async">12</a></p>
+<p>DKIM 的公钥存放在 <code>selector._domainkey.domain</code> 的 TXT 记录中。在 <code>src/libserver/dkim.c</code> 中，当 DNS 查询返回非 NOERROR 时：<a href="#ref-dkim-c-dns-cb">14</a></p>
+<ul>
+<li>若响应码为 <code>RDNS_RC_NOREC</code> 或 <code>RDNS_RC_NXDOMAIN</code>，设置内部错误码为 <code>DKIM_SIGERROR_NOREC</code>；</li>
+<li>其他非成功错误码则统一赋值为 <code>DKIM_SIGERROR_NOKEY</code>。</li>
+</ul>
+<p>随后在 <code>src/plugins/dkim_check.c</code> 的 <code>dkim_module_key_handler</code> 回调中：<a href="#ref-dkim-key-handler">15</a></p>
+<ul>
+<li>错误码等于 <code>DKIM_SIGERROR_NOKEY</code> 时，被归类为 <code>DKIM_TRYAGAIN</code>（临时故障，通常对应 DNS 网络超时或服务异常），促使上层产生临时未决状态；</li>
+<li>其余错误（包括记录不存在及公钥格式非法）则被归类为 <code>DKIM_PERM_ERROR</code>（永久错误）。</li>
+</ul>
+<p>在签名结果汇总函数 <code>dkim_module_check</code> 中，系统遍历全部签名上下文，将状态码映射为对应符号与追踪标记：<code>DKIM_CONTINUE</code> 映射为允许（<code>+</code>）、<code>DKIM_REJECT</code> 映射为拒绝（<code>-</code>）、<code>DKIM_PERM_ERROR</code> 映射为永久失败（<code>~</code>）、<code>DKIM_TRYAGAIN</code> 映射为临时失败（<code>?</code>）。<a href="#ref-dkim-module-check">16</a> 这一错误划分属于 Rspamd 该版本的内部实现决策，并非全部 DNS 协议的硬性通用规定。</p>
+<h3 id="dmarc-聚合策略与临时故障仲裁">DMARC 聚合策略与临时故障仲裁</h3>
+<p>基于域的消息认证、报告和一致性（Domain-based Message Authentication, Reporting, and Conformance，DMARC）比较可见 From 域与已通过认证的 SPF 域或 DKIM 的 <code>d=</code> 域。严格对齐要求完整域名一致，宽松对齐比较组织域。<a href="#ref-dmarc-alignment">17</a></p>
+<p>在 <code>src/plugins/lua/dmarc.lua</code> 的 <code>dmarc_validate_policy</code> 中，仲裁逻辑严格遵循 RFC 7489 原则：<a href="#ref-dmarc-policy-eval">18</a></p>
+<ol>
+<li><strong>对齐通过优先于临时故障</strong>：只要 SPF 或 DKIM 中有一项通过且达到域对齐（<code>spf_ok</code> 或 <code>dkim_ok</code> 为真），即使另一项由于 DNS 超时遭遇了 <code>tempfail</code>，DMARC 仍判定为通过（<code>DMARC_POLICY_ALLOW</code>）。</li>
+<li><strong>临时故障保护发件人</strong>：只有当 SPF 与 DKIM 均未达成对齐通过，且其中至少一项遭遇了临时故障（<code>spf_tmpfail</code> 或 <code>dkim_tmpfail</code>）时，系统才会产出 <code>DMARC_POLICY_DNSFAIL</code>，而不会执行发件人声明的 <code>reject</code> 拦截。</li>
+</ol>
+<p>在策略记录查询阶段，DMARC 需要解析 From 完整域及其组织域（通过 <code>rspamd_util.get_tld</code> 获取，非 DNS 根级顶级域）的 <code>_dmarc.</code> TXT 记录，并维护 <code>dns_checks_inflight</code> 计数，确保两次潜在查询全部返回后才触发最终校验。<a href="#ref-dmarc-inflight">19</a></p>
+<h3 id="dnsbl-响应码与位掩码匹配机制">DNSBL 响应码与位掩码匹配机制</h3>
+<p>RBL 规则回调通过 <code>task:get_resolver()</code> 提交 <code>resolve_a</code> 请求，并把 <code>gen_rbl_dns_callback</code> 接到 <code>rbl_dns_process</code>；地址展开规则可能先经过额外 A/AAAA 解析阶段。<a href="#ref-rbl-async">20</a> 在基于 IP 或域名的 DNSBL 检查中，发信 IP 经由特定规则反转拼接在查询域后。在 <code>src/plugins/lua/rbl.lua</code> 的 <code>rbl_dns_process</code> 函数中：<a href="#ref-rbl-dns-process">21</a></p>
+<ul>
+<li>若返回错误为 <code>requested record is not found</code> 或 <code>no records with this name</code>，说明发信 IP 在本次查询的名单中未查得记录（未命中），函数直接返回。这仅代表当前名单未列入，不能以此推论整封邮件必然安全。</li>
+<li>若遇到其他非空错误（如超时或 SERVFAIL），插入 <code>rbl.symbol .. '_FAIL'</code> 符号标明服务不可用，而不判定发件人违规。</li>
+<li>当成功获取 IP 解析列表时：
+<ol>
+<li>若规则既未配置 <code>returncodes</code> 也未配置 <code>returnbits</code>，且定义了 <code>symbol</code>，则直接判定命中并插入该符号；</li>
+<li>若配置了 <code>returnbits</code>，提取返回 IP 的整数值进行按位与运算；</li>
+<li>若配置了 <code>returncodes</code>，把配置模式加上首尾锚点，再用 Lua 模式匹配返回地址；</li>
+<li>若返回了未知代码，仅在显式配置 <code>unknown = true</code> 时才赋予主符号，否则仅记录调试信息。</li>
+</ol>
+</li>
+</ul>
+<h2 id="缓存隔离与故障保留边界">缓存隔离与故障保留边界</h2>
+<p>为降低重复网络开销，Rspamd 2.7 采用了分模块的局部缓存设计：</p>
+<ol>
+<li><strong>SPF 扁平化记录缓存</strong>：在 <code>src/libserver/spf.c</code> 中，展开后的记录存入 <code>spf_hash</code>（基于最近最少使用算法，Least Recently Used，LRU）。其存入条件为 <code>flat->ttl > 0 &#x26;&#x26; flat->flags == 0</code>。<a href="#ref-spf-lru-cache">22</a> 记录缓存的生存时间（Time to Live，TTL）受 <code>min_cache_ttl</code> 兜底抬高，<a href="#ref-spf-cache-min">23</a> 若策略中包含特定宏展开则可能阻止记录被缓存。<a href="#ref-spf-cache-macro">24</a></li>
+<li><strong>DKIM 公钥缓存</strong>：在 <code>src/plugins/dkim_check.c</code> 中，解析出的公钥存入模块独立的 <code>dkim_hash</code>，其淘汰策略同样采用带有 TTL 的 LRU 散列表。<a href="#ref-dkim-lru-cache">25</a></li>
+<li><strong>DNS 临时故障缓存</strong>：<code>src/libserver/dns.c</code> 还保存 SERVFAIL，并定义了把该类别回传的 <code>rspamd_fail_cache_cb</code>。<a href="#ref-dns-fail-cache">26</a> 命中分支初始化定时器后返回，但仅凭这里的代码无法确认调度链是否完整工作；不能把它写成已验证的缓存重放。<a href="#ref-dns-fail-timer">27</a> 接入时应专门验证命中后回调、任务收尾与错误类别均正确。</li>
+</ol>
+<h2 id="自研反垃圾网关的工程设计与验证方案">自研反垃圾网关的工程设计与验证方案</h2>
+<p>基于对 Rspamd 2.7 的实现分析，自研邮件后端或网关在处理异步 DNS 探测时，应建立分层状态契约并配合严密的验证测试用例。</p>
+<h3 id="统一的异步身份认证状态机契约">统一的异步身份认证状态机契约</h3>
+<p>自研网关在向综合评分模块输出判定时，建议将传输层网络状态与协议语义严格拆解，避免使用模糊的布尔值。以下给出单个检查对象的教学设计契约（注意：<strong>以下数据契约仅为工程设计推导与教学示意，未在实际生产系统运行，并非 Rspamd 原生 JSON 格式</strong>）：</p>
+<pre class="astro-code astro-code-themes min-light night-owl" style="--shiki-light:#24292eff;--shiki-dark:#d6deeb;--shiki-light-bg:#ffffff;--shiki-dark-bg:#011627; overflow-x: auto;--file-name-offset: -0.75rem;" tabindex="0" data-language="json"><code><span class="line"><span style="--shiki-light:#24292EFF;--shiki-dark:#D6DEEB">{</span></span>
+<span class="line"><span style="--shiki-light:#D32F2F;--shiki-dark:#7FDBCA">  "task_id"</span><span style="--shiki-light:#212121;--shiki-dark:#D6DEEB">:</span><span style="--shiki-light:#22863A;--shiki-dark:#D9F5DD"> "</span><span style="--shiki-light:#22863A;--shiki-dark:#C789D6">sim-task-20211226-001</span><span style="--shiki-light:#22863A;--shiki-dark:#D9F5DD">"</span><span style="--shiki-light:#212121;--shiki-dark:#D6DEEB">,</span></span>
+<span class="line"><span style="--shiki-light:#D32F2F;--shiki-dark:#7FDBCA">  "mechanism"</span><span style="--shiki-light:#212121;--shiki-dark:#D6DEEB">:</span><span style="--shiki-light:#22863A;--shiki-dark:#D9F5DD"> "</span><span style="--shiki-light:#22863A;--shiki-dark:#C789D6">spf</span><span style="--shiki-light:#22863A;--shiki-dark:#D9F5DD">"</span><span style="--shiki-light:#212121;--shiki-dark:#D6DEEB">,</span></span>
+<span class="line"><span style="--shiki-light:#D32F2F;--shiki-dark:#7FDBCA">  "checked"</span><span style="--shiki-light:#212121;--shiki-dark:#D6DEEB">:</span><span style="--shiki-light:#1976D2;--shiki-dark:#FF5874"> true</span><span style="--shiki-light:#212121;--shiki-dark:#D6DEEB">,</span></span>
+<span class="line"><span style="--shiki-light:#D32F2F;--shiki-dark:#7FDBCA">  "query_status"</span><span style="--shiki-light:#212121;--shiki-dark:#D6DEEB">:</span><span style="--shiki-light:#22863A;--shiki-dark:#D9F5DD"> "</span><span style="--shiki-light:#22863A;--shiki-dark:#C789D6">timeout</span><span style="--shiki-light:#22863A;--shiki-dark:#D9F5DD">"</span><span style="--shiki-light:#212121;--shiki-dark:#D6DEEB">,</span></span>
+<span class="line"><span style="--shiki-light:#D32F2F;--shiki-dark:#7FDBCA">  "protocol_result"</span><span style="--shiki-light:#212121;--shiki-dark:#D6DEEB">:</span><span style="--shiki-light:#22863A;--shiki-dark:#D9F5DD"> "</span><span style="--shiki-light:#22863A;--shiki-dark:#C789D6">temperror</span><span style="--shiki-light:#22863A;--shiki-dark:#D9F5DD">"</span><span style="--shiki-light:#212121;--shiki-dark:#D6DEEB">,</span></span>
+<span class="line"><span style="--shiki-light:#D32F2F;--shiki-dark:#7FDBCA">  "aligned"</span><span style="--shiki-light:#212121;--shiki-dark:#D6DEEB">:</span><span style="--shiki-light:#1976D2;--shiki-dark:#FF5874"> null</span><span style="--shiki-light:#212121;--shiki-dark:#D6DEEB">,</span></span>
+<span class="line"><span style="--shiki-light:#D32F2F;--shiki-dark:#7FDBCA">  "complete"</span><span style="--shiki-light:#212121;--shiki-dark:#D6DEEB">:</span><span style="--shiki-light:#1976D2;--shiki-dark:#FF5874"> true</span><span style="--shiki-light:#212121;--shiki-dark:#D6DEEB">,</span></span>
+<span class="line"><span style="--shiki-light:#D32F2F;--shiki-dark:#7FDBCA">  "cache"</span><span style="--shiki-light:#212121;--shiki-dark:#D6DEEB">:</span><span style="--shiki-light:#24292EFF;--shiki-dark:#D6DEEB"> {</span></span>
+<span class="line"><span style="--shiki-light:#D32F2F;--shiki-dark:#7FDBCA">    "hit"</span><span style="--shiki-light:#212121;--shiki-dark:#D6DEEB">:</span><span style="--shiki-light:#1976D2;--shiki-dark:#FF5874"> false</span><span style="--shiki-light:#212121;--shiki-dark:#D6DEEB">,</span></span>
+<span class="line"><span style="--shiki-light:#D32F2F;--shiki-dark:#7FDBCA">    "kind"</span><span style="--shiki-light:#212121;--shiki-dark:#D6DEEB">:</span><span style="--shiki-light:#22863A;--shiki-dark:#D9F5DD"> "</span><span style="--shiki-light:#22863A;--shiki-dark:#C789D6">none</span><span style="--shiki-light:#22863A;--shiki-dark:#D9F5DD">"</span></span>
+<span class="line"><span style="--shiki-light:#24292EFF;--shiki-dark:#D6DEEB">  }</span></span>
+<span class="line"><span style="--shiki-light:#24292EFF;--shiki-dark:#D6DEEB">}</span></span></code></pre>
+<p>在工程扩展中，DKIM 多签名可单独存入对象数组；DNSBL 查询在无记录时记录 <code>listed: false</code>，在遇到 SERVFAIL 时则记录 <code>listed: null</code>；跳过执行时应显式标注 <code>checked: false</code> 与 <code>skip_reason</code>，避免用 null 冒充明确失败；同时应独立保留观测时间与过期时间，以便区分旧缓存与实时查询。</p>
+<h3 id="典型失败案例与工程验证方案">典型失败案例与工程验证方案</h3>
+<p>以下案例与测试方案均为教学推导演练，未在生产集群实际运行。</p>
+<p><strong>问题场景</strong>：
+发件域 <code>example.org</code> 配置了 <code>p=reject</code> 策略。测试邮件带有有效的 DKIM 签名（<code>d=example.org</code>）且与 From 域严格对齐。在接收处理时，网关针对 SPF TXT 查询遭遇网络瞬态故障（例如解析器超时或 SERVFAIL）。若网关仅凭简单的非此即彼逻辑判定“SPF 校验未通过”，并将内部标志记为失败，可能错误地触发拒收动作。</p>
+<p><strong>测试桩注入与断言方案</strong>：</p>
+<ol>
+<li><strong>故障与缓存桩搭建</strong>：
+<ul>
+<li>建立 Mock DNS 桩服务，将 SPF TXT 解析分别注入为独立的两组异常变量：一组注入人为延迟（产生 <code>TIMEOUT</code>），另一组直接返回 <code>SERVFAIL</code> 报文；</li>
+<li>预热本地 DKIM 公钥缓存，使其命中已存在的合法公钥记录；另设对照邮件，使用另一不对齐域的密钥重新生成有效 DKIM 签名，并为该域配置测试 DNS 公钥；保持 From 域不变。</li>
+</ul>
+</li>
+<li><strong>多分支断言要求</strong>：
+<ul>
+<li><strong>基础用例</strong>：在 DKIM 预热命中且标识对齐的条件下，无论 SPF 遭遇 <code>TIMEOUT</code> 还是 <code>SERVFAIL</code>，SPF 模块均必须产出 <code>tempfail</code> 状态，DMARC 仲裁必须识别对齐通过并产出 <code>pass</code>，严禁触发 DMARC 拒收；</li>
+<li><strong>对照用例</strong>：若改用不对齐域重新签名导致两项认证机制均无法对齐，且存在 SPF 临时故障，DMARC 仲裁必须产出 <code>DMARC_POLICY_DNSFAIL</code>（临时错误），而不得将其直接判定为明确永久违规；</li>
+<li><strong>调度与收尾断言</strong>：在任务超时注销或 DNS 请求因参数非法未创建时，验证挂起会话计数是否正常清零、是否杜绝了重复回调及内存泄漏，并确保无记录响应与真实拦截得到清晰区分。这些断言仅用于验证认证分支的决议逻辑，最终邮件动作仍受其他综合评分规则和本地策略影响。</li>
+</ul>
+</li>
+</ol>
+<!--/email_off-->
+<h2 id="参考资料">参考资料</h2>
+<ul>
+<li><a id="ref-announcement" href="https://lists.rspamd.com/pipermail/users/2021-January/001908.html" target="_blank" rel="noopener noreferrer">Rspamd 2.7 has been released 公告</a></li>
+<li><a id="ref-lua-resolver-inc" href="https://github.com/rspamd/rspamd/blob/4c56c1210dac78be727fc07d1c29c140034e4b19/src/lua/lua_dns_resolver.c#L461-L477" target="_blank" rel="noopener noreferrer">src/lua/lua_dns_resolver.c:461-477（异步解析发起与符号计数递增）</a></li>
+<li><a id="ref-lua-resolver-err" href="https://github.com/rspamd/rspamd/blob/4c56c1210dac78be727fc07d1c29c140034e4b19/src/lua/lua_dns_resolver.c#L489-L510" target="_blank" rel="noopener noreferrer">src/lua/lua_dns_resolver.c:489-510（异常分支中的符号计数递减与清理）</a></li>
+<li><a id="ref-lua-resolver-cb" href="https://github.com/rspamd/rspamd/blob/4c56c1210dac78be727fc07d1c29c140034e4b19/src/lua/lua_dns_resolver.c#L213-L215" target="_blank" rel="noopener noreferrer">src/lua/lua_dns_resolver.c:213-215（Lua 解析回调与符号计数递减）</a></li>
+<li><a id="ref-dns-fin-timeout" href="https://github.com/rspamd/rspamd/blob/4c56c1210dac78be727fc07d1c29c140034e4b19/src/libserver/dns.c#L120-L140" target="_blank" rel="noopener noreferrer">src/libserver/dns.c:120-140（DNS 完成回调构建 TIMEOUT 虚构应答及异步递减）</a></li>
+<li><a id="ref-task-timeout-impl" href="https://github.com/rspamd/rspamd/blob/4c56c1210dac78be727fc07d1c29c140034e4b19/src/libserver/task.c#L1889-L1911" target="_blank" rel="noopener noreferrer">src/libserver/task.c:1889-1911（任务阶段超时推进与软拒绝条件判断）</a></li>
+<li><a id="ref-spf-lua-resolve" href="https://github.com/rspamd/rspamd/blob/4c56c1210dac78be727fc07d1c29c140034e4b19/src/plugins/lua/spf.lua#L149-L190" target="_blank" rel="noopener noreferrer">src/plugins/lua/spf.lua:149-190（SPF 解析发起与记录核对）</a></li>
+<li><a id="ref-spf-dns-cb" href="https://github.com/rspamd/rspamd/blob/4c56c1210dac78be727fc07d1c29c140034e4b19/src/libserver/spf.c#L2377-L2425" target="_blank" rel="noopener noreferrer">src/libserver/spf.c:2377-2425（SPF DNS 结果解析与临时/永久状态分类）</a></li>
+<li><a id="ref-spf-lua-cb" href="https://github.com/rspamd/rspamd/blob/4c56c1210dac78be727fc07d1c29c140034e4b19/src/plugins/lua/spf.lua#L117-L174" target="_blank" rel="noopener noreferrer">src/plugins/lua/spf.lua:117-174（SPF 符号映射与缓存结果标记）</a></li>
+<li><a id="ref-dmarc-register-dep" href="https://github.com/rspamd/rspamd/blob/4c56c1210dac78be727fc07d1c29c140034e4b19/src/plugins/lua/dmarc.lua#L1440-L1441" target="_blank" rel="noopener noreferrer">src/plugins/lua/dmarc.lua:1440-1441（DMARC 回调注册对 SPF 与 DKIM 的符号依赖）</a></li>
+<li><a id="ref-spf-dmarc-fixme" href="https://github.com/rspamd/rspamd/blob/4c56c1210dac78be727fc07d1c29c140034e4b19/src/plugins/lua/spf.lua#L177-L205" target="_blank" rel="noopener noreferrer">src/plugins/lua/spf.lua:177-205（SPF 模块跳过判断与 DMARC 检查计数维护）</a></li>
+<li><a id="ref-dkim-async" href="https://github.com/rspamd/rspamd/blob/4c56c1210dac78be727fc07d1c29c140034e4b19/src/plugins/dkim_check.c#L1127-L1287" target="_blank" rel="noopener noreferrer">src/plugins/dkim_check.c:1127-1287（DKIM 异步符号回调、缓存查询与计数）</a></li>
+<li><a id="ref-dmarc-callback" href="https://github.com/rspamd/rspamd/blob/4c56c1210dac78be727fc07d1c29c140034e4b19/src/plugins/lua/dmarc.lua#L592-L598" target="_blank" rel="noopener noreferrer">src/plugins/lua/dmarc.lua:592-598（DMARC 回调的前置检查依赖判定）</a></li>
+<li><a id="ref-dkim-c-dns-cb" href="https://github.com/rspamd/rspamd/blob/4c56c1210dac78be727fc07d1c29c140034e4b19/src/libserver/dkim.c#L1624-L1639" target="_blank" rel="noopener noreferrer">src/libserver/dkim.c:1624-1639（DKIM 底层 DNS 响应码 NOREC 与 NOKEY 错误分类）</a></li>
+<li><a id="ref-dkim-key-handler" href="https://github.com/rspamd/rspamd/blob/4c56c1210dac78be727fc07d1c29c140034e4b19/src/plugins/dkim_check.c#L1102-L1117" target="_blank" rel="noopener noreferrer">src/plugins/dkim_check.c:1102-1117（DKIM 密钥错误码 TRYAGAIN 与 PERM_ERROR 分类）</a></li>
+<li><a id="ref-dkim-module-check" href="https://github.com/rspamd/rspamd/blob/4c56c1210dac78be727fc07d1c29c140034e4b19/src/plugins/dkim_check.c#L1014-L1054" target="_blank" rel="noopener noreferrer">src/plugins/dkim_check.c:1014-1054（DKIM 结果汇总与符号映射）</a></li>
+<li><a id="ref-dmarc-alignment" href="https://github.com/rspamd/rspamd/blob/4c56c1210dac78be727fc07d1c29c140034e4b19/src/plugins/lua/dmarc.lua#L321-L437" target="_blank" rel="noopener noreferrer">src/plugins/lua/dmarc.lua:321-437（DMARC 严格与宽松域对齐检查）</a></li>
+<li><a id="ref-dmarc-policy-eval" href="https://github.com/rspamd/rspamd/blob/4c56c1210dac78be727fc07d1c29c140034e4b19/src/plugins/lua/dmarc.lua#L484-L519" target="_blank" rel="noopener noreferrer">src/plugins/lua/dmarc.lua:484-519（DMARC 策略对齐优先与临时错误保护逻辑）</a></li>
+<li><a id="ref-dmarc-inflight" href="https://github.com/rspamd/rspamd/blob/4c56c1210dac78be727fc07d1c29c140034e4b19/src/plugins/lua/dmarc.lua#L619-L737" target="_blank" rel="noopener noreferrer">src/plugins/lua/dmarc.lua:619-737（DMARC 查询组织域与 inflight 计数）</a></li>
+<li><a id="ref-rbl-async" href="https://github.com/rspamd/rspamd/blob/4c56c1210dac78be727fc07d1c29c140034e4b19/src/plugins/lua/rbl.lua#L766-L875" target="_blank" rel="noopener noreferrer">src/plugins/lua/rbl.lua:766-875（RBL 规则异步请求提交与两阶段解析）</a></li>
+<li><a id="ref-rbl-dns-process" href="https://github.com/rspamd/rspamd/blob/4c56c1210dac78be727fc07d1c29c140034e4b19/src/plugins/lua/rbl.lua#L226-L287" target="_blank" rel="noopener noreferrer">src/plugins/lua/rbl.lua:226-287（RBL DNS 响应码、掩码匹配与未知码处理）</a></li>
+<li><a id="ref-spf-lru-cache" href="https://github.com/rspamd/rspamd/blob/4c56c1210dac78be727fc07d1c29c140034e4b19/src/libserver/spf.c#L607-L623" target="_blank" rel="noopener noreferrer">src/libserver/spf.c:607-623（SPF 扁平化记录 LRU 缓存）</a></li>
+<li><a id="ref-spf-cache-min" href="https://github.com/rspamd/rspamd/blob/4c56c1210dac78be727fc07d1c29c140034e4b19/src/libserver/spf.c#L588-L594" target="_blank" rel="noopener noreferrer">src/libserver/spf.c:588-594（SPF 记录 TTL 的 min_cache_ttl 抬高逻辑）</a></li>
+<li><a id="ref-spf-cache-macro" href="https://github.com/rspamd/rspamd/blob/4c56c1210dac78be727fc07d1c29c140034e4b19/src/libserver/spf.c#L1906-L1920" target="_blank" rel="noopener noreferrer">src/libserver/spf.c:1906-1920（SPF 宏展开导致禁止缓存处理）</a></li>
+<li><a id="ref-dkim-lru-cache" href="https://github.com/rspamd/rspamd/blob/4c56c1210dac78be727fc07d1c29c140034e4b19/src/plugins/dkim_check.c#L1089-L1100" target="_blank" rel="noopener noreferrer">src/plugins/dkim_check.c:1089-1100（DKIM 公钥 LRU 缓存）</a></li>
+<li><a id="ref-dns-fail-cache" href="https://github.com/rspamd/rspamd/blob/4c56c1210dac78be727fc07d1c29c140034e4b19/src/libserver/dns.c#L156-L180" target="_blank" rel="noopener noreferrer">src/libserver/dns.c:156-180（DNS SERVFAIL 失败项 LRU 缓存保存）</a></li>
+<li><a id="ref-dns-fail-timer" href="https://github.com/rspamd/rspamd/blob/4c56c1210dac78be727fc07d1c29c140034e4b19/src/libserver/dns.c#L304-L360" target="_blank" rel="noopener noreferrer">src/libserver/dns.c:304-360（失败缓存回传函数及命中分支）</a></li>
+</ul></article><hr class="my-8 border-dashed"><div id="btt-btn-container" class="fixed inset-e-4 bottom-8 z-50 md:sticky md:inset-e-auto md:float-end md:me-1 translate-y-14 opacity-0 transition duration-500"><button data-button="back-to-top" class="group bg-background relative px-2 py-1 size-14 rounded-full shadow-xl md:h-8 md:w-fit md:rounded-md md:shadow-none md:focus-visible:rounded-none md:bg-background/35 md:bg-clip-padding md:backdrop-blur-lg"><span id="progress-indicator" class="absolute inset-0 -z-10 block size-14 scale-110 rounded-full bg-transparent md:hidden md:h-8 md:rounded-md"></span><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="inline-block rotate-90 md:hidden" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M5 12h14M5 12l6 6M5 12l6-6" /></svg><span class="group-hover:text-accent sr-only text-sm md:not-sr-only"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="inline-block size-4" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M12 5v14M16 9l-4-4M8 9l4-4" /></svg> 回到顶部</span></button></div><script data-astro-rerun>
+  function backToTop() {
+    const rootElement = document.documentElement;
+    const btnContainer = document.querySelector("#btt-btn-container");
+    const backToTopBtn = document.querySelector("[data-button='back-to-top']");
+    const progressIndicator = document.querySelector("#progress-indicator");
+
+    if (!rootElement || !btnContainer || !backToTopBtn || !progressIndicator)
+      return;
+
+    backToTopBtn.addEventListener("click", () => {
+      document.body.scrollTop = 0;
+      document.documentElement.scrollTop = 0;
+    });
+
+    let lastVisible = null;
+    function handleScroll() {
+      const scrollTotal = rootElement.scrollHeight - rootElement.clientHeight;
+      const scrollTop = rootElement.scrollTop;
+      const scrollPercent = Math.floor((scrollTop / scrollTotal) * 100);
+
+      progressIndicator.style.setProperty(
+        "background-image",
+        `conic-gradient(var(--accent), var(--accent) ${scrollPercent}%, transparent ${scrollPercent}%)`
+      );
+
+      const isVisible = scrollTop / scrollTotal > 0.3;
+
+      if (isVisible !== lastVisible) {
+        btnContainer.classList.toggle("opacity-100", isVisible);
+        btnContainer.classList.toggle("translate-y-0", isVisible);
+        btnContainer.classList.toggle("opacity-0", !isVisible);
+        btnContainer.classList.toggle("translate-y-14", !isVisible);
+        lastVisible = isVisible;
+      }
+    }
+
+    let ticking = false;
+    document.addEventListener("scroll", () => {
+      if (!ticking) {
+        window.requestAnimationFrame(() => {
+          handleScroll();
+          ticking = false;
+        });
+        ticking = true;
+      }
+    });
+  }
+  backToTop();
+</script><ul class="mt-4 mb-8 flex flex-wrap gap-4 sm:my-8"><li><a data-astro-transition-scope="astro-bztu2lml-1" href="/tags/dns/" class="flex items-center gap-0.5 border-foreground border-b-2 border-dashed hover:border-accent hover:text-accent hover:-mt-0.5 focus-visible:text-accent focus-visible:border-none text-sm"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="opacity-80 size-4" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M5 9h14M5 15h14M11 4 7 20M17 4l-4 16" /></svg>DNS</a></li><li><a data-astro-transition-scope="astro-bztu2lml-2" href="/tags/邮件认证/" class="flex items-center gap-0.5 border-foreground border-b-2 border-dashed hover:border-accent hover:text-accent hover:-mt-0.5 focus-visible:text-accent focus-visible:border-none text-sm"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="opacity-80 size-4" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M5 9h14M5 15h14M11 4 7 20M17 4l-4 16" /></svg>邮件认证</a></li><li><a data-astro-transition-scope="astro-bztu2lml-3" href="/tags/反垃圾邮件/" class="flex items-center gap-0.5 border-foreground border-b-2 border-dashed hover:border-accent hover:text-accent hover:-mt-0.5 focus-visible:text-accent focus-visible:border-none text-sm"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="opacity-80 size-4" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M5 9h14M5 15h14M11 4 7 20M17 4l-4 16" /></svg>反垃圾邮件</a></li></ul><hr class="my-8 border-dashed"><div data-pagefind-ignore class="my-8 grid grid-cols-1 gap-6 sm:grid-cols-2"><a href="/posts/mail-rspamd-symbol-scoring/" class="flex w-full gap-1 hover:opacity-75"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="inline-block flex-none rtl:rotate-180" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M5 12h14M5 12l6 6M5 12l6-6" /></svg><div><span>上一篇</span><div class="text-accent/85 text-sm">Rspamd规则的调度与评分</div></div></a><a href="/posts/mail-rspamd-bayes-storage/" class="flex w-full justify-end gap-1 text-end hover:opacity-75 sm:col-start-2"><div><span>下一篇</span><div class="text-accent/85 text-sm">Rspamd 的贝叶斯分类与学习</div></div><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="inline-block flex-none rtl:rotate-180" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M5 12h14M13 18l6-6M13 6l6 6" /></svg></a></div></main><footer class="app-layout mt-auto"><div class="border-border flex flex-col items-center justify-between border-t py-6 sm:flex-row-reverse sm:py-4"><div class="flex flex-wrap items-center gap-1"><a href="https://github.com/SaromChars" title="Sarom Chars 的 GitHub" class="group inline-flex items-center gap-1 hover:text-accent p-2 hover:rotate-6 sm:p-1"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="inline-block size-6 scale-125 fill-transparent stroke-current stroke-2 opacity-90 group-hover:fill-transparent sm:scale-110" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M9 19c-4.3 1.4-4.3-2.5-6-3m12 5v-3.5c0-1 .1-1.4-.5-2 2.8-.3 5.5-1.4 5.5-6a4.6 4.6 0 0 0-1.3-3.2 4.2 4.2 0 0 0-.1-3.2s-1.1-.3-3.5 1.3a12.3 12.3 0 0 0-6.2 0C6.5 2.8 5.4 3.1 5.4 3.1a4.2 4.2 0 0 0-.1 3.2A4.6 4.6 0 0 0 4 9.5c0 4.6 2.7 5.7 5.5 6-.6.6-.6 1.2-.5 2V21" /></svg><span class="sr-only">Sarom Chars 的 GitHub</span></a></div><div class="my-2 flex flex-col items-center whitespace-nowrap sm:flex-row"><span>版权 &#169; 2026</span><span class="hidden sm:inline">&nbsp;|&nbsp;</span><span>保留所有权利。</span></div></div></footer><script type="module">var e=`theme`,t=`light`,n=`dark`;function r(){return localStorage.getItem(e)||(window.matchMedia(`(prefers-color-scheme: dark)`).matches?n:t)}var i=window.__theme?.value??r();function a(){localStorage.setItem(e,i),o()}function o(){let e=document.firstElementChild;e?.setAttribute(`data-theme`,i),e?.classList.toggle(`dark`,i===n),document.querySelector(`#theme-btn`)?.setAttribute(`aria-label`,i);let t=window.getComputedStyle(document.body).backgroundColor;document.querySelector(`meta[name='theme-color']`)?.setAttribute(`content`,t)}function s(){o(),document.querySelector(`#theme-btn`)?.addEventListener(`click`,()=>{i=i===t?n:t,a()})}s(),document.addEventListener(`astro:after-swap`,s),document.addEventListener(`astro:before-swap`,e=>{let t=document.querySelector(`meta[name='theme-color']`)?.getAttribute(`content`);t&&e.newDocument.querySelector(`meta[name='theme-color']`)?.setAttribute(`content`,t)}),window.matchMedia(`(prefers-color-scheme: dark)`).addEventListener(`change`,({matches:e})=>{i=e?n:t,a()});</script></body></html><script type="module">var e=document.querySelector(`#article`);if(e?.querySelector(`a[href^="#ref-"]`)){let t=null,n=!1,r=document.createElement(`button`);r.type=`button`,r.className=`citation-return`,r.textContent=`返回阅读位置`,r.setAttribute(`data-pagefind-ignore`,``),e.addEventListener(`click`,n=>{if(n.button!==0||n.metaKey||n.ctrlKey||n.shiftKey||n.altKey)return;let i=n.target instanceof Element?n.target.closest(`a[href^="#ref-"]`):null;if(!i||!e.contains(i))return;let a=i.hash,o=document.getElementById(decodeURIComponent(a.slice(1)));o&&e.contains(o)&&(t={source:i,url:window.location.href,top:window.scrollY,left:window.scrollX,targetHash:a},o.insertAdjacentElement(`afterend`,r))}),r.addEventListener(`click`,()=>{if(!t||n)return;let e=t,i=i=>{r.remove(),window.requestAnimationFrame(()=>{window.requestAnimationFrame(()=>{e.source.focus({preventScroll:!0}),window.scrollTo({top:e.top,left:e.left,behavior:`instant`}),t=null,n=!1,i?.()})})};window.location.href===e.url?i():(n=!0,window.addEventListener(`popstate`,()=>{let e=window.history.scrollRestoration;window.history.scrollRestoration=`manual`,window.setTimeout(()=>{i(()=>{window.history.scrollRestoration=e})},0)},{once:!0}),window.history.back())}),window.addEventListener(`hashchange`,()=>{!n&&t&&window.location.hash!==t.targetHash&&(r.remove(),t=null)})}</script><script data-astro-rerun>
+  function createProgressBar() {
+    const progressContainer = document.createElement("div");
+    progressContainer.className =
+      "progress-container fixed top-0 z-10 h-1 w-full bg-background";
+
+    const progressBar = document.createElement("div");
+    progressBar.className = "progress-bar h-1 w-0 bg-accent";
+    progressBar.id = "myBar";
+
+    progressContainer.appendChild(progressBar);
+    document.body.appendChild(progressContainer);
+  }
+  createProgressBar();
+
+  function updateScrollProgress() {
+    document.addEventListener("scroll", () => {
+      const winScroll =
+        document.body.scrollTop || document.documentElement.scrollTop;
+      const height =
+        document.documentElement.scrollHeight -
+        document.documentElement.clientHeight;
+      const scrolled = (winScroll / height) * 100;
+      if (document) {
+        const myBar = document.getElementById("myBar");
+        if (myBar) {
+          myBar.style.width = scrolled + "%";
+        }
+      }
+    });
+  }
+  updateScrollProgress();
+
+  function addHeadingLinks() {
+    const headings = Array.from(
+      document.querySelectorAll("h2, h3, h4, h5, h6")
+    );
+    for (const heading of headings) {
+      heading.classList.add("group");
+      const link = document.createElement("a");
+      link.className =
+        "heading-link ms-2 no-underline opacity-75 md:opacity-0 md:group-hover:opacity-100 md:focus:opacity-100";
+      link.href = "#" + heading.id;
+
+      const span = document.createElement("span");
+      span.ariaHidden = "true";
+      span.innerText = "#";
+      link.appendChild(span);
+      heading.appendChild(link);
+    }
+  }
+  addHeadingLinks();
+
+  function attachCopyButtons() {
+    const copyButtonLabel = "Copy";
+    const codeBlocks = Array.from(document.querySelectorAll("pre"));
+
+    for (const codeBlock of codeBlocks) {
+      const wrapper = document.createElement("div");
+      wrapper.style.position = "relative";
+
+      const computedStyle = getComputedStyle(codeBlock);
+      const hasFileNameOffset =
+        computedStyle.getPropertyValue("--file-name-offset").trim() !== "";
+
+      const topClass = hasFileNameOffset
+        ? "top-(--file-name-offset)"
+        : "-top-3";
+
+      const copyButton = document.createElement("button");
+      copyButton.className = `copy-code absolute end-3 ${topClass} rounded bg-muted border border-muted px-2 py-1 text-xs leading-4 text-foreground font-medium`;
+      copyButton.innerHTML = copyButtonLabel;
+      codeBlock.setAttribute("tabindex", "0");
+      codeBlock.appendChild(copyButton);
+
+      codeBlock?.parentNode?.insertBefore(wrapper, codeBlock);
+      wrapper.appendChild(codeBlock);
+
+      copyButton.addEventListener("click", async () => {
+        await copyCode(codeBlock, copyButton);
+      });
+    }
+
+    async function copyCode(block, button) {
+      const code = block.querySelector("code");
+      const text = code?.innerText;
+
+      await navigator.clipboard.writeText(text ?? "");
+
+      button.innerText = "Copied";
+
+      setTimeout(() => {
+        button.innerText = copyButtonLabel;
+      }, 700);
+    }
+  }
+  attachCopyButtons();
+
+  /** Accessible image lightbox for article images. */
+  function initLightbox() {
+    const article = document.getElementById("article");
+    if (!article) return;
+
+    const prefersReducedMotion = () =>
+      window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+    let overlay = null;
+    let lastFocused = null;
+    let removeDragListeners = null;
+
+    // Defer attribute mutations so they don't push the LCP timestamp.
+    // Event listeners below use delegation and don't need the attributes to exist yet.
+    requestAnimationFrame(() => {
+      const images = Array.from(article.querySelectorAll("img"));
+      for (const image of images) {
+        if (image.closest("a")) continue;
+        image.setAttribute("role", "button");
+        image.setAttribute("tabindex", "0");
+        image.setAttribute("aria-haspopup", "dialog");
+        image.setAttribute(
+          "aria-label",
+          image.alt ? `Zoom image: ${image.alt}` : "Zoom image"
+        );
+      }
+    });
+
+    function open(src, alt, trigger) {
+      if (overlay) return;
+      lastFocused = trigger ?? document.activeElement;
+
+      overlay = document.createElement("div");
+      overlay.setAttribute("role", "dialog");
+      overlay.setAttribute("aria-modal", "true");
+      overlay.setAttribute(
+        "aria-label",
+        alt ? `Image preview: ${alt}` : "Image preview"
+      );
+      overlay.className =
+        "fixed inset-0 z-50 flex cursor-zoom-out items-center justify-center bg-black/70 backdrop-blur-sm opacity-0 transition-opacity duration-200 motion-reduce:transition-none";
+
+      const closeButton = document.createElement("button");
+      closeButton.type = "button";
+      closeButton.setAttribute("aria-label", "Close image preview");
+      closeButton.className =
+        "absolute end-4 top-4 z-1 flex size-11 items-center justify-center rounded bg-black/50 text-3xl leading-none text-white";
+      closeButton.innerHTML = "&#10005;";
+      closeButton.addEventListener("click", close);
+
+      const image = document.createElement("img");
+      image.src = src;
+      image.alt = "";
+      image.className =
+        "max-h-[90dvh] max-w-[90dvw] cursor-default object-contain transition-transform duration-100 ease-out motion-reduce:transition-none data-[zoom=drag]:cursor-grabbing data-[zoom=drag]:transition-none data-[zoom=in]:cursor-grab";
+
+      overlay.append(closeButton, image);
+      overlay.addEventListener("click", e => {
+        if (e.target === overlay && currentScale <= 1) close();
+      });
+
+      let currentScale = 1;
+      let translateX = 0;
+      let translateY = 0;
+      let initialDist = 0;
+      let initialScale = 1;
+      let panStartX = 0;
+      let panStartY = 0;
+      let panStartTranslateX = 0;
+      let panStartTranslateY = 0;
+      let lastTapTime = 0;
+
+      function applyTransform() {
+        image.style.transform = `scale(${currentScale}) translate(${translateX}px, ${translateY}px)`;
+        // A backdrop click only closes at fit size, so drop the zoom-out cursor while zoomed.
+        overlay?.classList.toggle("cursor-zoom-out", currentScale <= 1);
+      }
+
+      function resetTransform() {
+        currentScale = 1;
+        translateX = 0;
+        translateY = 0;
+        image.style.transform = "";
+        image.removeAttribute("data-zoom");
+        overlay?.classList.add("cursor-zoom-out");
+      }
+
+      // Keep the zoomed image from being panned past its edges.
+      function clampTranslate() {
+        if (!overlay) return;
+        const maxX = Math.max(
+          0,
+          (image.clientWidth - overlay.clientWidth / currentScale) / 2
+        );
+        const maxY = Math.max(
+          0,
+          (image.clientHeight - overlay.clientHeight / currentScale) / 2
+        );
+        translateX = Math.min(maxX, Math.max(-maxX, translateX));
+        translateY = Math.min(maxY, Math.max(-maxY, translateY));
+      }
+
+      overlay.addEventListener(
+        "touchstart",
+        e => {
+          const t = e.touches;
+          if (t.length === 2) {
+            image.setAttribute("data-zoom", "drag");
+            initialDist = Math.hypot(
+              t[1].clientX - t[0].clientX,
+              t[1].clientY - t[0].clientY
+            );
+            initialScale = currentScale;
+          } else if (t.length === 1) {
+            const now = Date.now();
+            if (now - lastTapTime < 300) {
+              e.preventDefault();
+              if (currentScale > 1) {
+                resetTransform();
+              } else {
+                currentScale = 2;
+                translateX = 0;
+                translateY = 0;
+                applyTransform();
+                image.setAttribute("data-zoom", "in");
+              }
+              lastTapTime = 0;
+              panStartX = t[0].clientX;
+              panStartY = t[0].clientY;
+              panStartTranslateX = translateX;
+              panStartTranslateY = translateY;
+            } else {
+              lastTapTime = now;
+              if (currentScale > 1) {
+                image.setAttribute("data-zoom", "drag");
+                panStartX = t[0].clientX;
+                panStartY = t[0].clientY;
+                panStartTranslateX = translateX;
+                panStartTranslateY = translateY;
+              }
+            }
+          }
+        },
+        { passive: false }
+      );
+
+      overlay.addEventListener(
+        "touchmove",
+        e => {
+          const t = e.touches;
+          if (t.length === 2) {
+            e.preventDefault();
+            const dist = Math.hypot(
+              t[1].clientX - t[0].clientX,
+              t[1].clientY - t[0].clientY
+            );
+            const oldScale = currentScale;
+            currentScale = Math.min(
+              4,
+              Math.max(1, initialScale * (dist / initialDist))
+            );
+
+            // Zoom to the geometric center of the two fingers
+            const midX = (t[0].clientX + t[1].clientX) / 2;
+            const midY = (t[0].clientY + t[1].clientY) / 2;
+            const ox = overlay.clientWidth / 2;
+            const oy = overlay.clientHeight / 2;
+            translateX =
+              (midX - ox) * (1 / currentScale - 1 / oldScale) + translateX;
+            translateY =
+              (midY - oy) * (1 / currentScale - 1 / oldScale) + translateY;
+            clampTranslate();
+            applyTransform();
+          } else if (t.length === 1) {
+            if (currentScale > 1) {
+              e.preventDefault();
+              image.setAttribute("data-zoom", "drag");
+              translateX =
+                panStartTranslateX + (t[0].clientX - panStartX) / currentScale;
+              translateY =
+                panStartTranslateY + (t[0].clientY - panStartY) / currentScale;
+              clampTranslate();
+              applyTransform();
+            } else {
+              e.preventDefault();
+            }
+          }
+        },
+        { passive: false }
+      );
+
+      overlay.addEventListener("touchend", e => {
+        if (e.touches.length === 0) {
+          if (currentScale > 1) {
+            image.setAttribute("data-zoom", "in");
+          } else {
+            image.removeAttribute("data-zoom");
+          }
+          if (currentScale <= 1.05) resetTransform();
+        }
+      });
+
+      overlay.addEventListener("touchcancel", e => {
+        if (e.touches.length === 0) {
+          if (currentScale > 1) {
+            image.setAttribute("data-zoom", "in");
+          } else {
+            image.removeAttribute("data-zoom");
+          }
+          if (currentScale <= 1.05) resetTransform();
+        }
+      });
+
+      overlay.addEventListener(
+        "wheel",
+        e => {
+          e.preventDefault();
+          const oldScale = currentScale;
+          const delta = -e.deltaY * 0.001;
+          currentScale = Math.min(4, Math.max(1, currentScale * (1 + delta)));
+
+          if (currentScale <= 1.05) {
+            resetTransform();
+          } else {
+            image.setAttribute("data-zoom", "in");
+            // Zoom to cursor: adjust translate so the point under cursor stays fixed
+            const ox = overlay.clientWidth / 2;
+            const oy = overlay.clientHeight / 2;
+            translateX =
+              (e.clientX - ox) * (1 / currentScale - 1 / oldScale) + translateX;
+            translateY =
+              (e.clientY - oy) * (1 / currentScale - 1 / oldScale) + translateY;
+            clampTranslate();
+            applyTransform();
+          }
+        },
+        { passive: false }
+      );
+
+      let isMouseDown = false;
+      let mouseStartX = 0;
+      let mouseStartY = 0;
+
+      overlay.addEventListener("mousedown", e => {
+        if (e.button !== 0 || currentScale <= 1) return;
+        if (e.target.closest("button")) return;
+        isMouseDown = true;
+        mouseStartX = e.clientX;
+        mouseStartY = e.clientY;
+        panStartTranslateX = translateX;
+        panStartTranslateY = translateY;
+        image.setAttribute("data-zoom", "drag");
+        e.preventDefault();
+      });
+
+      function onMouseMove(e) {
+        if (!isMouseDown || !overlay) return;
+        translateX =
+          panStartTranslateX + (e.clientX - mouseStartX) / currentScale;
+        translateY =
+          panStartTranslateY + (e.clientY - mouseStartY) / currentScale;
+        clampTranslate();
+        applyTransform();
+      }
+
+      function onMouseUp() {
+        if (!isMouseDown) return;
+        isMouseDown = false;
+        if (currentScale > 1) {
+          image.setAttribute("data-zoom", "in");
+        } else {
+          image.removeAttribute("data-zoom");
+        }
+      }
+
+      document.addEventListener("mousemove", onMouseMove);
+      document.addEventListener("mouseup", onMouseUp);
+      removeDragListeners = () => {
+        document.removeEventListener("mousemove", onMouseMove);
+        document.removeEventListener("mouseup", onMouseUp);
+      };
+
+      document.body.appendChild(overlay);
+      document.documentElement.style.overflow = "hidden";
+      document.addEventListener("keydown", onKeyDown);
+      window.__closeLightbox = close;
+
+      requestAnimationFrame(() => overlay?.classList.add("opacity-100"));
+      closeButton.focus();
+    }
+
+    function close() {
+      if (!overlay) return;
+      const el = overlay;
+      overlay = null;
+      el.classList.add("pointer-events-none");
+      window.__closeLightbox = null;
+
+      document.removeEventListener("keydown", onKeyDown);
+      removeDragListeners?.();
+      removeDragListeners = null;
+      document.documentElement.style.overflow = "";
+      lastFocused?.focus();
+      lastFocused = null;
+
+      if (prefersReducedMotion()) {
+        el.remove();
+        return;
+      }
+      const remove = () => el.remove();
+      el.addEventListener("transitionend", remove, { once: true });
+      setTimeout(remove, 250); // fallback in case transitionend never fires
+      el.classList.remove("opacity-100");
+    }
+
+    function onKeyDown(e) {
+      if (e.key === "Escape") {
+        close();
+      } else if (e.key === "Tab") {
+        trapFocus(e);
+      }
+    }
+
+    // Keep keyboard focus inside the open dialog.
+    function trapFocus(e) {
+      if (!overlay) return;
+      const focusables = overlay.querySelectorAll(
+        'a[href], button, [tabindex]:not([tabindex="-1"])'
+      );
+      if (focusables.length === 0) return;
+      const first = focusables[0];
+      const last = focusables[focusables.length - 1];
+      if (e.shiftKey && document.activeElement === first) {
+        e.preventDefault();
+        last.focus();
+      } else if (!e.shiftKey && document.activeElement === last) {
+        e.preventDefault();
+        first.focus();
+      }
+    }
+
+    function triggerFromEvent(e) {
+      const image = e.target.closest("img");
+      if (!image || !article.contains(image) || image.closest("a")) return null;
+      return image;
+    }
+
+    function activate(image) {
+      open(image.currentSrc || image.src, image.alt, image);
+    }
+
+    article.addEventListener("click", e => {
+      const image = triggerFromEvent(e);
+      if (!image) return;
+      e.preventDefault();
+      activate(image);
+    });
+
+    article.addEventListener("keydown", e => {
+      if (e.key !== "Enter" && e.key !== " " && e.key !== "Spacebar") return;
+      const image = triggerFromEvent(e);
+      if (!image) return;
+      e.preventDefault();
+      activate(image);
+    });
+  }
+  initLightbox();
+
+  if (!window.__lightboxSwapBound) {
+    window.__lightboxSwapBound = true;
+    document.addEventListener("astro:before-swap", () =>
+      window.__closeLightbox?.()
+    );
+  }
+
+  document.addEventListener("astro:after-swap", () =>
+    window.scrollTo({ left: 0, top: 0, behavior: "instant" })
+  );
+</script>

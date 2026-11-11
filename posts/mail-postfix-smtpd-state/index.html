@@ -1,0 +1,886 @@
+<!DOCTYPE html><html dir="ltr" lang="zh-CN" class="overflow-y-scroll scroll-smooth"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1"><link rel="icon" type="image/png" href="/images/favicon-32x32-next.png"><link rel="icon" href="/favicon.ico"><link rel="canonical" href="https://www.saromchars.tech/posts/mail-postfix-smtpd-state/"><meta name="generator" content="Astro v7.4.5"><!-- Primary meta --><title>Postfix smtpd 的会话状态与收件人校验 | Sarom&#39;s Blog</title><meta name="title" content="Postfix smtpd 的会话状态与收件人校验 | Sarom's Blog"><meta name="description" content="从 Postfix 3.6.2 源码解析 SMTP 会话中连接与事务生命周期、MAIL 与 RCPT 的逐行校验时机，以及中继限制与目录检查的工程实现。"><meta name="author" content="Sarom Chars"><link rel="sitemap" href="/sitemap-index.xml"><!-- Open Graph --><meta property="og:type" content="article"><meta property="og:site_name" content="Sarom's Blog"><meta property="og:title" content="Postfix smtpd 的会话状态与收件人校验 | Sarom's Blog"><meta property="og:description" content="从 Postfix 3.6.2 源码解析 SMTP 会话中连接与事务生命周期、MAIL 与 RCPT 的逐行校验时机，以及中继限制与目录检查的工程实现。"><meta property="og:url" content="https://www.saromchars.tech/posts/mail-postfix-smtpd-state/"><meta property="og:image" content="https://www.saromchars.tech/og.png"><!-- Twitter / X --><meta property="twitter:card" content="summary_large_image"><meta property="twitter:url" content="https://www.saromchars.tech/posts/mail-postfix-smtpd-state/"><meta property="twitter:title" content="Postfix smtpd 的会话状态与收件人校验 | Sarom's Blog"><meta property="twitter:description" content="从 Postfix 3.6.2 源码解析 SMTP 会话中连接与事务生命周期、MAIL 与 RCPT 的逐行校验时机，以及中继限制与目录检查的工程实现。"><meta property="twitter:image" content="https://www.saromchars.tech/og.png"><!-- RSS autodiscovery --><link rel="alternate" type="application/rss+xml" title="Sarom's Blog" href="https://www.saromchars.tech/rss.xml"><!-- Filled at runtime by theme.ts to match the current background colour --><meta name="theme-color" content=""><!-- Extra head content injected by child layouts (e.g. JSON-LD, article meta) --><meta property="article:published_time" content="2021-10-31T02:00:00.000Z"><script type="application/ld+json">{"@context":"https://schema.org","@type":"BlogPosting","headline":"Postfix smtpd 的会话状态与收件人校验","mainEntityOfPage":"https://www.saromchars.tech/posts/mail-postfix-smtpd-state/","datePublished":"2021-10-31T02:00:00.000Z","author":[{"@type":"Person","name":"Sarom Chars","url":"https://github.com/SaromChars"}]}</script><!--
+      Inline FOUC-prevention script: sets data-theme on <html> before
+      the browser paints. Runs synchronously, no defer/async.
+    --><script>
+      (function () {
+        const stored = localStorage.getItem("theme");
+        const prefersDark = window.matchMedia(
+          "(prefers-color-scheme: dark)"
+        ).matches;
+        const theme = stored ?? (prefersDark ? "dark" : "light");
+        const root = document.firstElementChild;
+        root?.setAttribute("data-theme", theme);
+        root?.classList.toggle("dark", theme === "dark");
+        // Expose value so theme.ts can skip re-detection.
+        window.__theme = { value: theme };
+      })();
+    </script><meta name="robots" content="index, follow"><script async src="https://www.googletagmanager.com/gtag/js?id=G-WJJJTJ4FWX"></script><script>(function(){const measurementId = "G-WJJJTJ4FWX";
+
+    window.dataLayer = window.dataLayer || [];
+    function gtag(){ window.dataLayer.push(arguments); }
+    gtag('js', new Date());
+    gtag('config', measurementId);
+  })();</script><style>@keyframes astroFadeInOut{0%{opacity:1}to{opacity:0}}@keyframes astroFadeIn{0%{opacity:0;mix-blend-mode:plus-lighter}to{opacity:1;mix-blend-mode:plus-lighter}}@keyframes astroFadeOut{0%{opacity:1;mix-blend-mode:plus-lighter}to{opacity:0;mix-blend-mode:plus-lighter}}@keyframes astroSlideFromRight{0%{transform:translate(100%)}}@keyframes astroSlideFromLeft{0%{transform:translate(-100%)}}@keyframes astroSlideToRight{to{transform:translate(100%)}}@keyframes astroSlideToLeft{to{transform:translate(-100%)}}@media (prefers-reduced-motion){::view-transition-group(*),::view-transition-old(*),::view-transition-new(*),[data-astro-transition-scope]{animation:none!important}}
+</style><link rel="stylesheet" href="/_astro/Footer.wlxowfqU.css"><style>[data-astro-transition-scope="astro-bztu2lml-1"] { view-transition-name: smtp; }@layer astro { ::view-transition-old(smtp) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }::view-transition-new(smtp) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }[data-astro-transition=back]::view-transition-old(smtp) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition=back]::view-transition-new(smtp) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; } }[data-astro-transition-fallback="old"] [data-astro-transition-scope="astro-bztu2lml-1"],
+			[data-astro-transition-fallback="old"][data-astro-transition-scope="astro-bztu2lml-1"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition-fallback="new"] [data-astro-transition-scope="astro-bztu2lml-1"],
+			[data-astro-transition-fallback="new"][data-astro-transition-scope="astro-bztu2lml-1"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }[data-astro-transition=back][data-astro-transition-fallback="old"] [data-astro-transition-scope="astro-bztu2lml-1"],
+			[data-astro-transition=back][data-astro-transition-fallback="old"][data-astro-transition-scope="astro-bztu2lml-1"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition=back][data-astro-transition-fallback="new"] [data-astro-transition-scope="astro-bztu2lml-1"],
+			[data-astro-transition=back][data-astro-transition-fallback="new"][data-astro-transition-scope="astro-bztu2lml-1"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }</style><style>[data-astro-transition-scope="astro-bztu2lml-2"] { view-transition-name: \90AE\7BB1\7CFB\7EDF; }@layer astro { ::view-transition-old(\90AE\7BB1\7CFB\7EDF) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }::view-transition-new(\90AE\7BB1\7CFB\7EDF) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }[data-astro-transition=back]::view-transition-old(\90AE\7BB1\7CFB\7EDF) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition=back]::view-transition-new(\90AE\7BB1\7CFB\7EDF) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; } }[data-astro-transition-fallback="old"] [data-astro-transition-scope="astro-bztu2lml-2"],
+			[data-astro-transition-fallback="old"][data-astro-transition-scope="astro-bztu2lml-2"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition-fallback="new"] [data-astro-transition-scope="astro-bztu2lml-2"],
+			[data-astro-transition-fallback="new"][data-astro-transition-scope="astro-bztu2lml-2"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }[data-astro-transition=back][data-astro-transition-fallback="old"] [data-astro-transition-scope="astro-bztu2lml-2"],
+			[data-astro-transition=back][data-astro-transition-fallback="old"][data-astro-transition-scope="astro-bztu2lml-2"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition=back][data-astro-transition-fallback="new"] [data-astro-transition-scope="astro-bztu2lml-2"],
+			[data-astro-transition=back][data-astro-transition-fallback="new"][data-astro-transition-scope="astro-bztu2lml-2"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }</style><style>[data-astro-transition-scope="astro-bztu2lml-3"] { view-transition-name: \8BBF\95EE\63A7\5236; }@layer astro { ::view-transition-old(\8BBF\95EE\63A7\5236) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }::view-transition-new(\8BBF\95EE\63A7\5236) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }[data-astro-transition=back]::view-transition-old(\8BBF\95EE\63A7\5236) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition=back]::view-transition-new(\8BBF\95EE\63A7\5236) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; } }[data-astro-transition-fallback="old"] [data-astro-transition-scope="astro-bztu2lml-3"],
+			[data-astro-transition-fallback="old"][data-astro-transition-scope="astro-bztu2lml-3"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition-fallback="new"] [data-astro-transition-scope="astro-bztu2lml-3"],
+			[data-astro-transition-fallback="new"][data-astro-transition-scope="astro-bztu2lml-3"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }[data-astro-transition=back][data-astro-transition-fallback="old"] [data-astro-transition-scope="astro-bztu2lml-3"],
+			[data-astro-transition=back][data-astro-transition-fallback="old"][data-astro-transition-scope="astro-bztu2lml-3"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition=back][data-astro-transition-fallback="new"] [data-astro-transition-scope="astro-bztu2lml-3"],
+			[data-astro-transition=back][data-astro-transition-fallback="new"][data-astro-transition-scope="astro-bztu2lml-3"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }</style></head><body class="bg-background font-app text-foreground selection:bg-accent/75 selection:text-accent-foreground flex min-h-svh flex-col"><a id="skip-to-content" href="#main-content" class="bg-background text-accent absolute inset-s-16 -top-full z-50 px-3 py-2 backdrop-blur-lg transition-all focus:top-4">跳到正文</a><header class="app-layout flex flex-col items-center justify-between sm:flex-row"><div class="border-border bg-background relative flex w-full items-baseline justify-between border-b py-4 sm:items-center sm:py-6"><a href="/" class="absolute py-1 text-xl leading-8 font-semibold whitespace-nowrap sm:static sm:my-auto sm:text-2xl sm:leading-none">Sarom&#39;s Blog</a><nav id="nav-menu" class="flex w-full flex-col items-center sm:ms-2 sm:flex-row sm:justify-end sm:space-x-4 sm:py-0"><button id="menu-btn" class="focus-outline self-end p-2 sm:hidden" aria-label="展开菜单" aria-expanded="false" aria-controls="menu-items" data-label-open="展开菜单" data-label-close="收起菜单"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="hidden" viewBox="0 0 24 24" id="close-icon"><path stroke="none" d="M0 0h24v24H0z" /><path d="M18 6 6 18M6 6l12 12" /></svg><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="icon icon-tabler icons-tabler-outline icon-tabler-menu-deep" viewBox="0 0 24 24" id="menu-icon"><path stroke="none" d="M0 0h24v24H0z" /><path d="M4 6h16M7 12h13M10 18h10" /></svg></button><ul id="menu-items" class="[&amp;&gt;li&gt;a]:hover:text-accent mt-4 hidden w-44 grid-cols-2 place-content-center gap-2 sm:mt-0 sm:flex sm:w-auto sm:gap-x-5 sm:gap-y-0 sm:[&amp;&gt;li]:h-8 [&amp;&gt;li&gt;a]:block [&amp;&gt;li&gt;a]:px-4 [&amp;&gt;li&gt;a]:py-3 [&amp;&gt;li&gt;a]:text-center [&amp;&gt;li&gt;a]:font-medium sm:[&amp;&gt;li&gt;a]:px-2 sm:[&amp;&gt;li&gt;a]:py-1"><li class="col-span-2"><a href="/posts/" class="active-nav">文章</a></li><li class="col-span-2"><a href="/tags/">标签</a></li><li class="col-span-2"><a href="/about/">关于</a></li><li class="col-span-2"><a href="/archives/" title="归档" aria-label="归档" class="group inline-flex items-center gap-1 hover:text-accent focus-outline flex size-full justify-center p-3 sm:relative sm:size-8 sm:p-0"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="hidden sm:absolute sm:top-1/2 sm:left-1/2 sm:block sm:size-6 sm:-translate-x-1/2 sm:-translate-y-1/2" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M3 6a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2 2 2 0 0 1-2 2H5a2 2 0 0 1-2-2M5 8v10a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8M10 12h4" /></svg><span class="sm:sr-only">归档</span></a></li><li class="col-span-1 flex items-center justify-center"><a href="/search/" title="搜索" aria-label="搜索" class="group inline-flex items-center gap-1 hover:text-accent focus-outline relative size-8"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="absolute top-1/2 left-1/2 size-6 -translate-x-1/2 -translate-y-1/2" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M3 10a7 7 0 1 0 14 0 7 7 0 1 0-14 0M21 21l-6-6" /></svg><span class="sr-only">搜索</span></a></li><li class="col-span-1 flex items-center justify-center"><button id="theme-btn" class="focus-outline hover:[&amp;&gt;svg]:stroke-accent relative size-12 p-4 sm:size-8" title="切换主题" aria-label="auto" aria-live="polite"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="absolute top-[50%] left-[50%] translate-[-50%] scale-100 rotate-0 transition-all dark:scale-0 dark:-rotate-90" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M12 3h.393a7.5 7.5 0 0 0 7.92 12.446A9 9 0 1 1 12 2.992z" /></svg><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="absolute top-[50%] left-[50%] translate-[-50%] scale-0 rotate-90 transition-all dark:scale-100 dark:rotate-0" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M14.828 14.828a4 4 0 1 0-5.656-5.656 4 4 0 0 0 5.656 5.656M6.343 17.657l-1.414 1.414M6.343 6.343 4.929 4.929M17.657 6.343l1.414-1.414M17.657 17.657l1.414 1.414M4 12H2M12 4V2M20 12h2M12 20v2" /></svg></button></li></ul></nav></div></header><script type="module">function e(){let e=document.querySelector(`#menu-btn`),t=document.querySelector(`#menu-items`),n=document.querySelector(`#menu-icon`),r=document.querySelector(`#close-icon`);if(!e||!t||!n||!r)return;let i=e.dataset.labelOpen??`Open menu`,a=e.dataset.labelClose??`Close menu`;e.addEventListener(`click`,()=>{let o=e.getAttribute(`aria-expanded`)===`true`;e.setAttribute(`aria-expanded`,o?`false`:`true`),e.setAttribute(`aria-label`,o?i:a),t.classList.toggle(`hidden`),t.classList.toggle(`grid`),n.classList.toggle(`hidden`),r.classList.toggle(`hidden`)})}function t(){let e=document.getElementById(`skip-to-content`);e&&e.addEventListener(`click`,e=>{if(e.defaultPrevented||e.metaKey||e.ctrlKey||e.shiftKey||e.button!==0)return;e.preventDefault();let t=document.getElementById(`main-content`);t&&(t.setAttribute(`tabindex`,`-1`),t.addEventListener(`blur`,()=>t.removeAttribute(`tabindex`),{once:!0}),t.focus(),t.scrollIntoView({behavior:`smooth`}))})}e(),document.addEventListener(`astro:after-swap`,e),t(),document.addEventListener(`astro:after-swap`,t);</script><div class="app-layout flex items-center justify-start"><a id="back-button" href="/" class="group inline-flex items-center gap-1 hover:text-accent focus-outline hover:text-foreground/75 -ms-2 mt-8 mb-2"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="inline-block size-6 rtl:rotate-180" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="m15 6-6 6 6 6" /></svg><span>返回</span></a></div><script type="module">function e(){let e=document.querySelector(`#back-button`),t=sessionStorage.getItem(`backUrl`);t&&e&&(e.href=t)}document.addEventListener(`astro:page-load`,e),e();</script><main id="main-content" class="app-layout" data-pagefind-body><h1 style="view-transition-name:mail-postfix-smtpd-state" class="text-accent inline-block text-2xl font-bold sm:text-3xl">Postfix smtpd 的会话状态与收件人校验</h1><div class="my-2 flex items-center gap-2"><div class="text-muted-foreground flex flex-wrap items-center gap-x-2 gap-y-1"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="inline-block size-6 min-w-5.5" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M4 7a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2zM16 3v4M8 3v4M4 11h16M7 14h.013M10.01 14h.005M13.01 14h.005M16.015 14h.005M13.015 17h.005M7.01 17h.005M10.01 17h.005" /></svg><time class="text-sm sm:text-base" datetime="2021-10-31T02:00:00.000Z">2021年10月31日</time></div><span aria-hidden="true" class="text-muted-foreground max-sm:hidden hidden">|</span></div><article id="article" class="mt-8 w-full app-prose max-w-app prose-pre:bg-(--shiki-light-bg) dark:prose-pre:bg-(--shiki-dark-bg)"><!--email_off-->
+<p>在实现或运维简单邮件传输协议（Simple Mail Transfer Protocol，SMTP）服务端时，一个常见的疑问是：当某个 <code>RCPT TO</code> 命令因未授权中继或收件人不存在被拒绝后，当前会话中的后续命令是否会受到污染？</p>
+<p>在成熟的邮件传输代理（Mail Transfer Agent，MTA）如 Postfix 中，网络连接与单次邮件事务的上下文虽然保存在同一会话结构中，但两者的生命周期有着明确区分。一个收件人被拒绝，既不会递增已接受收件人计数，也不会将该收件人记录写入后端队列；在未触发通用错误计数超限等中断条件的前提下，客户端依然可以在该连接上继续发送后续合法的收件人指令。</p>
+<p>本文基于 2021 年 7 月 24 日发布的 Postfix 3.6.2 稳定版源码 [<a href="#ref-postfix-362">1</a>]，解析 <code>smtpd(8)</code> 服务中命令分派、会话状态流转、访问控制列表（Access Control List，ACL）评估时机以及事务清理链条，为自建服务配置核验与自研 SMTP 状态机提供参考。</p>
+<h2 id="连接与事务生命周期的区分">连接与事务生命周期的区分</h2>
+<p>Postfix 的 <code>smtpd</code> 进程负责处理客户端的网络连接与协议交互。在启动初始化时，<code>smtpd.c</code> 的配置绑定机制通过 <code>CONFIG_INT_TABLE</code> 与 <code>CONFIG_TIME_TABLE</code>（如 <code>VAR_SMTPD_RCPT_LIMIT</code> 绑定内部变量 <code>var_smtpd_rcpt_limit</code>，<code>VAR_SMTPD_TMOUT</code> 即公开参数 <code>smtpd_timeout</code> 绑定 <code>var_smtpd_tmout</code>）完成参数装载。进入会话后，核心结构体 <code>SMTPD_STATE</code>（定义于 <code>src/smtpd/smtpd.h</code> [<a href="#ref-postfix-smtpd-h">2</a>]）同时管理着连接与事务两个不同生命周期的字段：</p>
+<ul>
+<li><strong>连接级字段</strong>：贯穿整个客户端 TCP 连接的生命周期。例如客户端套接字流句柄 <code>client</code>、解析后的客户端主机名 <code>name</code> 与 IP 地址 <code>addr</code>、用于日志输出的 <code>namaddr</code>、<code>HELO</code> 握手参数 <code>helo_name</code>、累计错误次数 <code>error_count</code> 与错误掩码 <code>error_mask</code> 等。</li>
+<li><strong>事务级字段</strong>：仅在单封邮件传输事务中有效，在事务重置或结束时回收。包括发件人地址 <code>sender</code>、首个收件人记录 <code>recipient</code>、已成功接受的收件人数量 <code>rcpt_count</code>、超出收件人上限后的探测计数 <code>rcpt_overshoot</code>、实际接收字节累计 <code>act_size</code>，以及通往后台队列处理进程的管道句柄 <code>cleanup</code> 和文件流封装 <code>dest</code>。</li>
+</ul>
+<p>Postfix 通过判断发件人指针是否非空来识别当前是否处于邮件事务中：</p>
+<pre class="astro-code astro-code-themes min-light night-owl" style="--shiki-light:#24292eff;--shiki-dark:#d6deeb;--shiki-light-bg:#ffffff;--shiki-dark-bg:#011627; overflow-x: auto;--file-name-offset: -0.75rem;" tabindex="0" data-language="c"><code><span class="line"><span style="--shiki-light:#C2C3C5;--shiki-light-font-style:inherit;--shiki-dark:#637777;--shiki-dark-font-style:italic">/* src/smtpd/smtpd.h:336 */</span></span>
+<span class="line"><span style="--shiki-light:#D32F2F;--shiki-dark:#C792EA">#</span><span style="--shiki-light:#D32F2F;--shiki-light-font-style:inherit;--shiki-dark:#C792EA;--shiki-dark-font-style:italic">define</span><span style="--shiki-light:#6F42C1;--shiki-light-font-style:inherit;--shiki-dark:#82AAFF;--shiki-dark-font-style:italic"> SMTPD_IN_MAIL_TRANSACTION</span><span style="--shiki-light:#24292EFF;--shiki-dark:#D9F5DD">(</span><span style="--shiki-light:#24292EFF;--shiki-dark:#D7DBE0">state</span><span style="--shiki-light:#24292EFF;--shiki-dark:#D9F5DD">)</span><span style="--shiki-light:#24292EFF;--shiki-dark:#D6DEEB"> ((state)</span><span style="--shiki-light:#212121;--shiki-dark:#D6DEEB">-></span><span style="--shiki-light:#24292EFF;--shiki-dark:#C5E478">sender</span><span style="--shiki-light:#D32F2F;--shiki-dark:#C792EA"> !=</span><span style="--shiki-light:#1976D2;--shiki-dark:#F78C6C"> 0</span><span style="--shiki-light:#24292EFF;--shiki-dark:#D6DEEB">)</span></span></code></pre>
+<p>这里的细节在于：只要 <code>state->sender</code> 非空指针，系统即判定当前事务已开启。对于系统退信等使用空反向路径（<code>MAIL FROM:&#x3C;></code>）的合法邮件，Postfix 会将其规范化为长度为 0 的空字符串并分配内存，因此 <code>state->sender</code> 指针依然非空，事务状态判定依然成立。</p>
+<p>当客户端执行 <code>RSET</code> 命令，或者邮件正常进入提交并走完末尾回收路径时，服务端会调用 <code>mail_reset(state)</code> 与 <code>rcpt_reset(state)</code>。发件人字符串被释放、收件人计数被重置，但连接级别的 TCP 套接字和握手状态（如 <code>helo_name</code>）得以保留，客户端可在同一连接内开启下一封邮件传输。</p>
+<h2 id="命令分派与逐行同步处理">命令分派与逐行同步处理</h2>
+<p>在本连接内，Postfix 的 <code>smtpd</code> 采用同步逐行读取与命令分派机制。连接建立后，协议主循环由 <code>smtpd_proto</code>（位于 <code>src/smtpd/smtpd.c</code> [<a href="#ref-postfix-smtpd-c">3</a>]）驱动，并在入口处调用 <code>smtp_stream_setup(state->client, var_smtpd_tmout, ...)</code> 设置 I/O 超时：</p>
+<ol>
+<li><strong>逐行读取与异常捕获</strong>：使用 <code>vstream_setjmp(state->client)</code> 捕获底层 I/O 异常。当客户端连接空闲超时触发 <code>SMTP_ERR_TIME</code> 时，服务端发送 <code>421 4.4.2 Error: timeout exceeded</code> 并关闭连接；检测到对端直接断开连接（<code>SMTP_ERR_EOF</code>）时，退出协议循环并清理状态。</li>
+<li><strong>命令查表分派</strong>：通过 <code>smtpd_token</code> 将输入行切分为参数数组，随后在命令表 <code>smtpd_cmd_table</code> 中匹配命令名，分派到对应的实现函数，如 <code>mail_cmd</code>、<code>rcpt_cmd</code>、<code>data_cmd</code>、<code>rset_cmd</code> 等。</li>
+<li><strong>流水线处理</strong>：虽然 ESMTP 支持流水线（PIPELINING），但服务端在处理逻辑上仍然按照读取到的行顺序逐条同步执行。若某条 <code>RCPT TO</code> 校验失败，服务端立即向网络缓冲区写入对应 <code>5xx</code> 或 <code>4xx</code> 响应，随后继续读取并独立评估下一行命令。</li>
+</ol>
+<h2 id="mail-from事务初始化与限制预检">MAIL FROM：事务初始化与限制预检</h2>
+<p>当 <code>mail_cmd</code> 收到 <code>MAIL FROM</code> 命令时，首先执行协议阶段检查：</p>
+<ul>
+<li><strong>阶段校验</strong>：若配置了 <code>smtpd_helo_required = yes</code> 且握手参数 <code>state->helo_name == 0</code>，拒绝并返回 <code>503 5.5.1 Error: send HELO/EHLO first</code>。</li>
+<li><strong>嵌套事务防护</strong>：若 <code>SMTPD_IN_MAIL_TRANSACTION(state)</code> 已经为真，说明前一事务仍未重置，直接拒绝 <code>503 5.5.1 Error: nested MAIL command</code>。此时并不会重置既有事务，原有发件人依然保留。</li>
+<li><strong>语法校验</strong>：解析参数是否以 <code>FROM:</code> 开头，地址格式是否符合协议规范。</li>
+</ul>
+<p>在早退校验阶段，若客户端声明了 <code>SIZE=n</code> 扩展参数，函数会调用 <code>smtpd_check_size</code> 进行预检：若声明大小超过配置的 <code>message_size_limit</code>，立即返回 <code>552 5.3.4 Message size exceeds fixed limit</code>。同时，<code>smtpd_check_queue</code> 会检查本地队列存储空间，若剩余空间不足 <code>queue_minfree</code>，提前返回临时错误 <code>452 4.3.1 Insufficient system storage</code>。</p>
+<p>只有当所有前置检查全部通过并成功分配发件人内存后，新的事务才推进到开启阶段。在配置为立即打开队列流（<code>var_smtpd_delay_open == 0</code>）时，若紧接着执行的 <code>mail_open_stream(state)</code> 失败，系统会立即调用 <code>mail_reset(state)</code> 回滚发件人并返回错误；只有全部成功并向客户端输出 <code>250 2.1.0 Ok</code>，才代表新事务在外部边界上正式确立：</p>
+<pre class="astro-code astro-code-themes min-light night-owl" style="--shiki-light:#24292eff;--shiki-dark:#d6deeb;--shiki-light-bg:#ffffff;--shiki-dark-bg:#011627; overflow-x: auto;--file-name-offset: -0.75rem;" tabindex="0" data-language="c"><code><span class="line"><span style="--shiki-light:#C2C3C5;--shiki-light-font-style:inherit;--shiki-dark:#637777;--shiki-dark-font-style:italic">/* src/smtpd/smtpd.c:2703-2720 */</span></span>
+<span class="line"><span style="--shiki-light:#6F42C1;--shiki-light-font-style:inherit;--shiki-dark:#82AAFF;--shiki-dark-font-style:italic">GETTIMEOFDAY</span><span style="--shiki-light:#24292EFF;--shiki-dark:#D6DEEB">(</span><span style="--shiki-light:#D32F2F;--shiki-dark:#7FDBCA">&#x26;</span><span style="--shiki-light:#24292EFF;--shiki-dark:#D6DEEB">state</span><span style="--shiki-light:#D32F2F;--shiki-dark:#7FDBCA">-</span><span style="--shiki-light:#D32F2F;--shiki-dark:#C792EA">></span><span style="--shiki-light:#24292EFF;--shiki-dark:#D7DBE0">arrival_time</span><span style="--shiki-light:#24292EFF;--shiki-dark:#D6DEEB">);</span></span>
+<span class="line"><span style="--shiki-light:#24292EFF;--shiki-dark:#D6DEEB">state</span><span style="--shiki-light:#D32F2F;--shiki-dark:#7FDBCA">-</span><span style="--shiki-light:#D32F2F;--shiki-dark:#C792EA">></span><span style="--shiki-light:#24292EFF;--shiki-dark:#D6DEEB">sender </span><span style="--shiki-light:#D32F2F;--shiki-dark:#C792EA">=</span><span style="--shiki-light:#6F42C1;--shiki-light-font-style:inherit;--shiki-dark:#82AAFF;--shiki-dark-font-style:italic"> mystrdup</span><span style="--shiki-light:#24292EFF;--shiki-dark:#D6DEEB">(</span><span style="--shiki-light:#6F42C1;--shiki-light-font-style:inherit;--shiki-dark:#82AAFF;--shiki-dark-font-style:italic">STR</span><span style="--shiki-light:#24292EFF;--shiki-dark:#D6DEEB">(state</span><span style="--shiki-light:#D32F2F;--shiki-dark:#7FDBCA">-</span><span style="--shiki-light:#D32F2F;--shiki-dark:#C792EA">></span><span style="--shiki-light:#24292EFF;--shiki-dark:#D7DBE0">addr_buf</span><span style="--shiki-light:#24292EFF;--shiki-dark:#D6DEEB">));</span></span>
+<span class="line"><span style="--shiki-light:#C2C3C5;--shiki-light-font-style:inherit;--shiki-dark:#637777;--shiki-dark-font-style:italic">/* ... 初始化 instance 与协议扩展属性 ... */</span></span>
+<span class="line"><span style="--shiki-light:#D32F2F;--shiki-light-font-style:inherit;--shiki-dark:#C792EA;--shiki-dark-font-style:italic">if</span><span style="--shiki-light:#24292EFF;--shiki-dark:#D6DEEB"> (var_smtpd_delay_open </span><span style="--shiki-light:#D32F2F;--shiki-dark:#C792EA">==</span><span style="--shiki-light:#1976D2;--shiki-dark:#F78C6C"> 0</span><span style="--shiki-light:#D32F2F;--shiki-dark:#C792EA"> &#x26;&#x26;</span><span style="--shiki-light:#6F42C1;--shiki-light-font-style:inherit;--shiki-dark:#82AAFF;--shiki-dark-font-style:italic"> mail_open_stream</span><span style="--shiki-light:#24292EFF;--shiki-dark:#D6DEEB">(state) </span><span style="--shiki-light:#D32F2F;--shiki-dark:#C792EA">&#x3C;</span><span style="--shiki-light:#1976D2;--shiki-dark:#F78C6C"> 0</span><span style="--shiki-light:#24292EFF;--shiki-dark:#D6DEEB">) {</span></span>
+<span class="line"><span style="--shiki-light:#6F42C1;--shiki-light-font-style:inherit;--shiki-dark:#82AAFF;--shiki-dark-font-style:italic">    mail_reset</span><span style="--shiki-light:#6F42C1;--shiki-dark:#82AAFF">(state)</span><span style="--shiki-light:#24292EFF;--shiki-dark:#D6DEEB">;</span></span>
+<span class="line"><span style="--shiki-light:#D32F2F;--shiki-light-font-style:inherit;--shiki-dark:#C792EA;--shiki-dark-font-style:italic">    return</span><span style="--shiki-light:#24292EFF;--shiki-dark:#D6DEEB"> (</span><span style="--shiki-light:#D32F2F;--shiki-dark:#7FDBCA">-</span><span style="--shiki-light:#1976D2;--shiki-dark:#F78C6C">1</span><span style="--shiki-light:#24292EFF;--shiki-dark:#D6DEEB">);</span></span>
+<span class="line"><span style="--shiki-light:#24292EFF;--shiki-dark:#D6DEEB">}</span></span>
+<span class="line"><span style="--shiki-light:#6F42C1;--shiki-light-font-style:inherit;--shiki-dark:#82AAFF;--shiki-dark-font-style:italic">smtpd_chat_reply</span><span style="--shiki-light:#24292EFF;--shiki-dark:#D6DEEB">(state</span><span style="--shiki-light:#212121;--shiki-dark:#D6DEEB">,</span><span style="--shiki-light:#22863A;--shiki-dark:#D9F5DD"> "</span><span style="--shiki-light:#22863A;--shiki-dark:#ECC48D">250 2.1.0 Ok</span><span style="--shiki-light:#22863A;--shiki-dark:#D9F5DD">"</span><span style="--shiki-light:#24292EFF;--shiki-dark:#D6DEEB">);</span></span>
+<span class="line"><span style="--shiki-light:#D32F2F;--shiki-light-font-style:inherit;--shiki-dark:#C792EA;--shiki-dark-font-style:italic">return</span><span style="--shiki-light:#24292EFF;--shiki-dark:#D6DEEB"> (</span><span style="--shiki-light:#1976D2;--shiki-dark:#F78C6C">0</span><span style="--shiki-light:#24292EFF;--shiki-dark:#D6DEEB">);</span></span></code></pre>
+<p>如果在检查过程中发现语法或策略错误早退，<code>mail_cmd</code> 直接返回 <code>-1</code>，新发件人不会被写入 <code>state->sender</code>。</p>
+<h2 id="rcpt-to访问控制中继限制与目录检查">RCPT TO：访问控制、中继限制与目录检查</h2>
+<p><code>rcpt_cmd</code> 是反垃圾策略与收件人校验的核心。客户端发送 <code>RCPT TO</code> 时，处理流程分为前后两个阶段：</p>
+<h3 id="1-延迟限制与中继评估顺序">1. 延迟限制与中继评估顺序</h3>
+<p>Postfix 默认启用 <code>smtpd_delay_reject = yes</code>。这意味着即使客户端在连接、握手或发信人阶段触发了拒绝规则，Postfix 也会将拒绝推迟到收到第一个 <code>RCPT TO</code> 时才生效并输出响应。这样设计的目的是尽可能将客户端 IP、发件人和收件人完整记录在同一条拒绝日志中，便于事后排查分析。</p>
+<p>在进入具体的收件人策略前，<code>smtpd_check_rcpt</code>（位于 <code>src/smtpd/smtpd_check.c</code> [<a href="#ref-postfix-smtpd-check-c">4</a>]）会先回放延迟的检查：</p>
+<pre class="astro-code astro-code-themes min-light night-owl" style="--shiki-light:#24292eff;--shiki-dark:#d6deeb;--shiki-light-bg:#ffffff;--shiki-dark-bg:#011627; overflow-x: auto;--file-name-offset: -0.75rem;" tabindex="0" data-language="c"><code><span class="line"><span style="--shiki-light:#C2C3C5;--shiki-light-font-style:inherit;--shiki-dark:#637777;--shiki-dark-font-style:italic">/* src/smtpd/smtpd_check.c:5078-5082 */</span></span>
+<span class="line"><span style="--shiki-light:#D32F2F;--shiki-light-font-style:inherit;--shiki-dark:#C792EA;--shiki-dark-font-style:italic">if</span><span style="--shiki-light:#24292EFF;--shiki-dark:#D6DEEB"> (var_smtpd_delay_reject)</span></span>
+<span class="line"><span style="--shiki-light:#D32F2F;--shiki-light-font-style:inherit;--shiki-dark:#C792EA;--shiki-dark-font-style:italic">    if</span><span style="--shiki-light:#24292EFF;--shiki-dark:#D6DEEB"> ((err </span><span style="--shiki-light:#D32F2F;--shiki-dark:#C792EA">=</span><span style="--shiki-light:#6F42C1;--shiki-light-font-style:inherit;--shiki-dark:#82AAFF;--shiki-dark-font-style:italic"> smtpd_check_client</span><span style="--shiki-light:#24292EFF;--shiki-dark:#D6DEEB">(state)) </span><span style="--shiki-light:#D32F2F;--shiki-dark:#C792EA">!=</span><span style="--shiki-light:#1976D2;--shiki-dark:#F78C6C"> 0</span></span>
+<span class="line"><span style="--shiki-light:#D32F2F;--shiki-dark:#C792EA">        ||</span><span style="--shiki-light:#24292EFF;--shiki-dark:#D6DEEB"> (err </span><span style="--shiki-light:#D32F2F;--shiki-dark:#C792EA">=</span><span style="--shiki-light:#6F42C1;--shiki-light-font-style:inherit;--shiki-dark:#82AAFF;--shiki-dark-font-style:italic"> smtpd_check_helo</span><span style="--shiki-light:#24292EFF;--shiki-dark:#D6DEEB">(state</span><span style="--shiki-light:#212121;--shiki-dark:#D6DEEB">,</span><span style="--shiki-light:#24292EFF;--shiki-dark:#D6DEEB"> state</span><span style="--shiki-light:#D32F2F;--shiki-dark:#7FDBCA">-</span><span style="--shiki-light:#D32F2F;--shiki-dark:#C792EA">></span><span style="--shiki-light:#24292EFF;--shiki-dark:#D7DBE0">helo_name</span><span style="--shiki-light:#24292EFF;--shiki-dark:#D6DEEB">)) </span><span style="--shiki-light:#D32F2F;--shiki-dark:#C792EA">!=</span><span style="--shiki-light:#1976D2;--shiki-dark:#F78C6C"> 0</span></span>
+<span class="line"><span style="--shiki-light:#D32F2F;--shiki-dark:#C792EA">        ||</span><span style="--shiki-light:#24292EFF;--shiki-dark:#D6DEEB"> (err </span><span style="--shiki-light:#D32F2F;--shiki-dark:#C792EA">=</span><span style="--shiki-light:#6F42C1;--shiki-light-font-style:inherit;--shiki-dark:#82AAFF;--shiki-dark-font-style:italic"> smtpd_check_mail</span><span style="--shiki-light:#24292EFF;--shiki-dark:#D6DEEB">(state</span><span style="--shiki-light:#212121;--shiki-dark:#D6DEEB">,</span><span style="--shiki-light:#24292EFF;--shiki-dark:#D6DEEB"> state</span><span style="--shiki-light:#D32F2F;--shiki-dark:#7FDBCA">-</span><span style="--shiki-light:#D32F2F;--shiki-dark:#C792EA">></span><span style="--shiki-light:#24292EFF;--shiki-dark:#D7DBE0">sender</span><span style="--shiki-light:#24292EFF;--shiki-dark:#D6DEEB">)) </span><span style="--shiki-light:#D32F2F;--shiki-dark:#C792EA">!=</span><span style="--shiki-light:#1976D2;--shiki-dark:#F78C6C"> 0</span><span style="--shiki-light:#24292EFF;--shiki-dark:#D6DEEB">)</span></span>
+<span class="line"><span style="--shiki-light:#6F42C1;--shiki-light-font-style:inherit;--shiki-dark:#82AAFF;--shiki-dark-font-style:italic">        SMTPD_CHECK_RCPT_RETURN</span><span style="--shiki-light:#24292EFF;--shiki-dark:#D6DEEB">(err);</span></span></code></pre>
+<p>随后评估收件人限制。在 Postfix 架构中，中继限制（<code>smtpd_relay_restrictions</code>）与收件人限制（<code>smtpd_recipient_restrictions</code>）被拆分为两个独立的限制列表。两者的评估顺序由源码内部变量 <code>var_relay_before_rcpt_checks</code>（对应公开配置参数 <code>smtpd_relay_before_recipient_restrictions</code>）决定，并结合兼容性等级（compatibility_level）的警告分支综合计算得出：</p>
+<pre class="astro-code astro-code-themes min-light night-owl" style="--shiki-light:#24292eff;--shiki-dark:#d6deeb;--shiki-light-bg:#ffffff;--shiki-dark-bg:#011627; overflow-x: auto;--file-name-offset: -0.75rem;" tabindex="0" data-language="c"><code><span class="line"><span style="--shiki-light:#C2C3C5;--shiki-light-font-style:inherit;--shiki-dark:#637777;--shiki-dark-font-style:italic">/* src/smtpd/smtpd_check.c:5112-5114 */</span></span>
+<span class="line"><span style="--shiki-light:#24292EFF;--shiki-dark:#D6DEEB">rcpt_index </span><span style="--shiki-light:#D32F2F;--shiki-dark:#C792EA">=</span><span style="--shiki-light:#24292EFF;--shiki-dark:#D6DEEB"> (var_relay_before_rcpt_checks</span></span>
+<span class="line"><span style="--shiki-light:#D32F2F;--shiki-dark:#C792EA">              &#x26;&#x26;</span><span style="--shiki-light:#D32F2F;--shiki-dark:#C792EA"> !</span><span style="--shiki-light:#24292EFF;--shiki-dark:#D6DEEB">warn_compat_break_relay_restrictions);</span></span>
+<span class="line"><span style="--shiki-light:#24292EFF;--shiki-dark:#D6DEEB">relay_index </span><span style="--shiki-light:#D32F2F;--shiki-dark:#C792EA">=</span><span style="--shiki-light:#D32F2F;--shiki-dark:#C792EA"> !</span><span style="--shiki-light:#24292EFF;--shiki-dark:#D6DEEB">rcpt_index;</span></span></code></pre>
+<p>中继限制的核心规则由 <code>reject_unauth_destination</code>（定义于 <code>src/smtpd/smtpd_check.c:1748</code>）实现：</p>
+<pre class="astro-code astro-code-themes min-light night-owl" style="--shiki-light:#24292eff;--shiki-dark:#d6deeb;--shiki-light-bg:#ffffff;--shiki-dark-bg:#011627; overflow-x: auto;--file-name-offset: -0.75rem;" tabindex="0" data-language="c"><code><span class="line"><span style="--shiki-light:#C2C3C5;--shiki-light-font-style:inherit;--shiki-dark:#637777;--shiki-dark-font-style:italic">/* src/smtpd/smtpd_check.c:1748-1768 核心流程截取 */</span></span>
+<span class="line"><span style="--shiki-light:#D32F2F;--shiki-light-font-style:inherit;--shiki-dark:#C792EA;--shiki-dark-font-style:italic">static</span><span style="--shiki-light:#D32F2F;--shiki-dark:#C792EA"> int</span><span style="--shiki-light:#6F42C1;--shiki-light-font-style:inherit;--shiki-dark:#82AAFF;--shiki-dark-font-style:italic"> reject_unauth_destination</span><span style="--shiki-light:#24292EFF;--shiki-dark:#D6DEEB">(SMTPD_STATE </span><span style="--shiki-light:#D32F2F;--shiki-dark:#7FDBCA">*</span><span style="--shiki-light:#24292EFF;--shiki-dark:#D7DBE0">state</span><span style="--shiki-light:#212121;--shiki-dark:#D6DEEB">,</span><span style="--shiki-light:#D32F2F;--shiki-dark:#C792EA"> char</span><span style="--shiki-light:#D32F2F;--shiki-dark:#7FDBCA"> *</span><span style="--shiki-light:#24292EFF;--shiki-dark:#D7DBE0">recipient</span><span style="--shiki-light:#212121;--shiki-dark:#D6DEEB">,</span></span>
+<span class="line"><span style="--shiki-light:#D32F2F;--shiki-dark:#C792EA">                                      int</span><span style="--shiki-light:#24292EFF;--shiki-dark:#D7DBE0"> reply_code</span><span style="--shiki-light:#212121;--shiki-dark:#D6DEEB">,</span><span style="--shiki-light:#D32F2F;--shiki-light-font-style:inherit;--shiki-dark:#C792EA;--shiki-dark-font-style:italic"> const</span><span style="--shiki-light:#D32F2F;--shiki-dark:#C792EA"> char</span><span style="--shiki-light:#D32F2F;--shiki-dark:#7FDBCA"> *</span><span style="--shiki-light:#24292EFF;--shiki-dark:#D7DBE0">reply_dsn</span><span style="--shiki-light:#24292EFF;--shiki-dark:#D6DEEB">)</span></span>
+<span class="line"><span style="--shiki-light:#24292EFF;--shiki-dark:#D6DEEB">{</span></span>
+<span class="line"><span style="--shiki-light:#C2C3C5;--shiki-light-font-style:inherit;--shiki-dark:#637777;--shiki-dark-font-style:italic">    /* ... 调试日志输出 ... */</span></span>
+<span class="line"><span style="--shiki-light:#D32F2F;--shiki-light-font-style:inherit;--shiki-dark:#C792EA;--shiki-dark-font-style:italic">    if</span><span style="--shiki-light:#24292EFF;--shiki-dark:#D6DEEB"> (</span><span style="--shiki-light:#6F42C1;--shiki-light-font-style:inherit;--shiki-dark:#82AAFF;--shiki-dark-font-style:italic">permit_auth_destination</span><span style="--shiki-light:#6F42C1;--shiki-dark:#82AAFF">(state</span><span style="--shiki-light:#212121;--shiki-dark:#82AAFF">,</span><span style="--shiki-light:#6F42C1;--shiki-dark:#82AAFF"> recipient)</span><span style="--shiki-light:#D32F2F;--shiki-dark:#C792EA"> ==</span><span style="--shiki-light:#24292EFF;--shiki-dark:#D6DEEB"> SMTPD_CHECK_OK)</span></span>
+<span class="line"><span style="--shiki-light:#D32F2F;--shiki-light-font-style:inherit;--shiki-dark:#C792EA;--shiki-dark-font-style:italic">        return</span><span style="--shiki-light:#24292EFF;--shiki-dark:#D6DEEB"> (SMTPD_CHECK_DUNNO);</span></span>
+<span class="line"></span>
+<span class="line"><span style="--shiki-light:#D32F2F;--shiki-light-font-style:inherit;--shiki-dark:#C792EA;--shiki-dark-font-style:italic">    return</span><span style="--shiki-light:#24292EFF;--shiki-dark:#D6DEEB"> (</span><span style="--shiki-light:#6F42C1;--shiki-light-font-style:inherit;--shiki-dark:#82AAFF;--shiki-dark-font-style:italic">smtpd_check_reject</span><span style="--shiki-light:#6F42C1;--shiki-dark:#82AAFF">(state</span><span style="--shiki-light:#212121;--shiki-dark:#82AAFF">,</span><span style="--shiki-light:#6F42C1;--shiki-dark:#82AAFF"> MAIL_ERROR_POLICY</span><span style="--shiki-light:#212121;--shiki-dark:#82AAFF">,</span></span>
+<span class="line"><span style="--shiki-light:#6F42C1;--shiki-dark:#82AAFF">                               reply_code</span><span style="--shiki-light:#212121;--shiki-dark:#82AAFF">,</span><span style="--shiki-light:#6F42C1;--shiki-dark:#82AAFF"> reply_dsn</span><span style="--shiki-light:#212121;--shiki-dark:#82AAFF">,</span></span>
+<span class="line"><span style="--shiki-light:#22863A;--shiki-dark:#D9F5DD">                               "</span><span style="--shiki-light:#22863A;--shiki-dark:#ECC48D">&#x3C;</span><span style="--shiki-light:#1976D2;--shiki-dark:#82AAFF">%s</span><span style="--shiki-light:#22863A;--shiki-dark:#ECC48D">>: Relay access denied</span><span style="--shiki-light:#22863A;--shiki-dark:#D9F5DD">"</span><span style="--shiki-light:#212121;--shiki-dark:#82AAFF">,</span></span>
+<span class="line"><span style="--shiki-light:#6F42C1;--shiki-dark:#82AAFF">                               recipient)</span><span style="--shiki-light:#24292EFF;--shiki-dark:#D6DEEB">);</span></span>
+<span class="line"><span style="--shiki-light:#24292EFF;--shiki-dark:#D6DEEB">}</span></span></code></pre>
+<p>这里需要将<strong>授权中继目的地址</strong>与<strong>合法收件人目录</strong>清晰区分：</p>
+<ul>
+<li><code>reject_unauth_destination</code> 解决的是<strong>域名路由归属</strong>问题，判断本站是否有权为该收件人域名进行邮件转发；</li>
+<li><code>reject_unlisted_recipient</code> 调用的 <code>check_recipient_rcpt_maps</code> 解决的是<strong>收件人真实存在性</strong>问题。它会按收件人地址类别选用相应目录进行核验：本地域查询本地收件人表（<code>local_recipient_maps</code>），虚拟别名域查询虚拟别名表（<code>virtual_alias_maps</code>），虚拟邮箱域查询虚拟邮箱表（<code>virtual_mailbox_maps</code>），中继域查询中继收件人表（<code>relay_recipient_maps</code>）。注意中继目录用于核验下一跳收件人合法性，并不表示账户在本机存储。</li>
+</ul>
+<h3 id="2-状态保护与计数递增">2. 状态保护与计数递增</h3>
+<p>在校验过程中若任何规则产生拒绝（例如返回 <code>554 5.7.1 Relay access denied</code> 或 <code>550 5.1.1 User unknown</code>），<code>rcpt_cmd</code> 执行以下分支：</p>
+<pre class="astro-code astro-code-themes min-light night-owl" style="--shiki-light:#24292eff;--shiki-dark:#d6deeb;--shiki-light-bg:#ffffff;--shiki-dark-bg:#011627; overflow-x: auto;--file-name-offset: -0.75rem;" tabindex="0" data-language="c"><code><span class="line"><span style="--shiki-light:#C2C3C5;--shiki-light-font-style:inherit;--shiki-dark:#637777;--shiki-dark-font-style:italic">/* src/smtpd/smtpd.c:2996-2999 */</span></span>
+<span class="line"><span style="--shiki-light:#D32F2F;--shiki-light-font-style:inherit;--shiki-dark:#C792EA;--shiki-dark-font-style:italic">if</span><span style="--shiki-light:#24292EFF;--shiki-dark:#D6DEEB"> (err </span><span style="--shiki-light:#D32F2F;--shiki-dark:#C792EA">!=</span><span style="--shiki-light:#1976D2;--shiki-dark:#F78C6C"> 0</span><span style="--shiki-light:#24292EFF;--shiki-dark:#D6DEEB">) {</span></span>
+<span class="line"><span style="--shiki-light:#6F42C1;--shiki-light-font-style:inherit;--shiki-dark:#82AAFF;--shiki-dark-font-style:italic">    smtpd_chat_reply</span><span style="--shiki-light:#6F42C1;--shiki-dark:#82AAFF">(state</span><span style="--shiki-light:#212121;--shiki-dark:#82AAFF">,</span><span style="--shiki-light:#22863A;--shiki-dark:#D9F5DD"> "</span><span style="--shiki-light:#1976D2;--shiki-dark:#82AAFF">%s</span><span style="--shiki-light:#22863A;--shiki-dark:#D9F5DD">"</span><span style="--shiki-light:#212121;--shiki-dark:#82AAFF">,</span><span style="--shiki-light:#6F42C1;--shiki-dark:#82AAFF"> err)</span><span style="--shiki-light:#24292EFF;--shiki-dark:#D6DEEB">;</span></span>
+<span class="line"><span style="--shiki-light:#D32F2F;--shiki-light-font-style:inherit;--shiki-dark:#C792EA;--shiki-dark-font-style:italic">    return</span><span style="--shiki-light:#24292EFF;--shiki-dark:#D6DEEB"> (</span><span style="--shiki-light:#D32F2F;--shiki-dark:#7FDBCA">-</span><span style="--shiki-light:#1976D2;--shiki-dark:#F78C6C">1</span><span style="--shiki-light:#24292EFF;--shiki-dark:#D6DEEB">);</span></span>
+<span class="line"><span style="--shiki-light:#24292EFF;--shiki-dark:#D6DEEB">}</span></span></code></pre>
+<p>直接向对端输出错误文本后返回 <code>-1</code>。此时，<code>state->rcpt_count</code> 不会递增，更不会向后端的 <code>cleanup</code> 队列写入任何收件人数据。</p>
+<p>只有当地址通过所有 ACL 检查，并且队列流或代理连接准备完毕后，才会执行真正的状态提交：</p>
+<pre class="astro-code astro-code-themes min-light night-owl" style="--shiki-light:#24292eff;--shiki-dark:#d6deeb;--shiki-light-bg:#ffffff;--shiki-dark-bg:#011627; overflow-x: auto;--file-name-offset: -0.75rem;" tabindex="0" data-language="c"><code><span class="line"><span style="--shiki-light:#C2C3C5;--shiki-light-font-style:inherit;--shiki-dark:#637777;--shiki-dark-font-style:italic">/* src/smtpd/smtpd.c:3061-3085 */</span></span>
+<span class="line"><span style="--shiki-light:#24292EFF;--shiki-dark:#D6DEEB">state</span><span style="--shiki-light:#D32F2F;--shiki-dark:#7FDBCA">-</span><span style="--shiki-light:#D32F2F;--shiki-dark:#C792EA">></span><span style="--shiki-light:#24292EFF;--shiki-dark:#D6DEEB">rcpt_count</span><span style="--shiki-light:#D32F2F;--shiki-dark:#C792EA">++</span><span style="--shiki-light:#24292EFF;--shiki-dark:#D6DEEB">;</span></span>
+<span class="line"><span style="--shiki-light:#D32F2F;--shiki-light-font-style:inherit;--shiki-dark:#C792EA;--shiki-dark-font-style:italic">if</span><span style="--shiki-light:#24292EFF;--shiki-dark:#D6DEEB"> (state</span><span style="--shiki-light:#D32F2F;--shiki-dark:#7FDBCA">-</span><span style="--shiki-light:#D32F2F;--shiki-dark:#C792EA">></span><span style="--shiki-light:#24292EFF;--shiki-dark:#D6DEEB">recipient </span><span style="--shiki-light:#D32F2F;--shiki-dark:#C792EA">==</span><span style="--shiki-light:#1976D2;--shiki-dark:#F78C6C"> 0</span><span style="--shiki-light:#24292EFF;--shiki-dark:#D6DEEB">)</span></span>
+<span class="line"><span style="--shiki-light:#24292EFF;--shiki-dark:#D6DEEB">    state</span><span style="--shiki-light:#D32F2F;--shiki-dark:#7FDBCA">-</span><span style="--shiki-light:#D32F2F;--shiki-dark:#C792EA">></span><span style="--shiki-light:#24292EFF;--shiki-dark:#D6DEEB">recipient </span><span style="--shiki-light:#D32F2F;--shiki-dark:#C792EA">=</span><span style="--shiki-light:#6F42C1;--shiki-light-font-style:inherit;--shiki-dark:#82AAFF;--shiki-dark-font-style:italic"> mystrdup</span><span style="--shiki-light:#24292EFF;--shiki-dark:#D6DEEB">(</span><span style="--shiki-light:#6F42C1;--shiki-light-font-style:inherit;--shiki-dark:#82AAFF;--shiki-dark-font-style:italic">STR</span><span style="--shiki-light:#24292EFF;--shiki-dark:#D6DEEB">(state</span><span style="--shiki-light:#D32F2F;--shiki-dark:#7FDBCA">-</span><span style="--shiki-light:#D32F2F;--shiki-dark:#C792EA">></span><span style="--shiki-light:#24292EFF;--shiki-dark:#D7DBE0">addr_buf</span><span style="--shiki-light:#24292EFF;--shiki-dark:#D6DEEB">));</span></span>
+<span class="line"><span style="--shiki-light:#D32F2F;--shiki-light-font-style:inherit;--shiki-dark:#C792EA;--shiki-dark-font-style:italic">if</span><span style="--shiki-light:#24292EFF;--shiki-dark:#D6DEEB"> (state</span><span style="--shiki-light:#D32F2F;--shiki-dark:#7FDBCA">-</span><span style="--shiki-light:#D32F2F;--shiki-dark:#C792EA">></span><span style="--shiki-light:#24292EFF;--shiki-dark:#D6DEEB">cleanup) {</span></span>
+<span class="line"><span style="--shiki-light:#6F42C1;--shiki-light-font-style:inherit;--shiki-dark:#82AAFF;--shiki-dark-font-style:italic">    rec_fputs</span><span style="--shiki-light:#6F42C1;--shiki-dark:#82AAFF">(</span><span style="--shiki-light:#1976D2;--shiki-dark:#C5E478">state</span><span style="--shiki-light:#212121;--shiki-dark:#82AAFF">-></span><span style="--shiki-light:#6F42C1;--shiki-dark:#C5E478">cleanup</span><span style="--shiki-light:#212121;--shiki-dark:#82AAFF">,</span><span style="--shiki-light:#6F42C1;--shiki-dark:#82AAFF"> REC_TYPE_RCPT</span><span style="--shiki-light:#212121;--shiki-dark:#82AAFF">,</span><span style="--shiki-light:#6F42C1;--shiki-light-font-style:inherit;--shiki-dark:#82AAFF;--shiki-dark-font-style:italic"> STR</span><span style="--shiki-light:#6F42C1;--shiki-dark:#82AAFF">(</span><span style="--shiki-light:#1976D2;--shiki-dark:#C5E478">state</span><span style="--shiki-light:#212121;--shiki-dark:#82AAFF">-></span><span style="--shiki-light:#6F42C1;--shiki-dark:#C5E478">addr_buf</span><span style="--shiki-light:#6F42C1;--shiki-dark:#82AAFF">))</span><span style="--shiki-light:#24292EFF;--shiki-dark:#D6DEEB">;</span></span>
+<span class="line"><span style="--shiki-light:#6F42C1;--shiki-light-font-style:inherit;--shiki-dark:#82AAFF;--shiki-dark-font-style:italic">    vstream_fflush</span><span style="--shiki-light:#6F42C1;--shiki-dark:#82AAFF">(</span><span style="--shiki-light:#1976D2;--shiki-dark:#C5E478">state</span><span style="--shiki-light:#212121;--shiki-dark:#82AAFF">-></span><span style="--shiki-light:#6F42C1;--shiki-dark:#C5E478">cleanup</span><span style="--shiki-light:#6F42C1;--shiki-dark:#82AAFF">)</span><span style="--shiki-light:#24292EFF;--shiki-dark:#D6DEEB">;</span></span>
+<span class="line"><span style="--shiki-light:#24292EFF;--shiki-dark:#D6DEEB">}</span></span>
+<span class="line"><span style="--shiki-light:#6F42C1;--shiki-light-font-style:inherit;--shiki-dark:#82AAFF;--shiki-dark-font-style:italic">smtpd_chat_reply</span><span style="--shiki-light:#24292EFF;--shiki-dark:#D6DEEB">(state</span><span style="--shiki-light:#212121;--shiki-dark:#D6DEEB">,</span><span style="--shiki-light:#22863A;--shiki-dark:#D9F5DD"> "</span><span style="--shiki-light:#22863A;--shiki-dark:#ECC48D">250 2.1.5 Ok</span><span style="--shiki-light:#22863A;--shiki-dark:#D9F5DD">"</span><span style="--shiki-light:#24292EFF;--shiki-dark:#D6DEEB">);</span></span>
+<span class="line"><span style="--shiki-light:#D32F2F;--shiki-light-font-style:inherit;--shiki-dark:#C792EA;--shiki-dark-font-style:italic">return</span><span style="--shiki-light:#24292EFF;--shiki-dark:#D6DEEB"> (</span><span style="--shiki-light:#1976D2;--shiki-dark:#F78C6C">0</span><span style="--shiki-light:#24292EFF;--shiki-dark:#D6DEEB">);</span></span></code></pre>
+<p>一个被拒绝的 <code>RCPT</code> 仅记录在日志并更新协议错误统计，不会增加已接受收件人总数。只要连接累计的错误数未达到硬限阈值（<code>smtpd_hard_error_limit</code>），客户端完全可以在当前会话中继续发送下一个合法收件人。</p>
+<p>针对收件人数量配额，Postfix 区分了常规上限 <code>smtpd_recipient_limit</code> 与超限容忍缓冲 <code>smtpd_recipient_overshoot_limit</code>。当已接受收件人数达到上限后，首批超限的探测在 <code>rcpt_overshoot</code> 未超出缓冲时，函数虽然回复 <code>452 4.5.3 Error: too many recipients</code> 但依然返回 <code>0</code>，暂不计入通用错误预算；只有连续超出容忍阈值后，才返回 <code>-1</code> 并记录策略错误，最终可能导致连接因达到错误硬限而断开。</p>
+<h2 id="data-处理与落地确认">DATA 处理与落地确认</h2>
+<p>当客户端发出 <code>DATA</code> 命令时，<code>data_cmd</code> 首先检查 <code>state->rcpt_count</code> 是否大于 0：</p>
+<ul>
+<li>若不在事务中，回复 <code>503 5.5.1 Error: need RCPT command</code>；</li>
+<li>若处于事务中但没有成功接受任何收件人，回复 <code>554 5.5.1 Error: no valid recipients</code> 并阻断数据传输。</li>
+</ul>
+<p>通过后，服务端回复 <code>354 End data with &#x3C;CR>&#x3C;LF>.&#x3C;CR>&#x3C;LF></code> 并进入 <code>receive_data_message</code> 读取正文：</p>
+<ol>
+<li><strong>实际大小累计</strong>：虽然在 <code>MAIL FROM</code> 阶段可能做过 <code>SIZE</code> 声明预检，但正文传输过程中 Postfix 会逐行累加 <code>state->act_size</code>。若累计大小超过 <code>message_size_limit</code>，状态置为 <code>CLEANUP_STAT_SIZE</code> 并记录警告日志。</li>
+<li><strong>字节流消费边界与异常保护</strong>：当在正文传输中途检测到大小超限或写入错误时，Postfix 并不会立刻关闭连接，而是继续循环读取，直至遇到标准的行尾终结点 <code>\r\n.\r\n</code>。若在读取流中途发生 I/O 超时或对端断开，底层捕获后转入连接清理；若连接正常保持，排空至终结点保证了命令流同步，防止未消费完的邮件内容被当作后续新的 SMTP 指令误解析。</li>
+<li><strong>确认落盘与响应</strong>：读取完终止符后，进入 <code>common_post_message_handling</code>。向 <code>cleanup</code> 服务写入 <code>REC_TYPE_END</code> 结束标记，并等待后端队列文件处理完成。只有收到 <code>cleanup</code> 服务返回的写入成功状态（<code>state->err == CLEANUP_STAT_OK</code>），才向客户端发送最终的队列接收确认：
+<pre class="astro-code astro-code-themes min-light night-owl" style="--shiki-light:#24292eff;--shiki-dark:#d6deeb;--shiki-light-bg:#ffffff;--shiki-dark-bg:#011627; overflow-x: auto;--file-name-offset: -0.75rem;" tabindex="0" data-language="plaintext"><code><span class="line"><span>250 2.0.0 Ok: queued as 4St8xyz...</span></span></code></pre>
+</li>
+<li><strong>清理回收与早退例外</strong>：在常规的收尾退出路径中，服务端会执行清理函数：
+<pre class="astro-code astro-code-themes min-light night-owl" style="--shiki-light:#24292eff;--shiki-dark:#d6deeb;--shiki-light-bg:#ffffff;--shiki-dark-bg:#011627; overflow-x: auto;--file-name-offset: -0.75rem;" tabindex="0" data-language="c"><code><span class="line"><span style="--shiki-light:#C2C3C5;--shiki-light-font-style:inherit;--shiki-dark:#637777;--shiki-dark-font-style:italic">/* src/smtpd/smtpd.c:3758-3759 */</span></span>
+<span class="line"><span style="--shiki-light:#6F42C1;--shiki-light-font-style:inherit;--shiki-dark:#82AAFF;--shiki-dark-font-style:italic">mail_reset</span><span style="--shiki-light:#24292EFF;--shiki-dark:#D6DEEB">(state);</span></span>
+<span class="line"><span style="--shiki-light:#6F42C1;--shiki-light-font-style:inherit;--shiki-dark:#82AAFF;--shiki-dark-font-style:italic">rcpt_reset</span><span style="--shiki-light:#24292EFF;--shiki-dark:#D6DEEB">(state);</span></span></code></pre>
+需要指出的是，在 Postfix 3.6.2 的源码实现中，存在一个特殊早退分支：如果在 <code>smtpd_check_eod</code>（数据段结束检查）阶段被策略拒绝，函数在关闭流后直接返回，未能走入末尾的 <code>mail_reset</code> 与 <code>rcpt_reset</code>。这提醒我们在进行自研状态机设计时，应当在事务终结出口统一进行清理，避免条件分支遗漏。</li>
+</ol>
+<h2 id="典型会话时序与状态演变">典型会话时序与状态演变</h2>
+<p>显式假设：外部客户端未经 SASL 认证，且不属于 <code>mynetworks</code>；服务端中继规则显式配置为 <code>smtpd_relay_restrictions = permit_mynetworks, permit_sasl_authenticated, reject_unauth_destination</code>；<code>example.com</code> 为本站负责域，且 <code>good@example.com</code> 在对应收件人目录中有效存在。在此特定条件下的交互过程如下：</p>
+<pre class="astro-code astro-code-themes min-light night-owl" style="--shiki-light:#24292eff;--shiki-dark:#d6deeb;--shiki-light-bg:#ffffff;--shiki-dark-bg:#011627; overflow-x: auto;--file-name-offset: -0.75rem;" tabindex="0" data-language="plaintext"><code><span class="line"><span>S: 220 mail.example.com ESMTP Postfix</span></span>
+<span class="line"><span>C: EHLO client.ext.net</span></span>
+<span class="line"><span>S: 250-mail.example.com</span></span>
+<span class="line"><span>S: 250-PIPELINING</span></span>
+<span class="line"><span>S: 250-SIZE 10485760</span></span>
+<span class="line"><span>S: 250 8BITMIME</span></span>
+<span class="line"><span>C: MAIL FROM:&#x3C;tester@client.test></span></span>
+<span class="line"><span>S: 250 2.1.0 Ok                              [state->sender 分配成功，事务确立]</span></span>
+<span class="line"><span>C: RCPT TO:&#x3C;bad@external.invalid></span></span>
+<span class="line"><span>S: 554 5.7.1 &#x3C;bad@external.invalid>: Relay access denied</span></span>
+<span class="line"><span>                                             [被 reject_unauth_destination 拦截，</span></span>
+<span class="line"><span>                                              rcpt_count 保持 0，无队列写入]</span></span>
+<span class="line"><span>C: RCPT TO:&#x3C;good@example.com></span></span>
+<span class="line"><span>S: 250 2.1.5 Ok                              [通过中继与目录检查，</span></span>
+<span class="line"><span>                                              rcpt_count 增至 1，写入 cleanup]</span></span>
+<span class="line"><span>C: DATA</span></span>
+<span class="line"><span>S: 354 End data with &#x3C;CR>&#x3C;LF>.&#x3C;CR>&#x3C;LF>       [rcpt_count > 0 允许接收数据]</span></span>
+<span class="line"><span>C: Subject: Test</span></span>
+<span class="line"><span>C: </span></span>
+<span class="line"><span>C: Hello World</span></span>
+<span class="line"><span>C: .</span></span>
+<span class="line"><span>S: 250 2.0.0 Ok: queued as 4St8ABC123        [收到 cleanup 成功状态，返回 QueueID，</span></span>
+<span class="line"><span>                                              末尾回收发件人与收件人统计]</span></span>
+<span class="line"><span>C: QUIT</span></span>
+<span class="line"><span>S: 221 2.0.0 Bye</span></span></code></pre>
+<h2 id="自建配置核验与自研设计指引">自建配置核验与自研设计指引</h2>
+<h3 id="自建-postfix-配置核验要点">自建 Postfix 配置核验要点</h3>
+<ol>
+<li><strong>分离中继与本地收件人策略</strong>：
+在 <code>main.cf</code> 中建议明确将中继权限与本地反垃圾策略分离：
+<pre class="astro-code astro-code-themes min-light night-owl" style="--shiki-light:#24292eff;--shiki-dark:#d6deeb;--shiki-light-bg:#ffffff;--shiki-dark-bg:#011627; overflow-x: auto;--file-name-offset: -0.75rem;" tabindex="0" data-language="ini"><code><span class="line"><span style="--shiki-light:#C2C3C5;--shiki-light-font-style:inherit;--shiki-dark:#637777;--shiki-dark-font-style:italic"># 控制中继权限（防止沦为外部中继）</span></span>
+<span class="line"><span style="--shiki-light:#D32F2F;--shiki-dark:#C792EA">smtpd_relay_restrictions</span><span style="--shiki-light:#D32F2F;--shiki-dark:#D6DEEB"> =</span></span>
+<span class="line"><span style="--shiki-light:#24292EFF;--shiki-dark:#D6DEEB">    permit_mynetworks,</span></span>
+<span class="line"><span style="--shiki-light:#24292EFF;--shiki-dark:#D6DEEB">    permit_sasl_authenticated,</span></span>
+<span class="line"><span style="--shiki-light:#24292EFF;--shiki-dark:#D6DEEB">    reject_unauth_destination</span></span>
+<span class="line"></span>
+<span class="line"><span style="--shiki-light:#C2C3C5;--shiki-light-font-style:inherit;--shiki-dark:#637777;--shiki-dark-font-style:italic"># 控制本地收件人及反垃圾检查</span></span>
+<span class="line"><span style="--shiki-light:#D32F2F;--shiki-dark:#C792EA">smtpd_recipient_restrictions</span><span style="--shiki-light:#D32F2F;--shiki-dark:#D6DEEB"> =</span></span>
+<span class="line"><span style="--shiki-light:#24292EFF;--shiki-dark:#D6DEEB">    reject_unauth_pipelining,</span></span>
+<span class="line"><span style="--shiki-light:#24292EFF;--shiki-dark:#D6DEEB">    reject_non_fqdn_recipient,</span></span>
+<span class="line"><span style="--shiki-light:#24292EFF;--shiki-dark:#D6DEEB">    reject_unknown_recipient_domain,</span></span>
+<span class="line"><span style="--shiki-light:#24292EFF;--shiki-dark:#D6DEEB">    permit</span></span></code></pre>
+</li>
+<li><strong>规则评估顺序与中继安全</strong>：<code>smtpd_recipient_restrictions</code> 按照列表自上而下评估，首个明确匹配的规则（<code>permit</code> 或 <code>reject</code>）生效。需要注意：在现代 Postfix 中，即使收件人规则中包含了无条件 <code>permit</code>，只要 <code>smtpd_relay_restrictions</code> 依然独立运行并包含 <code>reject_unauth_destination</code>，非本地中继依然会被阻断。只有当管理员为了向后兼容将中继检查完全依赖于收件人列表且无独立中继防护时，在收件人列表中过早配置无条件 <code>permit</code> 才会造成开放中继漏洞。</li>
+<li><strong>保持 delay_reject 默认开启</strong>：保留 <code>smtpd_delay_reject = yes</code> 可以在收件人阶段汇总获得客户端 IP、发件人和收件人，为日志审计与安全分析提供完整的上下文。</li>
+</ol>
+<h3 id="自研-smtp-服务端状态机设计推导">自研 SMTP 服务端状态机设计推导</h3>
+<p>在自行实现 SMTP 接收端或网关时，建议参考以下状态处理原则：</p>
+<ol>
+<li><strong>生命周期分离</strong>：网络连接上下文（TCP 套接字、握手信息）与邮件事务上下文（发件人、收件人列表、临时文件句柄）应当独立封装。事务对象可在接收完成或 <code>RSET</code> 时迅速销毁，不影响长连接保持。</li>
+<li><strong>收件人错误隔离</strong>：单次 <code>RCPT TO</code> 校验失败时，仅返回对应的状态码，切勿更改连接级正常状态，也绝不能将失败的收件人压入队列记录中。</li>
+<li><strong>超限流消费边界</strong>：在 <code>DATA</code> 阶段检测到尺寸超限时，服务端有两种合理的工程选择：
+<ul>
+<li>若选择复用该连接，则在未发生超时或断线的前提下持续读取并消费输入流直至遇到行尾终结点 <code>\r\n.\r\n</code>，然后再发送 <code>552</code> 响应，确保连接后续能够继续接收 <code>RSET</code> 或新命令；若读取过程中触发超时则直接关闭连接并清理；</li>
+<li>若选择直接返回错误并关闭连接（发送带 <code>421</code> 状态码或直接断开连接），则必须彻底终结该会话，禁止在未消费完邮件正文的情况下继续将后续字节作为 SMTP 命令解析。</li>
+</ul>
+</li>
+<li><strong>外部查询异常与 4xx 降级</strong>：当后端数据库或目录服务发生超时、内部错误时，状态机应返回 4xx 临时失败状态码（如 <code>451</code>），切忌误报为 <code>550 User unknown</code> 永久拒绝，以免造成合法邮件被发件方系统退信。</li>
+</ol>
+<h2 id="开发验证方案未执行测试">开发验证方案（未执行测试）</h2>
+<p>以下给出一套可用于验证 SMTP 状态机逻辑的工程测试设计（注：本方案为基于协议规范与源码逻辑设计的测试用例，未在实际环境中执行）：</p>
+<h3 id="验证用例-1被拒-rcpt-隔离与后续合法-rcpt-提交">验证用例 1：被拒 RCPT 隔离与后续合法 RCPT 提交</h3>
+<ul>
+<li><strong>测试目的</strong>：验证非法收件人被拒绝后，会话状态与计数器未被污染，后续合法收件人能正常提交。</li>
+<li><strong>前置设定</strong>：服务端已配置中继限制 <code>reject_unauth_destination</code>；测试客户端未认证且不在受信任网段；<code>example.com</code> 为本地域且 <code>good@example.com</code> 在目录中有效存在；无其他策略拒绝，目录查询均成功，测试期间无网络超时和异常断线。</li>
+<li><strong>输入序列</strong>：
+<ol>
+<li>连接并完成 <code>EHLO test.client</code>。</li>
+<li>发送 <code>MAIL FROM:&#x3C;tester@client.test></code>。</li>
+<li>发送外部非中继域收件人：<code>RCPT TO:&#x3C;bad@external.invalid></code>。</li>
+<li>发送合法本地收件人：<code>RCPT TO:&#x3C;good@example.com></code>。</li>
+<li>发送 <code>DATA</code>，写入标准测试正文并以 <code>\r\n.\r\n</code> 结尾。</li>
+</ol>
+</li>
+<li><strong>预期观察</strong>：
+<ul>
+<li>第 3 步返回 <code>554 5.7.1 ... Relay access denied</code>。</li>
+<li>第 4 步返回 <code>250 2.1.5 Ok</code>；此时观测服务端内部状态，<code>rcpt_count</code> 准确为 1。</li>
+<li>第 5 步 <code>DATA</code> 命令返回 <code>354</code>，正文提交后返回 <code>250 2.0.0 Ok: queued as ...</code>。普通收尾后服务端 <code>rcpt_count</code> 与发件人被重置为 0/空。</li>
+<li>后端队列记录与计数状态异步观测：后端队列文件中仅包含 <code>good@example.com</code> 一条收件人记录，被拒绝的收件人不进入队列。</li>
+</ul>
+</li>
+</ul>
+<h3 id="验证用例-2data-长度超限与流同步边界">验证用例 2：DATA 长度超限与流同步边界</h3>
+<ul>
+<li><strong>测试目的</strong>：验证当消息体超过配额时，服务端是否在消费完终结符后才反馈错误，且连接能通过 <code>RSET</code> 恢复。</li>
+<li><strong>前置设定</strong>：服务端配置限制 <code>message_size_limit = 10240</code>（10 KB）；<code>good@example.com</code> 存在；测试期间无网络超时。</li>
+<li><strong>输入序列</strong>：
+<ol>
+<li>发送 <code>MAIL FROM:&#x3C;tester@client.test></code> 与 <code>RCPT TO:&#x3C;good@example.com></code>。</li>
+<li>发送 <code>DATA</code>，收到 <code>354</code> 响应后，连续发送累计 20 KB 的多行短文本数据，紧接着发送 <code>\r\n.\r\n</code>。</li>
+<li>不断开连接，紧接着发送 <code>RSET</code> 与新的 <code>MAIL FROM:&#x3C;tester2@client.test></code>。</li>
+</ol>
+</li>
+<li><strong>预期观察</strong>：
+<ul>
+<li>在正文数据发送过程中连接不被对端强制重置，服务端在完整接收到终结符后返回 <code>552 5.3.4 Message size exceeds fixed limit</code>。</li>
+<li>随后的 <code>RSET</code> 成功返回 <code>250 2.0.0 Ok</code>。</li>
+<li>新的 <code>MAIL FROM</code> 成功返回 <code>250 2.1.0 Ok</code>，证明数据流解析完全同步，未发生粘包或命令错位。</li>
+</ul>
+</li>
+</ul>
+<hr>
+<h2 id="参考文献">参考文献</h2>
+<ul>
+<li>[1] Wietse Venema. Postfix 3.6.2 Source Release Announcement (2021-07-24). Available at official announcements archive: <a id="ref-postfix-362" href="https://www.postfix.org/announcements.html" target="_blank" rel="noopener noreferrer">原文链接</a>.</li>
+<li>[2] Postfix 3.6.2 Source: <code>src/smtpd/smtpd.h</code>. GitHub Mirror Archive: <a id="ref-postfix-smtpd-h" href="https://github.com/vdukhovni/postfix/blob/v3.6.2/postfix/src/smtpd/smtpd.h#L336" target="_blank" rel="noopener noreferrer">原文链接</a>.</li>
+<li>[3] Postfix 3.6.2 Source: <code>src/smtpd/smtpd.c</code>. GitHub Mirror Archive: <a id="ref-postfix-smtpd-c" href="https://github.com/vdukhovni/postfix/blob/v3.6.2/postfix/src/smtpd/smtpd.c#L2420" target="_blank" rel="noopener noreferrer">原文链接</a>.</li>
+<li>[4] Postfix 3.6.2 Source: <code>src/smtpd/smtpd_check.c</code>. GitHub Mirror Archive: <a id="ref-postfix-smtpd-check-c" href="https://github.com/vdukhovni/postfix/blob/v3.6.2/postfix/src/smtpd/smtpd_check.c#L5035" target="_blank" rel="noopener noreferrer">原文链接</a>.</li>
+</ul>
+<!--/email_off--></article><hr class="my-8 border-dashed"><div id="btt-btn-container" class="fixed inset-e-4 bottom-8 z-50 md:sticky md:inset-e-auto md:float-end md:me-1 translate-y-14 opacity-0 transition duration-500"><button data-button="back-to-top" class="group bg-background relative px-2 py-1 size-14 rounded-full shadow-xl md:h-8 md:w-fit md:rounded-md md:shadow-none md:focus-visible:rounded-none md:bg-background/35 md:bg-clip-padding md:backdrop-blur-lg"><span id="progress-indicator" class="absolute inset-0 -z-10 block size-14 scale-110 rounded-full bg-transparent md:hidden md:h-8 md:rounded-md"></span><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="inline-block rotate-90 md:hidden" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M5 12h14M5 12l6 6M5 12l6-6" /></svg><span class="group-hover:text-accent sr-only text-sm md:not-sr-only"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="inline-block size-4" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M12 5v14M16 9l-4-4M8 9l4-4" /></svg> 回到顶部</span></button></div><script data-astro-rerun>
+  function backToTop() {
+    const rootElement = document.documentElement;
+    const btnContainer = document.querySelector("#btt-btn-container");
+    const backToTopBtn = document.querySelector("[data-button='back-to-top']");
+    const progressIndicator = document.querySelector("#progress-indicator");
+
+    if (!rootElement || !btnContainer || !backToTopBtn || !progressIndicator)
+      return;
+
+    backToTopBtn.addEventListener("click", () => {
+      document.body.scrollTop = 0;
+      document.documentElement.scrollTop = 0;
+    });
+
+    let lastVisible = null;
+    function handleScroll() {
+      const scrollTotal = rootElement.scrollHeight - rootElement.clientHeight;
+      const scrollTop = rootElement.scrollTop;
+      const scrollPercent = Math.floor((scrollTop / scrollTotal) * 100);
+
+      progressIndicator.style.setProperty(
+        "background-image",
+        `conic-gradient(var(--accent), var(--accent) ${scrollPercent}%, transparent ${scrollPercent}%)`
+      );
+
+      const isVisible = scrollTop / scrollTotal > 0.3;
+
+      if (isVisible !== lastVisible) {
+        btnContainer.classList.toggle("opacity-100", isVisible);
+        btnContainer.classList.toggle("translate-y-0", isVisible);
+        btnContainer.classList.toggle("opacity-0", !isVisible);
+        btnContainer.classList.toggle("translate-y-14", !isVisible);
+        lastVisible = isVisible;
+      }
+    }
+
+    let ticking = false;
+    document.addEventListener("scroll", () => {
+      if (!ticking) {
+        window.requestAnimationFrame(() => {
+          handleScroll();
+          ticking = false;
+        });
+        ticking = true;
+      }
+    });
+  }
+  backToTop();
+</script><ul class="mt-4 mb-8 flex flex-wrap gap-4 sm:my-8"><li><a data-astro-transition-scope="astro-bztu2lml-1" href="/tags/smtp/" class="flex items-center gap-0.5 border-foreground border-b-2 border-dashed hover:border-accent hover:text-accent hover:-mt-0.5 focus-visible:text-accent focus-visible:border-none text-sm"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="opacity-80 size-4" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M5 9h14M5 15h14M11 4 7 20M17 4l-4 16" /></svg>SMTP</a></li><li><a data-astro-transition-scope="astro-bztu2lml-2" href="/tags/邮箱系统/" class="flex items-center gap-0.5 border-foreground border-b-2 border-dashed hover:border-accent hover:text-accent hover:-mt-0.5 focus-visible:text-accent focus-visible:border-none text-sm"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="opacity-80 size-4" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M5 9h14M5 15h14M11 4 7 20M17 4l-4 16" /></svg>邮箱系统</a></li><li><a data-astro-transition-scope="astro-bztu2lml-3" href="/tags/访问控制/" class="flex items-center gap-0.5 border-foreground border-b-2 border-dashed hover:border-accent hover:text-accent hover:-mt-0.5 focus-visible:text-accent focus-visible:border-none text-sm"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="opacity-80 size-4" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M5 9h14M5 15h14M11 4 7 20M17 4l-4 16" /></svg>访问控制</a></li></ul><hr class="my-8 border-dashed"><div data-pagefind-ignore class="my-8 grid grid-cols-1 gap-6 sm:grid-cols-2"><a href="/posts/mail-postfix-process-model/" class="flex w-full gap-1 hover:opacity-75"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="inline-block flex-none rtl:rotate-180" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M5 12h14M5 12l6 6M5 12l6-6" /></svg><div><span>上一篇</span><div class="text-accent/85 text-sm">Postfix的进程模型与服务边界</div></div></a><a href="/posts/mail-postfix-cleanup-enqueue/" class="flex w-full justify-end gap-1 text-end hover:opacity-75 sm:col-start-2"><div><span>下一篇</span><div class="text-accent/85 text-sm">Postfix 的 cleanup 处理与消息入队边界</div></div><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="inline-block flex-none rtl:rotate-180" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M5 12h14M13 18l6-6M13 6l6 6" /></svg></a></div></main><footer class="app-layout mt-auto"><div class="border-border flex flex-col items-center justify-between border-t py-6 sm:flex-row-reverse sm:py-4"><div class="flex flex-wrap items-center gap-1"><a href="https://github.com/SaromChars" title="Sarom Chars 的 GitHub" class="group inline-flex items-center gap-1 hover:text-accent p-2 hover:rotate-6 sm:p-1"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="inline-block size-6 scale-125 fill-transparent stroke-current stroke-2 opacity-90 group-hover:fill-transparent sm:scale-110" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M9 19c-4.3 1.4-4.3-2.5-6-3m12 5v-3.5c0-1 .1-1.4-.5-2 2.8-.3 5.5-1.4 5.5-6a4.6 4.6 0 0 0-1.3-3.2 4.2 4.2 0 0 0-.1-3.2s-1.1-.3-3.5 1.3a12.3 12.3 0 0 0-6.2 0C6.5 2.8 5.4 3.1 5.4 3.1a4.2 4.2 0 0 0-.1 3.2A4.6 4.6 0 0 0 4 9.5c0 4.6 2.7 5.7 5.5 6-.6.6-.6 1.2-.5 2V21" /></svg><span class="sr-only">Sarom Chars 的 GitHub</span></a></div><div class="my-2 flex flex-col items-center whitespace-nowrap sm:flex-row"><span>版权 &#169; 2026</span><span class="hidden sm:inline">&nbsp;|&nbsp;</span><span>保留所有权利。</span></div></div></footer><script type="module">var e=`theme`,t=`light`,n=`dark`;function r(){return localStorage.getItem(e)||(window.matchMedia(`(prefers-color-scheme: dark)`).matches?n:t)}var i=window.__theme?.value??r();function a(){localStorage.setItem(e,i),o()}function o(){let e=document.firstElementChild;e?.setAttribute(`data-theme`,i),e?.classList.toggle(`dark`,i===n),document.querySelector(`#theme-btn`)?.setAttribute(`aria-label`,i);let t=window.getComputedStyle(document.body).backgroundColor;document.querySelector(`meta[name='theme-color']`)?.setAttribute(`content`,t)}function s(){o(),document.querySelector(`#theme-btn`)?.addEventListener(`click`,()=>{i=i===t?n:t,a()})}s(),document.addEventListener(`astro:after-swap`,s),document.addEventListener(`astro:before-swap`,e=>{let t=document.querySelector(`meta[name='theme-color']`)?.getAttribute(`content`);t&&e.newDocument.querySelector(`meta[name='theme-color']`)?.setAttribute(`content`,t)}),window.matchMedia(`(prefers-color-scheme: dark)`).addEventListener(`change`,({matches:e})=>{i=e?n:t,a()});</script></body></html><script type="module">var e=document.querySelector(`#article`);if(e?.querySelector(`a[href^="#ref-"]`)){let t=null,n=!1,r=document.createElement(`button`);r.type=`button`,r.className=`citation-return`,r.textContent=`返回阅读位置`,r.setAttribute(`data-pagefind-ignore`,``),e.addEventListener(`click`,n=>{if(n.button!==0||n.metaKey||n.ctrlKey||n.shiftKey||n.altKey)return;let i=n.target instanceof Element?n.target.closest(`a[href^="#ref-"]`):null;if(!i||!e.contains(i))return;let a=i.hash,o=document.getElementById(decodeURIComponent(a.slice(1)));o&&e.contains(o)&&(t={source:i,url:window.location.href,top:window.scrollY,left:window.scrollX,targetHash:a},o.insertAdjacentElement(`afterend`,r))}),r.addEventListener(`click`,()=>{if(!t||n)return;let e=t,i=i=>{r.remove(),window.requestAnimationFrame(()=>{window.requestAnimationFrame(()=>{e.source.focus({preventScroll:!0}),window.scrollTo({top:e.top,left:e.left,behavior:`instant`}),t=null,n=!1,i?.()})})};window.location.href===e.url?i():(n=!0,window.addEventListener(`popstate`,()=>{let e=window.history.scrollRestoration;window.history.scrollRestoration=`manual`,window.setTimeout(()=>{i(()=>{window.history.scrollRestoration=e})},0)},{once:!0}),window.history.back())}),window.addEventListener(`hashchange`,()=>{!n&&t&&window.location.hash!==t.targetHash&&(r.remove(),t=null)})}</script><script data-astro-rerun>
+  function createProgressBar() {
+    const progressContainer = document.createElement("div");
+    progressContainer.className =
+      "progress-container fixed top-0 z-10 h-1 w-full bg-background";
+
+    const progressBar = document.createElement("div");
+    progressBar.className = "progress-bar h-1 w-0 bg-accent";
+    progressBar.id = "myBar";
+
+    progressContainer.appendChild(progressBar);
+    document.body.appendChild(progressContainer);
+  }
+  createProgressBar();
+
+  function updateScrollProgress() {
+    document.addEventListener("scroll", () => {
+      const winScroll =
+        document.body.scrollTop || document.documentElement.scrollTop;
+      const height =
+        document.documentElement.scrollHeight -
+        document.documentElement.clientHeight;
+      const scrolled = (winScroll / height) * 100;
+      if (document) {
+        const myBar = document.getElementById("myBar");
+        if (myBar) {
+          myBar.style.width = scrolled + "%";
+        }
+      }
+    });
+  }
+  updateScrollProgress();
+
+  function addHeadingLinks() {
+    const headings = Array.from(
+      document.querySelectorAll("h2, h3, h4, h5, h6")
+    );
+    for (const heading of headings) {
+      heading.classList.add("group");
+      const link = document.createElement("a");
+      link.className =
+        "heading-link ms-2 no-underline opacity-75 md:opacity-0 md:group-hover:opacity-100 md:focus:opacity-100";
+      link.href = "#" + heading.id;
+
+      const span = document.createElement("span");
+      span.ariaHidden = "true";
+      span.innerText = "#";
+      link.appendChild(span);
+      heading.appendChild(link);
+    }
+  }
+  addHeadingLinks();
+
+  function attachCopyButtons() {
+    const copyButtonLabel = "Copy";
+    const codeBlocks = Array.from(document.querySelectorAll("pre"));
+
+    for (const codeBlock of codeBlocks) {
+      const wrapper = document.createElement("div");
+      wrapper.style.position = "relative";
+
+      const computedStyle = getComputedStyle(codeBlock);
+      const hasFileNameOffset =
+        computedStyle.getPropertyValue("--file-name-offset").trim() !== "";
+
+      const topClass = hasFileNameOffset
+        ? "top-(--file-name-offset)"
+        : "-top-3";
+
+      const copyButton = document.createElement("button");
+      copyButton.className = `copy-code absolute end-3 ${topClass} rounded bg-muted border border-muted px-2 py-1 text-xs leading-4 text-foreground font-medium`;
+      copyButton.innerHTML = copyButtonLabel;
+      codeBlock.setAttribute("tabindex", "0");
+      codeBlock.appendChild(copyButton);
+
+      codeBlock?.parentNode?.insertBefore(wrapper, codeBlock);
+      wrapper.appendChild(codeBlock);
+
+      copyButton.addEventListener("click", async () => {
+        await copyCode(codeBlock, copyButton);
+      });
+    }
+
+    async function copyCode(block, button) {
+      const code = block.querySelector("code");
+      const text = code?.innerText;
+
+      await navigator.clipboard.writeText(text ?? "");
+
+      button.innerText = "Copied";
+
+      setTimeout(() => {
+        button.innerText = copyButtonLabel;
+      }, 700);
+    }
+  }
+  attachCopyButtons();
+
+  /** Accessible image lightbox for article images. */
+  function initLightbox() {
+    const article = document.getElementById("article");
+    if (!article) return;
+
+    const prefersReducedMotion = () =>
+      window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+    let overlay = null;
+    let lastFocused = null;
+    let removeDragListeners = null;
+
+    // Defer attribute mutations so they don't push the LCP timestamp.
+    // Event listeners below use delegation and don't need the attributes to exist yet.
+    requestAnimationFrame(() => {
+      const images = Array.from(article.querySelectorAll("img"));
+      for (const image of images) {
+        if (image.closest("a")) continue;
+        image.setAttribute("role", "button");
+        image.setAttribute("tabindex", "0");
+        image.setAttribute("aria-haspopup", "dialog");
+        image.setAttribute(
+          "aria-label",
+          image.alt ? `Zoom image: ${image.alt}` : "Zoom image"
+        );
+      }
+    });
+
+    function open(src, alt, trigger) {
+      if (overlay) return;
+      lastFocused = trigger ?? document.activeElement;
+
+      overlay = document.createElement("div");
+      overlay.setAttribute("role", "dialog");
+      overlay.setAttribute("aria-modal", "true");
+      overlay.setAttribute(
+        "aria-label",
+        alt ? `Image preview: ${alt}` : "Image preview"
+      );
+      overlay.className =
+        "fixed inset-0 z-50 flex cursor-zoom-out items-center justify-center bg-black/70 backdrop-blur-sm opacity-0 transition-opacity duration-200 motion-reduce:transition-none";
+
+      const closeButton = document.createElement("button");
+      closeButton.type = "button";
+      closeButton.setAttribute("aria-label", "Close image preview");
+      closeButton.className =
+        "absolute end-4 top-4 z-1 flex size-11 items-center justify-center rounded bg-black/50 text-3xl leading-none text-white";
+      closeButton.innerHTML = "&#10005;";
+      closeButton.addEventListener("click", close);
+
+      const image = document.createElement("img");
+      image.src = src;
+      image.alt = "";
+      image.className =
+        "max-h-[90dvh] max-w-[90dvw] cursor-default object-contain transition-transform duration-100 ease-out motion-reduce:transition-none data-[zoom=drag]:cursor-grabbing data-[zoom=drag]:transition-none data-[zoom=in]:cursor-grab";
+
+      overlay.append(closeButton, image);
+      overlay.addEventListener("click", e => {
+        if (e.target === overlay && currentScale <= 1) close();
+      });
+
+      let currentScale = 1;
+      let translateX = 0;
+      let translateY = 0;
+      let initialDist = 0;
+      let initialScale = 1;
+      let panStartX = 0;
+      let panStartY = 0;
+      let panStartTranslateX = 0;
+      let panStartTranslateY = 0;
+      let lastTapTime = 0;
+
+      function applyTransform() {
+        image.style.transform = `scale(${currentScale}) translate(${translateX}px, ${translateY}px)`;
+        // A backdrop click only closes at fit size, so drop the zoom-out cursor while zoomed.
+        overlay?.classList.toggle("cursor-zoom-out", currentScale <= 1);
+      }
+
+      function resetTransform() {
+        currentScale = 1;
+        translateX = 0;
+        translateY = 0;
+        image.style.transform = "";
+        image.removeAttribute("data-zoom");
+        overlay?.classList.add("cursor-zoom-out");
+      }
+
+      // Keep the zoomed image from being panned past its edges.
+      function clampTranslate() {
+        if (!overlay) return;
+        const maxX = Math.max(
+          0,
+          (image.clientWidth - overlay.clientWidth / currentScale) / 2
+        );
+        const maxY = Math.max(
+          0,
+          (image.clientHeight - overlay.clientHeight / currentScale) / 2
+        );
+        translateX = Math.min(maxX, Math.max(-maxX, translateX));
+        translateY = Math.min(maxY, Math.max(-maxY, translateY));
+      }
+
+      overlay.addEventListener(
+        "touchstart",
+        e => {
+          const t = e.touches;
+          if (t.length === 2) {
+            image.setAttribute("data-zoom", "drag");
+            initialDist = Math.hypot(
+              t[1].clientX - t[0].clientX,
+              t[1].clientY - t[0].clientY
+            );
+            initialScale = currentScale;
+          } else if (t.length === 1) {
+            const now = Date.now();
+            if (now - lastTapTime < 300) {
+              e.preventDefault();
+              if (currentScale > 1) {
+                resetTransform();
+              } else {
+                currentScale = 2;
+                translateX = 0;
+                translateY = 0;
+                applyTransform();
+                image.setAttribute("data-zoom", "in");
+              }
+              lastTapTime = 0;
+              panStartX = t[0].clientX;
+              panStartY = t[0].clientY;
+              panStartTranslateX = translateX;
+              panStartTranslateY = translateY;
+            } else {
+              lastTapTime = now;
+              if (currentScale > 1) {
+                image.setAttribute("data-zoom", "drag");
+                panStartX = t[0].clientX;
+                panStartY = t[0].clientY;
+                panStartTranslateX = translateX;
+                panStartTranslateY = translateY;
+              }
+            }
+          }
+        },
+        { passive: false }
+      );
+
+      overlay.addEventListener(
+        "touchmove",
+        e => {
+          const t = e.touches;
+          if (t.length === 2) {
+            e.preventDefault();
+            const dist = Math.hypot(
+              t[1].clientX - t[0].clientX,
+              t[1].clientY - t[0].clientY
+            );
+            const oldScale = currentScale;
+            currentScale = Math.min(
+              4,
+              Math.max(1, initialScale * (dist / initialDist))
+            );
+
+            // Zoom to the geometric center of the two fingers
+            const midX = (t[0].clientX + t[1].clientX) / 2;
+            const midY = (t[0].clientY + t[1].clientY) / 2;
+            const ox = overlay.clientWidth / 2;
+            const oy = overlay.clientHeight / 2;
+            translateX =
+              (midX - ox) * (1 / currentScale - 1 / oldScale) + translateX;
+            translateY =
+              (midY - oy) * (1 / currentScale - 1 / oldScale) + translateY;
+            clampTranslate();
+            applyTransform();
+          } else if (t.length === 1) {
+            if (currentScale > 1) {
+              e.preventDefault();
+              image.setAttribute("data-zoom", "drag");
+              translateX =
+                panStartTranslateX + (t[0].clientX - panStartX) / currentScale;
+              translateY =
+                panStartTranslateY + (t[0].clientY - panStartY) / currentScale;
+              clampTranslate();
+              applyTransform();
+            } else {
+              e.preventDefault();
+            }
+          }
+        },
+        { passive: false }
+      );
+
+      overlay.addEventListener("touchend", e => {
+        if (e.touches.length === 0) {
+          if (currentScale > 1) {
+            image.setAttribute("data-zoom", "in");
+          } else {
+            image.removeAttribute("data-zoom");
+          }
+          if (currentScale <= 1.05) resetTransform();
+        }
+      });
+
+      overlay.addEventListener("touchcancel", e => {
+        if (e.touches.length === 0) {
+          if (currentScale > 1) {
+            image.setAttribute("data-zoom", "in");
+          } else {
+            image.removeAttribute("data-zoom");
+          }
+          if (currentScale <= 1.05) resetTransform();
+        }
+      });
+
+      overlay.addEventListener(
+        "wheel",
+        e => {
+          e.preventDefault();
+          const oldScale = currentScale;
+          const delta = -e.deltaY * 0.001;
+          currentScale = Math.min(4, Math.max(1, currentScale * (1 + delta)));
+
+          if (currentScale <= 1.05) {
+            resetTransform();
+          } else {
+            image.setAttribute("data-zoom", "in");
+            // Zoom to cursor: adjust translate so the point under cursor stays fixed
+            const ox = overlay.clientWidth / 2;
+            const oy = overlay.clientHeight / 2;
+            translateX =
+              (e.clientX - ox) * (1 / currentScale - 1 / oldScale) + translateX;
+            translateY =
+              (e.clientY - oy) * (1 / currentScale - 1 / oldScale) + translateY;
+            clampTranslate();
+            applyTransform();
+          }
+        },
+        { passive: false }
+      );
+
+      let isMouseDown = false;
+      let mouseStartX = 0;
+      let mouseStartY = 0;
+
+      overlay.addEventListener("mousedown", e => {
+        if (e.button !== 0 || currentScale <= 1) return;
+        if (e.target.closest("button")) return;
+        isMouseDown = true;
+        mouseStartX = e.clientX;
+        mouseStartY = e.clientY;
+        panStartTranslateX = translateX;
+        panStartTranslateY = translateY;
+        image.setAttribute("data-zoom", "drag");
+        e.preventDefault();
+      });
+
+      function onMouseMove(e) {
+        if (!isMouseDown || !overlay) return;
+        translateX =
+          panStartTranslateX + (e.clientX - mouseStartX) / currentScale;
+        translateY =
+          panStartTranslateY + (e.clientY - mouseStartY) / currentScale;
+        clampTranslate();
+        applyTransform();
+      }
+
+      function onMouseUp() {
+        if (!isMouseDown) return;
+        isMouseDown = false;
+        if (currentScale > 1) {
+          image.setAttribute("data-zoom", "in");
+        } else {
+          image.removeAttribute("data-zoom");
+        }
+      }
+
+      document.addEventListener("mousemove", onMouseMove);
+      document.addEventListener("mouseup", onMouseUp);
+      removeDragListeners = () => {
+        document.removeEventListener("mousemove", onMouseMove);
+        document.removeEventListener("mouseup", onMouseUp);
+      };
+
+      document.body.appendChild(overlay);
+      document.documentElement.style.overflow = "hidden";
+      document.addEventListener("keydown", onKeyDown);
+      window.__closeLightbox = close;
+
+      requestAnimationFrame(() => overlay?.classList.add("opacity-100"));
+      closeButton.focus();
+    }
+
+    function close() {
+      if (!overlay) return;
+      const el = overlay;
+      overlay = null;
+      el.classList.add("pointer-events-none");
+      window.__closeLightbox = null;
+
+      document.removeEventListener("keydown", onKeyDown);
+      removeDragListeners?.();
+      removeDragListeners = null;
+      document.documentElement.style.overflow = "";
+      lastFocused?.focus();
+      lastFocused = null;
+
+      if (prefersReducedMotion()) {
+        el.remove();
+        return;
+      }
+      const remove = () => el.remove();
+      el.addEventListener("transitionend", remove, { once: true });
+      setTimeout(remove, 250); // fallback in case transitionend never fires
+      el.classList.remove("opacity-100");
+    }
+
+    function onKeyDown(e) {
+      if (e.key === "Escape") {
+        close();
+      } else if (e.key === "Tab") {
+        trapFocus(e);
+      }
+    }
+
+    // Keep keyboard focus inside the open dialog.
+    function trapFocus(e) {
+      if (!overlay) return;
+      const focusables = overlay.querySelectorAll(
+        'a[href], button, [tabindex]:not([tabindex="-1"])'
+      );
+      if (focusables.length === 0) return;
+      const first = focusables[0];
+      const last = focusables[focusables.length - 1];
+      if (e.shiftKey && document.activeElement === first) {
+        e.preventDefault();
+        last.focus();
+      } else if (!e.shiftKey && document.activeElement === last) {
+        e.preventDefault();
+        first.focus();
+      }
+    }
+
+    function triggerFromEvent(e) {
+      const image = e.target.closest("img");
+      if (!image || !article.contains(image) || image.closest("a")) return null;
+      return image;
+    }
+
+    function activate(image) {
+      open(image.currentSrc || image.src, image.alt, image);
+    }
+
+    article.addEventListener("click", e => {
+      const image = triggerFromEvent(e);
+      if (!image) return;
+      e.preventDefault();
+      activate(image);
+    });
+
+    article.addEventListener("keydown", e => {
+      if (e.key !== "Enter" && e.key !== " " && e.key !== "Spacebar") return;
+      const image = triggerFromEvent(e);
+      if (!image) return;
+      e.preventDefault();
+      activate(image);
+    });
+  }
+  initLightbox();
+
+  if (!window.__lightboxSwapBound) {
+    window.__lightboxSwapBound = true;
+    document.addEventListener("astro:before-swap", () =>
+      window.__closeLightbox?.()
+    );
+  }
+
+  document.addEventListener("astro:after-swap", () =>
+    window.scrollTo({ left: 0, top: 0, behavior: "instant" })
+  );
+</script>

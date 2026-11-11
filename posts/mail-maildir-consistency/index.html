@@ -1,0 +1,779 @@
+<!DOCTYPE html><html dir="ltr" lang="zh-CN" class="overflow-y-scroll scroll-smooth"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1"><link rel="icon" type="image/png" href="/images/favicon-32x32-next.png"><link rel="icon" href="/favicon.ico"><link rel="canonical" href="https://www.saromchars.tech/posts/mail-maildir-consistency/"><meta name="generator" content="Astro v7.4.5"><!-- Primary meta --><title>Maildir 与邮箱存储的一致性 | Sarom&#39;s Blog</title><meta name="title" content="Maildir 与邮箱存储的一致性 | Sarom's Blog"><meta name="description" content="从一次写入崩溃场景出发，追踪 Maildir 单邮件落盘、目录原子切换、选择性锁与元数据索引同步的一致性边界与恢复约束。"><meta name="author" content="Sarom Chars"><link rel="sitemap" href="/sitemap-index.xml"><!-- Open Graph --><meta property="og:type" content="article"><meta property="og:site_name" content="Sarom's Blog"><meta property="og:title" content="Maildir 与邮箱存储的一致性 | Sarom's Blog"><meta property="og:description" content="从一次写入崩溃场景出发，追踪 Maildir 单邮件落盘、目录原子切换、选择性锁与元数据索引同步的一致性边界与恢复约束。"><meta property="og:url" content="https://www.saromchars.tech/posts/mail-maildir-consistency/"><meta property="og:image" content="https://www.saromchars.tech/og.png"><!-- Twitter / X --><meta property="twitter:card" content="summary_large_image"><meta property="twitter:url" content="https://www.saromchars.tech/posts/mail-maildir-consistency/"><meta property="twitter:title" content="Maildir 与邮箱存储的一致性 | Sarom's Blog"><meta property="twitter:description" content="从一次写入崩溃场景出发，追踪 Maildir 单邮件落盘、目录原子切换、选择性锁与元数据索引同步的一致性边界与恢复约束。"><meta property="twitter:image" content="https://www.saromchars.tech/og.png"><!-- RSS autodiscovery --><link rel="alternate" type="application/rss+xml" title="Sarom's Blog" href="https://www.saromchars.tech/rss.xml"><!-- Filled at runtime by theme.ts to match the current background colour --><meta name="theme-color" content=""><!-- Extra head content injected by child layouts (e.g. JSON-LD, article meta) --><meta property="article:published_time" content="2021-11-21T02:00:00.000Z"><script type="application/ld+json">{"@context":"https://schema.org","@type":"BlogPosting","headline":"Maildir 与邮箱存储的一致性","mainEntityOfPage":"https://www.saromchars.tech/posts/mail-maildir-consistency/","datePublished":"2021-11-21T02:00:00.000Z","author":[{"@type":"Person","name":"Sarom Chars","url":"https://github.com/SaromChars"}]}</script><!--
+      Inline FOUC-prevention script: sets data-theme on <html> before
+      the browser paints. Runs synchronously, no defer/async.
+    --><script>
+      (function () {
+        const stored = localStorage.getItem("theme");
+        const prefersDark = window.matchMedia(
+          "(prefers-color-scheme: dark)"
+        ).matches;
+        const theme = stored ?? (prefersDark ? "dark" : "light");
+        const root = document.firstElementChild;
+        root?.setAttribute("data-theme", theme);
+        root?.classList.toggle("dark", theme === "dark");
+        // Expose value so theme.ts can skip re-detection.
+        window.__theme = { value: theme };
+      })();
+    </script><meta name="robots" content="index, follow"><script async src="https://www.googletagmanager.com/gtag/js?id=G-WJJJTJ4FWX"></script><script>(function(){const measurementId = "G-WJJJTJ4FWX";
+
+    window.dataLayer = window.dataLayer || [];
+    function gtag(){ window.dataLayer.push(arguments); }
+    gtag('js', new Date());
+    gtag('config', measurementId);
+  })();</script><style>@keyframes astroFadeInOut{0%{opacity:1}to{opacity:0}}@keyframes astroFadeIn{0%{opacity:0;mix-blend-mode:plus-lighter}to{opacity:1;mix-blend-mode:plus-lighter}}@keyframes astroFadeOut{0%{opacity:1;mix-blend-mode:plus-lighter}to{opacity:0;mix-blend-mode:plus-lighter}}@keyframes astroSlideFromRight{0%{transform:translate(100%)}}@keyframes astroSlideFromLeft{0%{transform:translate(-100%)}}@keyframes astroSlideToRight{to{transform:translate(100%)}}@keyframes astroSlideToLeft{to{transform:translate(-100%)}}@media (prefers-reduced-motion){::view-transition-group(*),::view-transition-old(*),::view-transition-new(*),[data-astro-transition-scope]{animation:none!important}}
+</style><link rel="stylesheet" href="/_astro/Footer.wlxowfqU.css"><style>[data-astro-transition-scope="astro-bztu2lml-1"] { view-transition-name: \90AE\7BB1\7CFB\7EDF; }@layer astro { ::view-transition-old(\90AE\7BB1\7CFB\7EDF) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }::view-transition-new(\90AE\7BB1\7CFB\7EDF) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }[data-astro-transition=back]::view-transition-old(\90AE\7BB1\7CFB\7EDF) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition=back]::view-transition-new(\90AE\7BB1\7CFB\7EDF) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; } }[data-astro-transition-fallback="old"] [data-astro-transition-scope="astro-bztu2lml-1"],
+			[data-astro-transition-fallback="old"][data-astro-transition-scope="astro-bztu2lml-1"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition-fallback="new"] [data-astro-transition-scope="astro-bztu2lml-1"],
+			[data-astro-transition-fallback="new"][data-astro-transition-scope="astro-bztu2lml-1"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }[data-astro-transition=back][data-astro-transition-fallback="old"] [data-astro-transition-scope="astro-bztu2lml-1"],
+			[data-astro-transition=back][data-astro-transition-fallback="old"][data-astro-transition-scope="astro-bztu2lml-1"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition=back][data-astro-transition-fallback="new"] [data-astro-transition-scope="astro-bztu2lml-1"],
+			[data-astro-transition=back][data-astro-transition-fallback="new"][data-astro-transition-scope="astro-bztu2lml-1"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }</style><style>[data-astro-transition-scope="astro-bztu2lml-2"] { view-transition-name: \6570\636E\5B58\50A8; }@layer astro { ::view-transition-old(\6570\636E\5B58\50A8) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }::view-transition-new(\6570\636E\5B58\50A8) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }[data-astro-transition=back]::view-transition-old(\6570\636E\5B58\50A8) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition=back]::view-transition-new(\6570\636E\5B58\50A8) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; } }[data-astro-transition-fallback="old"] [data-astro-transition-scope="astro-bztu2lml-2"],
+			[data-astro-transition-fallback="old"][data-astro-transition-scope="astro-bztu2lml-2"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition-fallback="new"] [data-astro-transition-scope="astro-bztu2lml-2"],
+			[data-astro-transition-fallback="new"][data-astro-transition-scope="astro-bztu2lml-2"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }[data-astro-transition=back][data-astro-transition-fallback="old"] [data-astro-transition-scope="astro-bztu2lml-2"],
+			[data-astro-transition=back][data-astro-transition-fallback="old"][data-astro-transition-scope="astro-bztu2lml-2"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition=back][data-astro-transition-fallback="new"] [data-astro-transition-scope="astro-bztu2lml-2"],
+			[data-astro-transition=back][data-astro-transition-fallback="new"][data-astro-transition-scope="astro-bztu2lml-2"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }</style><style>[data-astro-transition-scope="astro-bztu2lml-3"] { view-transition-name: \5907\4EFD\6062\590D; }@layer astro { ::view-transition-old(\5907\4EFD\6062\590D) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }::view-transition-new(\5907\4EFD\6062\590D) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }[data-astro-transition=back]::view-transition-old(\5907\4EFD\6062\590D) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition=back]::view-transition-new(\5907\4EFD\6062\590D) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; } }[data-astro-transition-fallback="old"] [data-astro-transition-scope="astro-bztu2lml-3"],
+			[data-astro-transition-fallback="old"][data-astro-transition-scope="astro-bztu2lml-3"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition-fallback="new"] [data-astro-transition-scope="astro-bztu2lml-3"],
+			[data-astro-transition-fallback="new"][data-astro-transition-scope="astro-bztu2lml-3"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }[data-astro-transition=back][data-astro-transition-fallback="old"] [data-astro-transition-scope="astro-bztu2lml-3"],
+			[data-astro-transition=back][data-astro-transition-fallback="old"][data-astro-transition-scope="astro-bztu2lml-3"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition=back][data-astro-transition-fallback="new"] [data-astro-transition-scope="astro-bztu2lml-3"],
+			[data-astro-transition=back][data-astro-transition-fallback="new"][data-astro-transition-scope="astro-bztu2lml-3"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }</style></head><body class="bg-background font-app text-foreground selection:bg-accent/75 selection:text-accent-foreground flex min-h-svh flex-col"><a id="skip-to-content" href="#main-content" class="bg-background text-accent absolute inset-s-16 -top-full z-50 px-3 py-2 backdrop-blur-lg transition-all focus:top-4">跳到正文</a><header class="app-layout flex flex-col items-center justify-between sm:flex-row"><div class="border-border bg-background relative flex w-full items-baseline justify-between border-b py-4 sm:items-center sm:py-6"><a href="/" class="absolute py-1 text-xl leading-8 font-semibold whitespace-nowrap sm:static sm:my-auto sm:text-2xl sm:leading-none">Sarom&#39;s Blog</a><nav id="nav-menu" class="flex w-full flex-col items-center sm:ms-2 sm:flex-row sm:justify-end sm:space-x-4 sm:py-0"><button id="menu-btn" class="focus-outline self-end p-2 sm:hidden" aria-label="展开菜单" aria-expanded="false" aria-controls="menu-items" data-label-open="展开菜单" data-label-close="收起菜单"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="hidden" viewBox="0 0 24 24" id="close-icon"><path stroke="none" d="M0 0h24v24H0z" /><path d="M18 6 6 18M6 6l12 12" /></svg><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="icon icon-tabler icons-tabler-outline icon-tabler-menu-deep" viewBox="0 0 24 24" id="menu-icon"><path stroke="none" d="M0 0h24v24H0z" /><path d="M4 6h16M7 12h13M10 18h10" /></svg></button><ul id="menu-items" class="[&amp;&gt;li&gt;a]:hover:text-accent mt-4 hidden w-44 grid-cols-2 place-content-center gap-2 sm:mt-0 sm:flex sm:w-auto sm:gap-x-5 sm:gap-y-0 sm:[&amp;&gt;li]:h-8 [&amp;&gt;li&gt;a]:block [&amp;&gt;li&gt;a]:px-4 [&amp;&gt;li&gt;a]:py-3 [&amp;&gt;li&gt;a]:text-center [&amp;&gt;li&gt;a]:font-medium sm:[&amp;&gt;li&gt;a]:px-2 sm:[&amp;&gt;li&gt;a]:py-1"><li class="col-span-2"><a href="/posts/" class="active-nav">文章</a></li><li class="col-span-2"><a href="/tags/">标签</a></li><li class="col-span-2"><a href="/about/">关于</a></li><li class="col-span-2"><a href="/archives/" title="归档" aria-label="归档" class="group inline-flex items-center gap-1 hover:text-accent focus-outline flex size-full justify-center p-3 sm:relative sm:size-8 sm:p-0"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="hidden sm:absolute sm:top-1/2 sm:left-1/2 sm:block sm:size-6 sm:-translate-x-1/2 sm:-translate-y-1/2" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M3 6a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2 2 2 0 0 1-2 2H5a2 2 0 0 1-2-2M5 8v10a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8M10 12h4" /></svg><span class="sm:sr-only">归档</span></a></li><li class="col-span-1 flex items-center justify-center"><a href="/search/" title="搜索" aria-label="搜索" class="group inline-flex items-center gap-1 hover:text-accent focus-outline relative size-8"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="absolute top-1/2 left-1/2 size-6 -translate-x-1/2 -translate-y-1/2" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M3 10a7 7 0 1 0 14 0 7 7 0 1 0-14 0M21 21l-6-6" /></svg><span class="sr-only">搜索</span></a></li><li class="col-span-1 flex items-center justify-center"><button id="theme-btn" class="focus-outline hover:[&amp;&gt;svg]:stroke-accent relative size-12 p-4 sm:size-8" title="切换主题" aria-label="auto" aria-live="polite"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="absolute top-[50%] left-[50%] translate-[-50%] scale-100 rotate-0 transition-all dark:scale-0 dark:-rotate-90" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M12 3h.393a7.5 7.5 0 0 0 7.92 12.446A9 9 0 1 1 12 2.992z" /></svg><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="absolute top-[50%] left-[50%] translate-[-50%] scale-0 rotate-90 transition-all dark:scale-100 dark:rotate-0" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M14.828 14.828a4 4 0 1 0-5.656-5.656 4 4 0 0 0 5.656 5.656M6.343 17.657l-1.414 1.414M6.343 6.343 4.929 4.929M17.657 6.343l1.414-1.414M17.657 17.657l1.414 1.414M4 12H2M12 4V2M20 12h2M12 20v2" /></svg></button></li></ul></nav></div></header><script type="module">function e(){let e=document.querySelector(`#menu-btn`),t=document.querySelector(`#menu-items`),n=document.querySelector(`#menu-icon`),r=document.querySelector(`#close-icon`);if(!e||!t||!n||!r)return;let i=e.dataset.labelOpen??`Open menu`,a=e.dataset.labelClose??`Close menu`;e.addEventListener(`click`,()=>{let o=e.getAttribute(`aria-expanded`)===`true`;e.setAttribute(`aria-expanded`,o?`false`:`true`),e.setAttribute(`aria-label`,o?i:a),t.classList.toggle(`hidden`),t.classList.toggle(`grid`),n.classList.toggle(`hidden`),r.classList.toggle(`hidden`)})}function t(){let e=document.getElementById(`skip-to-content`);e&&e.addEventListener(`click`,e=>{if(e.defaultPrevented||e.metaKey||e.ctrlKey||e.shiftKey||e.button!==0)return;e.preventDefault();let t=document.getElementById(`main-content`);t&&(t.setAttribute(`tabindex`,`-1`),t.addEventListener(`blur`,()=>t.removeAttribute(`tabindex`),{once:!0}),t.focus(),t.scrollIntoView({behavior:`smooth`}))})}e(),document.addEventListener(`astro:after-swap`,e),t(),document.addEventListener(`astro:after-swap`,t);</script><div class="app-layout flex items-center justify-start"><a id="back-button" href="/" class="group inline-flex items-center gap-1 hover:text-accent focus-outline hover:text-foreground/75 -ms-2 mt-8 mb-2"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="inline-block size-6 rtl:rotate-180" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="m15 6-6 6 6 6" /></svg><span>返回</span></a></div><script type="module">function e(){let e=document.querySelector(`#back-button`),t=sessionStorage.getItem(`backUrl`);t&&e&&(e.href=t)}document.addEventListener(`astro:page-load`,e),e();</script><main id="main-content" class="app-layout" data-pagefind-body><h1 style="view-transition-name:mail-maildir-consistency" class="text-accent inline-block text-2xl font-bold sm:text-3xl">Maildir 与邮箱存储的一致性</h1><div class="my-2 flex items-center gap-2"><div class="text-muted-foreground flex flex-wrap items-center gap-x-2 gap-y-1"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="inline-block size-6 min-w-5.5" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M4 7a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2zM16 3v4M8 3v4M4 11h16M7 14h.013M10.01 14h.005M13.01 14h.005M16.015 14h.005M13.015 17h.005M7.01 17h.005M10.01 17h.005" /></svg><time class="text-sm sm:text-base" datetime="2021-11-21T02:00:00.000Z">2021年11月21日</time></div><span aria-hidden="true" class="text-muted-foreground max-sm:hidden hidden">|</span></div><article id="article" class="mt-8 w-full app-prose max-w-app prose-pre:bg-(--shiki-light-bg) dark:prose-pre:bg-(--shiki-dark-bg)"><!--email_off-->
+<p>设想一个常见的邮箱故障现场：投递代理正在向本地存储写入一封新邮件，数据刚写完尚未完成元数据登记，服务器突然异常断电或进程被强行中止。重启之后，系统究竟能否保证“要么该邮件完整可见，要么彻底回滚且不留下任何状态破坏”？</p>
+<p>以下沿经过核对的开源邮件存储后端 Dovecot 2.3.16 一次保存过程，区分文件发布与元数据提交。在接入互联网邮件访问协议（Internet Message Access Protocol，IMAP）的多客户端并发、唯一标识符分配、标志位同步与磁盘配额控制后，底层单文件的目录移动并不能自动提供跨文件、跨目录的多实体事务保证。</p>
+<h2 id="单邮件写入与生命周期的源码追踪">单邮件写入与生命周期的源码追踪</h2>
+<p>在标准 Maildir 格式中，每个逻辑邮箱包含三个基础子目录：</p>
+<pre class="astro-code astro-code-themes min-light night-owl" style="--shiki-light:#24292eff;--shiki-dark:#d6deeb;--shiki-light-bg:#ffffff;--shiki-dark-bg:#011627; overflow-x: auto;--file-name-offset: -0.75rem;" tabindex="0" data-language="text"><code><span class="line"><span>Maildir/</span></span>
+<span class="line"><span>├── tmp/               # 正在流式写入的临时文件，尚未发布到邮箱视图</span></span>
+<span class="line"><span>├── new/               # 新交付完成的文件，尚未在常规会话中转入 cur</span></span>
+<span class="line"><span>├── cur/               # 常规存储文件，可通过文件名后缀记录标志位</span></span>
+<span class="line"><span>├── dovecot-uidlist    # 记录 UIDVALIDITY、NEXT_UID 及 UID 与文件名映射</span></span>
+<span class="line"><span>└── dovecot.index*     # 加速检索的索引、缓存与状态记录</span></span></code></pre>
+<p>需要注意的是，<code>new/</code> 与 <code>cur/</code> 并不严格等同于“未读”与“已读”：进入 <code>cur/</code> 且未附加已读标志（<code>S</code>）的邮件同样是未读状态；普通新投递通常进入 <code>new/</code>，而包含需编码的标志或关键字的邮件则直接进入 <code>cur/</code>，复制或追加恢复等操作还受到近期标志（Recent）的影响。</p>
+<p>在 Dovecot 的 Maildir 实现中（参考 <code>maildir-save.c</code> <a href="#ref-maildir-save">资料2</a>），保存一封邮件经历明确的阶段流转：</p>
+<h3 id="1-分配临时文件与流式写入maildir_save_begin--finish">1. 分配临时文件与流式写入（<code>maildir_save_begin</code> / <code>finish</code>）</h3>
+<p>投递开始时，<code>maildir_create_tmp</code> 在 <code>tmp/</code> 目录下生成一个唯一的临时文件名，并使用 <code>O_WRONLY | O_CREAT | O_TRUNC | O_EXCL</code> 打开文件句柄。若因时间回拨等极端情况遇到同名文件，循环会捕获 <code>EEXIST</code> 错误并重新生成重试。此时该文件仅存在于 <code>tmp/</code>，尚未发布给正常的邮箱扫描与读取逻辑。</p>
+<p>邮件内容通过输出流写入文件句柄。在 <code>maildir_save_finish_real</code> 中：</p>
+<ul>
+<li>存储层依据配置（如 <code>mail_fsync = optimized</code> 或 <code>always</code>，参考 <code>10-mail.conf</code> <a href="#ref-10-mail-conf">资料1</a>）调用底层的 <code>fsync(ctx->fd)</code> 请求操作系统将脏页刷盘。如果 <code>fsync</code> 失败，上下文标记 <code>failed = TRUE</code>。</li>
+<li>如果流写入或落盘失败（例如遭遇磁盘空间不足 <code>ENOSPC</code> 或配额耗尽 <code>EDQUOT</code>），引擎调用 <code>i_unlink_if_exists</code> 将 <code>tmp/</code> 下的半成品物理删除，并清理上下文返回错误。</li>
+</ul>
+<p>操作系统层面的 <code>fsync</code> 调用是软件向存储介质发起同步的请求，其最终持久化效果受底层文件系统与硬件写入缓存影响；源码层面所实现的是在声明写入成功前向系统发出持久化指令，失败则终止流程。</p>
+<h3 id="2-预提交与选择性加锁maildir_transaction_save_commit_pre">2. 预提交与选择性加锁（<code>maildir_transaction_save_commit_pre</code>）</h3>
+<p>Maildir 的核心写入环节并非对所有投递统一加互斥锁，而是依据事务意图进行选择性锁调度：</p>
+<pre class="astro-code astro-code-themes min-light night-owl" style="--shiki-light:#24292eff;--shiki-dark:#d6deeb;--shiki-light-bg:#ffffff;--shiki-dark-bg:#011627; overflow-x: auto;--file-name-offset: -0.75rem;" tabindex="0" data-language="c"><code><span class="line"><span style="--shiki-light:#C2C3C5;--shiki-light-font-style:inherit;--shiki-dark:#637777;--shiki-dark-font-style:italic">/* src/lib-storage/index/maildir/maildir-save.c: Lines 969-984（节选，注释为说明性改写） */</span></span>
+<span class="line"><span style="--shiki-light:#24292EFF;--shiki-dark:#D6DEEB">sync_flags </span><span style="--shiki-light:#D32F2F;--shiki-dark:#C792EA">=</span><span style="--shiki-light:#24292EFF;--shiki-dark:#D6DEEB"> MAILDIR_UIDLIST_SYNC_PARTIAL </span><span style="--shiki-light:#D32F2F;--shiki-dark:#7FDBCA">|</span><span style="--shiki-light:#24292EFF;--shiki-dark:#D6DEEB"> MAILDIR_UIDLIST_SYNC_NOREFRESH;</span></span>
+<span class="line"></span>
+<span class="line"><span style="--shiki-light:#D32F2F;--shiki-light-font-style:inherit;--shiki-dark:#C792EA;--shiki-dark-font-style:italic">if</span><span style="--shiki-light:#24292EFF;--shiki-dark:#D6DEEB"> ((_t</span><span style="--shiki-light:#D32F2F;--shiki-dark:#7FDBCA">-</span><span style="--shiki-light:#D32F2F;--shiki-dark:#C792EA">></span><span style="--shiki-light:#24292EFF;--shiki-dark:#D6DEEB">flags </span><span style="--shiki-light:#D32F2F;--shiki-dark:#7FDBCA">&#x26;</span><span style="--shiki-light:#24292EFF;--shiki-dark:#D6DEEB"> MAILBOX_TRANSACTION_FLAG_ASSIGN_UIDS) </span><span style="--shiki-light:#D32F2F;--shiki-dark:#C792EA">!=</span><span style="--shiki-light:#1976D2;--shiki-dark:#F78C6C"> 0</span><span style="--shiki-light:#24292EFF;--shiki-dark:#D6DEEB">) {</span></span>
+<span class="line"><span style="--shiki-light:#C2C3C5;--shiki-light-font-style:inherit;--shiki-dark:#637777;--shiki-dark-font-style:italic">    /* 事务要求显式分配 UID，必须锁定 uidlist */</span></span>
+<span class="line"><span style="--shiki-light:#24292EFF;--shiki-dark:#D6DEEB">} </span><span style="--shiki-light:#D32F2F;--shiki-light-font-style:inherit;--shiki-dark:#C792EA;--shiki-dark-font-style:italic">else</span><span style="--shiki-light:#D32F2F;--shiki-light-font-style:inherit;--shiki-dark:#C792EA;--shiki-dark-font-style:italic"> if</span><span style="--shiki-light:#24292EFF;--shiki-dark:#D6DEEB"> (ctx</span><span style="--shiki-light:#D32F2F;--shiki-dark:#7FDBCA">-</span><span style="--shiki-light:#D32F2F;--shiki-dark:#C792EA">></span><span style="--shiki-light:#24292EFF;--shiki-dark:#D6DEEB">have_keywords) {</span></span>
+<span class="line"><span style="--shiki-light:#C2C3C5;--shiki-light-font-style:inherit;--shiki-dark:#637777;--shiki-dark-font-style:italic">    /* 自定义关键字更新依赖 uidlist 锁 */</span></span>
+<span class="line"><span style="--shiki-light:#24292EFF;--shiki-dark:#D6DEEB">} </span><span style="--shiki-light:#D32F2F;--shiki-light-font-style:inherit;--shiki-dark:#C792EA;--shiki-dark-font-style:italic">else</span><span style="--shiki-light:#D32F2F;--shiki-light-font-style:inherit;--shiki-dark:#C792EA;--shiki-dark-font-style:italic"> if</span><span style="--shiki-light:#24292EFF;--shiki-dark:#D6DEEB"> (ctx</span><span style="--shiki-light:#D32F2F;--shiki-dark:#7FDBCA">-</span><span style="--shiki-light:#D32F2F;--shiki-dark:#C792EA">></span><span style="--shiki-light:#24292EFF;--shiki-dark:#D6DEEB">have_preserved_filenames) {</span></span>
+<span class="line"><span style="--shiki-light:#C2C3C5;--shiki-light-font-style:inherit;--shiki-dark:#637777;--shiki-dark-font-style:italic">    /* 使用既有文件名保存，需加锁避免竞态 */</span></span>
+<span class="line"><span style="--shiki-light:#24292EFF;--shiki-dark:#D6DEEB">} </span><span style="--shiki-light:#D32F2F;--shiki-light-font-style:inherit;--shiki-dark:#C792EA;--shiki-dark-font-style:italic">else</span><span style="--shiki-light:#24292EFF;--shiki-dark:#D6DEEB"> {</span></span>
+<span class="line"><span style="--shiki-light:#C2C3C5;--shiki-light-font-style:inherit;--shiki-dark:#637777;--shiki-dark-font-style:italic">    /* 普通追加投递：采用 TRYLOCK 尝试加锁 */</span></span>
+<span class="line"><span style="--shiki-light:#24292EFF;--shiki-dark:#D6DEEB">    sync_flags </span><span style="--shiki-light:#D32F2F;--shiki-dark:#C792EA">|=</span><span style="--shiki-light:#24292EFF;--shiki-dark:#D6DEEB"> MAILDIR_UIDLIST_SYNC_TRYLOCK;</span></span>
+<span class="line"><span style="--shiki-light:#24292EFF;--shiki-dark:#D6DEEB">}</span></span></code></pre>
+<ul>
+<li>如果事务包含自定义关键字（keyword，指客户端或业务定义的非系统标签）或显式分配唯一标识符（Unique Identifier，UID，指在特定邮箱及 UIDVALIDITY 作用域下单调递增的 32 位整型序列，参考 <code>maildir-uidlist.c</code> <a href="#ref-maildir-uidlist">资料4</a>），引擎必须成功锁定 <code>dovecot-uidlist</code>。</li>
+<li>对于常规投递，存储层使用非阻塞的 <code>TRYLOCK</code> 尝试获取锁。若未取得锁，引擎并不挂起等待，而是调用 <code>maildir_save_rollback_index_changes</code> 撤销在索引（index）中的预写记录，放行底层文件移动。这些物理文件将在后续的邮箱同步流程中被扫描并纳入元数据（metadata）管理。</li>
+</ul>
+<h3 id="3-文件发布与目录项刷盘maildir_save_move_files_to_newcur">3. 文件发布与目录项刷盘（<code>maildir_save_move_files_to_newcur</code>）</h3>
+<p>当数据准备就绪，引擎执行目录间移动：</p>
+<ul>
+<li>普通新投递通常通过 <code>rename</code> 移动到 <code>new/</code>；若包含需编码的标志或关键字，则直接移动至 <code>cur/</code> 并在文件名后编码对应标志位。</li>
+<li>单次 <code>rename</code> 调用在 POSIX 语义下保证目录项切换的原子可见性，但并不保证包含该目录项的父目录元数据已同步到磁盘介质。因此 Dovecot 在移动文件后调用 <code>maildir_transaction_fsync_dirs</code>，通过 <code>fdatasync_path</code> 对 <code>new/</code> 与 <code>cur/</code> 目录本身发起刷盘。</li>
+</ul>
+<h3 id="4-元数据登记释放锁与失败清理">4. 元数据登记、释放锁与失败清理</h3>
+<ul>
+<li>若本次事务持有 <code>uidlist</code> 锁且文件移动成功，引擎调用 <code>maildir_save_sync_uidlist</code> 将新文件的 UID 映射、GUID 等元数据写入 <code>dovecot-uidlist</code>，并提交索引修改。</li>
+<li>随后在 <code>maildir_transaction_save_commit_post</code> 中调用 <code>maildir_uidlist_unlock</code> 释放锁资源。</li>
+<li>若在此期间发生错误（如 <code>rename</code> 失败），流程转入 <code>maildir_transaction_save_rollback</code>：对于已移动的文件尝试调用 <code>i_unlink</code> 执行清理回滚，回滚索引与 <code>uidlist</code> 状态，并最终释放锁。如果在此过程中进程因崩溃直接中止，未完成清理的孤立文件将留在磁盘上，必须依赖重启后的恢复机制处理。</li>
+</ul>
+<h2 id="邮箱同步机制与锁序边界">邮箱同步机制与锁序边界</h2>
+<p>在处理多会话并发读取与外部投递并存的场景时，邮箱同步必须遵循严格的加锁顺序。根据 Dovecot 的同步逻辑（参考 <code>maildir-sync.c</code> <a href="#ref-maildir-sync">资料3</a> 第 815–858 行）：</p>
+<ul>
+<li><strong>避免死锁的锁序</strong>：存储层在需要同时更新 <code>uidlist</code> 与 <code>index</code> 时，规定必须<strong>先锁定 uidlist，再锁定 index</strong>。如果锁序颠倒，并发会话间极易诱发死锁。</li>
+<li><strong>外部并发修改的竞争边界</strong>：Maildir 标准本身并未强制外部进程遵守统一锁。如果外部进程在未持有锁的情况下直接对目录执行 <code>rename</code> 或写入，正在执行 <code>readdir</code> 的 Dovecot 进程可能在单次扫描中漏读文件，进而误判其已被删除并在下一次扫描中重新分配新 UID。因此，跨服务的 Maildir 并发访问必须通过受控的协调机制或统一委托给邮件守护进程。</li>
+</ul>
+<h2 id="恢复与状态重建的边界">恢复与状态重建的边界</h2>
+<p>在系统运维或灾难恢复中，切忌将“元数据索引坏了直接删除让其重建”视作万能手段。针对不同状态，其重建边界与恢复约束如下：</p>
+<ul>
+<li><strong>邮件物理正文与 RFC822 头</strong>：存放于 <code>cur/</code> 与 <code>new/</code>。属于底层源数据，丢失无法凭空重建；若正文内容文件损坏或丢失，无法从索引反向提取邮件完整内容。</li>
+<li><strong>标准系统标志（Flags）</strong>：存放于文件名后缀（如 <code>:2,S</code>）与索引。在正常同步状态下可从文件名解析恢复。</li>
+<li><strong>临时脏标志（Dirty Flags）</strong>：存放于 <code>dovecot.index</code>。当遇到存储空间不足等原因导致文件名 <code>rename</code> 失败时，标志变更可能先暂存在索引中并标记为 Dirty（参考 <code>maildir-sync.c</code> <a href="#ref-maildir-sync">资料3</a>）。若盲目删除索引，这部分未刷回文件名的状态将永久丢失。</li>
+<li><strong>私有标志（Private Flags）</strong>：仅在 <code>dovecot.index</code> 中维护（参考 <code>maildir-sync-index.c</code> <a href="#ref-maildir-sync-index">资料5</a> 第 578 行）。文件名后缀不记录私有标志，丢失索引将无法恢复。</li>
+<li><strong>UID 与 UIDVALIDITY 映射</strong>：存放于 <code>dovecot-uidlist</code>。文件名本身不记录 IMAP UID。虽然重建时若存在有效索引头可复用既有 UIDVALIDITY，但仅凭散落的文件名重新扫描排序，无法确保恢复完全一致的旧 UID 映射，可能触发客户端全量重新拉取，必须依赖一致的备份与恢复。</li>
+<li><strong>关键字映射（Keywords）</strong>：存放于 <code>dovecot-keywords</code>。文件名中仅保存关键字索引字母，其实际名称映射由 <code>dovecot-keywords</code> 维护（参考 <code>maildir-keywords.c</code> <a href="#ref-maildir-keywords">资料6</a>）。若映射表丢失，对应的标签语义无法反解。</li>
+<li><strong>派生缓存（Cache）</strong>：存放于 <code>dovecot.index.cache</code>。邮件结构和可从头字段解析的信息部分可重新解析，但部分元数据属性（如无法修改物理 ctime 时记录在缓存中的保存时间 <code>save_date</code>）在重建时可能失真。</li>
+</ul>
+<h2 id="删除清除与回收责任">删除、清除与回收责任</h2>
+<p>在 IMAP 协议设计与底层存储之间，邮件删除遵循多阶段语义：</p>
+<ol>
+<li><strong>标志标记（<code>\Deleted</code> Flag）</strong>：客户端通过 <code>STORE</code> 命令将邮件标记为已删除。在底层这仅更新索引标志位，或通过重命名在文件名后添加 <code>T</code> 字符。邮件并未从磁盘移除，依然正常占用配额。</li>
+<li><strong>永久清除（expunge）操作</strong>：依据 RFC 3501 规范 <a href="#ref-rfc3501">资料7</a>，已标记 <code>\Deleted</code> 的邮件在可写邮箱收到客户端 <code>EXPUNGE</code> 命令（第 6.4.3 节）或带有隐式清除语义的 <code>CLOSE</code> 命令（第 6.4.2 节）时被永久移除；服务端管理策略也可触发清除。在底层，清除表现为调用 <code>unlink</code> 物理删除文件（参考 <code>maildir-sync-index.c</code> <a href="#ref-maildir-sync-index">资料5</a>）并更新邮箱索引，而 <code>uidlist</code> 不必立即去除旧记录（参考 <code>maildir-sync.c</code> <a href="#ref-maildir-sync">资料3</a>）。需要注意，常规的 <code>LOGOUT</code> 或连接断开并不等同于 <code>CLOSE</code>，不会触发隐式清除。</li>
+</ol>
+<p>Maildir 底层格式并不自带垃圾箱保留期、版本管理或物理防误删保证。在工程设计中，相关能力应作为明确的上层职责：</p>
+<ul>
+<li><strong>业务回收站</strong>：将邮件移动至名为 <code>Trash</code> 的独立邮箱文件夹。在协议与存储语义上，这相当于在目标邮箱生成具有新 UID 的新实体，并在源邮箱中执行删除流程。</li>
+<li><strong>删除保留与延迟回收（工程推导）</strong>：自研系统若需支持合规留存（Retention Policy）或防误删回滚，可在存储适配层将物理 <code>unlink</code> 转化为软删除标记或将文件转存至冷存队列，并在满足保留期策略后再调度异步物理清理。</li>
+</ul>
+<h2 id="自研邮箱存储的一致性设计契约工程推导">自研邮箱存储的一致性设计契约（工程推导）</h2>
+<p>结合 Maildir 的源码特征与实践局限，自研邮件存储系统无论采用本地文件还是解耦的内容存储，应遵循以下核心一致性契约：</p>
+<ol>
+<li><strong>内容优先持久化</strong>：先写底层数据块并请求可靠持久化；若写入失败，尝试清理半成品，清理失败留待恢复处理。在内容落盘成功前，不建立元数据与 UID 引用。</li>
+<li><strong>元数据关联与孤儿安全</strong>：内容写完后登记邮箱关联与 UID。跨步崩溃可能产生未被元数据引用的孤立内容块（孤儿文件）。回收孤儿块时，宽限期仅是辅助条件，还必须核对活跃写入、租约或锁，并复核当前引用与备份保留政策，防止并发慢写入被误回收。</li>
+<li><strong>清除与物理销毁解耦</strong>：响应协议清除时，优先解除元数据层面的引用和用户视图可见性，将数据块交由异步回收器在核验没有共享引用、满足保留期要求后再行物理销毁。</li>
+</ol>
+<h2 id="对照单文件-mbox-的锁协调代价">对照：单文件 mbox 的锁协调代价</h2>
+<p>与 Maildir 每个邮件独立文件的模式不同，传统 mbox 将文件夹内的全部邮件连续存放在单一文本文件中。根据 Dovecot 配置说明（<code>10-mail.conf</code> <a href="#ref-10-mail-conf">资料1</a>），多个进程并发操作同一个 mbox 时必须协调复杂的锁组合（如 <code>dotlock</code> 与 <code>fcntl</code>），并遵循全局统一的加锁顺序以避免进程间互锁；若写入或追加中途发生故障，存储层通常需要调用 <code>ftruncate</code> 将文件尺寸截断回退到事务开始前的偏移量（参考 <code>mbox-save.c</code> <a href="#ref-mbox-save">资料8</a> 第 725–737 行）。Maildir 通过目录隔离写入与原子重命名，显著降低了长事务期间对整个邮箱单文件的独占争用。</p>
+<h2 id="崩溃恢复验证案例未执行方案">崩溃恢复验证案例（未执行方案）</h2>
+<p>为检验存储层在异常中止时的恢复表现，可设计如下<strong>崩溃注入验证方案（本方案为工程推导与测试设计，未在真实硬件上注入执行；SIGKILL 仅验证进程异常退出后的恢复，不能模拟底层断电或硬件设备缓存丢失）</strong>：</p>
+<h3 id="验证步骤设计">验证步骤设计</h3>
+<ol>
+<li>准备隔离测试邮箱，注入标准化输入的测试邮件数据（固定规范化换行 CRLF 口径以排除换行转换干扰）。</li>
+<li>在模拟并发写入过程中，分别在以下两个典型时点通过进程强行中止（<code>SIGKILL</code>）注入崩溃：
+<ul>
+<li><strong>时点 A</strong>：临时文件刚完成 <code>fsync</code> 刷盘，尚未执行 <code>rename</code> 移动前；</li>
+<li><strong>时点 B</strong>：文件已成功 <code>rename</code> 至 <code>new/</code>，但在 <code>dovecot-uidlist</code> 锁释放与最终元数据登记前。</li>
+</ul>
+</li>
+<li>重新启动服务并触发常规读取与同步流程。</li>
+</ol>
+<h3 id="恢复判据">恢复判据</h3>
+<ul>
+<li><strong>数据完整性</strong>：在 <code>cur/</code> 或 <code>new/</code> 中对外可见的邮件，其内容必须完整无损，不能出现 0 字节文件或截断文件。</li>
+<li><strong>孤儿状态安全自愈</strong>：在时点 A 残留在 <code>tmp/</code> 的孤立文件，不能被错误纳入用户视图，在通过租约与宽限期安全核对后能被正常清理。</li>
+<li><strong>UID 与身份连续性</strong>：在正常未损坏的元数据恢复中，已确认的既有 UID 保持稳定；若发生无法恢复的元数据损坏，必须通过递增 <code>UIDVALIDITY</code> 显式通知客户端状态失效，绝对不得暗中复用旧 UID 身份；在时点 B 已移动落盘但未登记的文件，在重启后同步扫描时应被赋予新的合法 UID，该 UID 不可与历史既有 UID 重复冲突（IMAP UID 允许存在空洞，但不允许逆序或重复）。</li>
+<li><strong>客户端重试容忍度</strong>：针对时点 A 或时点 B 投递结果未获明确确认的场景，投递代理发起重试时，在缺乏全局去重键的条件下可能产生重复邮件，但存储层必须确保重复消息具备独立的合法标识，且不导致邮箱结构损坏。</li>
+</ul>
+<hr>
+<h2 id="参考文献">参考文献</h2>
+<ul>
+<li><a id="ref-10-mail-conf" href="https://github.com/dovecot/core/blob/release-2.3.16/doc/example-config/conf.d/10-mail.conf#L150-L335" target="_blank" rel="noopener noreferrer">资料1：Dovecot 2.3.16 示例配置 10-mail.conf（fsync 配置与 mbox 锁策略）</a></li>
+<li><a id="ref-maildir-save" href="https://github.com/dovecot/core/blob/release-2.3.16/src/lib-storage/index/maildir/maildir-save.c#L324-L1060" target="_blank" rel="noopener noreferrer">资料2：Dovecot 2.3.16 maildir-save.c（保存事务流程与目录移动）</a></li>
+<li><a id="ref-maildir-sync" href="https://github.com/dovecot/core/blob/release-2.3.16/src/lib-storage/index/maildir/maildir-sync.c#L1-L110" target="_blank" rel="noopener noreferrer">资料3：Dovecot 2.3.16 maildir-sync.c（Maildir 同步、锁序与脏标志管理）</a></li>
+<li><a id="ref-maildir-uidlist" href="https://github.com/dovecot/core/blob/release-2.3.16/src/lib-storage/index/maildir/maildir-uidlist.c#L573-L1275" target="_blank" rel="noopener noreferrer">资料4：Dovecot 2.3.16 maildir-uidlist.c（UID 列表与头部扩展管理）</a></li>
+<li><a id="ref-maildir-sync-index" href="https://github.com/dovecot/core/blob/release-2.3.16/src/lib-storage/index/maildir/maildir-sync-index.c#L81-L598" target="_blank" rel="noopener noreferrer">资料5：Dovecot 2.3.16 maildir-sync-index.c（索引同步、私有标志与物理删除）</a></li>
+<li><a id="ref-maildir-keywords" href="https://github.com/dovecot/core/blob/release-2.3.16/src/lib-storage/index/maildir/maildir-keywords.c#L1-L190" target="_blank" rel="noopener noreferrer">资料6：Dovecot 2.3.16 maildir-keywords.c（关键字映射文件管理）</a></li>
+<li><a id="ref-rfc3501" href="https://www.rfc-editor.org/rfc/rfc3501" target="_blank" rel="noopener noreferrer">资料7：IETF RFC 3501 INTERNET MESSAGE ACCESS PROTOCOL - VERSION 4rev1（2003年3月）</a></li>
+<li><a id="ref-mbox-save" href="https://github.com/dovecot/core/blob/release-2.3.16/src/lib-storage/index/mbox/mbox-save.c#L725-L737" target="_blank" rel="noopener noreferrer">资料8：Dovecot 2.3.16 mbox-save.c（mbox 保存失败与 ftruncate 回滚）</a></li>
+<li><a id="ref-dovecot-release" href="https://dovecot.org/list/dovecot-news/2021-August/000463.html" target="_blank" rel="noopener noreferrer">资料9：Dovecot 2.3.16 发布公告（公开时间 2021-08-06）</a></li>
+</ul>
+<!--/email_off--></article><hr class="my-8 border-dashed"><div id="btt-btn-container" class="fixed inset-e-4 bottom-8 z-50 md:sticky md:inset-e-auto md:float-end md:me-1 translate-y-14 opacity-0 transition duration-500"><button data-button="back-to-top" class="group bg-background relative px-2 py-1 size-14 rounded-full shadow-xl md:h-8 md:w-fit md:rounded-md md:shadow-none md:focus-visible:rounded-none md:bg-background/35 md:bg-clip-padding md:backdrop-blur-lg"><span id="progress-indicator" class="absolute inset-0 -z-10 block size-14 scale-110 rounded-full bg-transparent md:hidden md:h-8 md:rounded-md"></span><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="inline-block rotate-90 md:hidden" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M5 12h14M5 12l6 6M5 12l6-6" /></svg><span class="group-hover:text-accent sr-only text-sm md:not-sr-only"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="inline-block size-4" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M12 5v14M16 9l-4-4M8 9l4-4" /></svg> 回到顶部</span></button></div><script data-astro-rerun>
+  function backToTop() {
+    const rootElement = document.documentElement;
+    const btnContainer = document.querySelector("#btt-btn-container");
+    const backToTopBtn = document.querySelector("[data-button='back-to-top']");
+    const progressIndicator = document.querySelector("#progress-indicator");
+
+    if (!rootElement || !btnContainer || !backToTopBtn || !progressIndicator)
+      return;
+
+    backToTopBtn.addEventListener("click", () => {
+      document.body.scrollTop = 0;
+      document.documentElement.scrollTop = 0;
+    });
+
+    let lastVisible = null;
+    function handleScroll() {
+      const scrollTotal = rootElement.scrollHeight - rootElement.clientHeight;
+      const scrollTop = rootElement.scrollTop;
+      const scrollPercent = Math.floor((scrollTop / scrollTotal) * 100);
+
+      progressIndicator.style.setProperty(
+        "background-image",
+        `conic-gradient(var(--accent), var(--accent) ${scrollPercent}%, transparent ${scrollPercent}%)`
+      );
+
+      const isVisible = scrollTop / scrollTotal > 0.3;
+
+      if (isVisible !== lastVisible) {
+        btnContainer.classList.toggle("opacity-100", isVisible);
+        btnContainer.classList.toggle("translate-y-0", isVisible);
+        btnContainer.classList.toggle("opacity-0", !isVisible);
+        btnContainer.classList.toggle("translate-y-14", !isVisible);
+        lastVisible = isVisible;
+      }
+    }
+
+    let ticking = false;
+    document.addEventListener("scroll", () => {
+      if (!ticking) {
+        window.requestAnimationFrame(() => {
+          handleScroll();
+          ticking = false;
+        });
+        ticking = true;
+      }
+    });
+  }
+  backToTop();
+</script><ul class="mt-4 mb-8 flex flex-wrap gap-4 sm:my-8"><li><a data-astro-transition-scope="astro-bztu2lml-1" href="/tags/邮箱系统/" class="flex items-center gap-0.5 border-foreground border-b-2 border-dashed hover:border-accent hover:text-accent hover:-mt-0.5 focus-visible:text-accent focus-visible:border-none text-sm"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="opacity-80 size-4" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M5 9h14M5 15h14M11 4 7 20M17 4l-4 16" /></svg>邮箱系统</a></li><li><a data-astro-transition-scope="astro-bztu2lml-2" href="/tags/数据存储/" class="flex items-center gap-0.5 border-foreground border-b-2 border-dashed hover:border-accent hover:text-accent hover:-mt-0.5 focus-visible:text-accent focus-visible:border-none text-sm"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="opacity-80 size-4" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M5 9h14M5 15h14M11 4 7 20M17 4l-4 16" /></svg>数据存储</a></li><li><a data-astro-transition-scope="astro-bztu2lml-3" href="/tags/备份恢复/" class="flex items-center gap-0.5 border-foreground border-b-2 border-dashed hover:border-accent hover:text-accent hover:-mt-0.5 focus-visible:text-accent focus-visible:border-none text-sm"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="opacity-80 size-4" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M5 9h14M5 15h14M11 4 7 20M17 4l-4 16" /></svg>备份恢复</a></li></ul><hr class="my-8 border-dashed"><div data-pagefind-ignore class="my-8 grid grid-cols-1 gap-6 sm:grid-cols-2"><a href="/posts/mail-lmtp-local-delivery/" class="flex w-full gap-1 hover:opacity-75"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="inline-block flex-none rtl:rotate-180" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M5 12h14M5 12l6 6M5 12l6-6" /></svg><div><span>上一篇</span><div class="text-accent/85 text-sm">Dovecot 的 LMTP 本地投递</div></div></a><a href="/posts/mail-dovecot-index-search/" class="flex w-full justify-end gap-1 text-end hover:opacity-75 sm:col-start-2"><div><span>下一篇</span><div class="text-accent/85 text-sm">Dovecot 的索引与检索</div></div><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="inline-block flex-none rtl:rotate-180" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M5 12h14M13 18l6-6M13 6l6 6" /></svg></a></div></main><footer class="app-layout mt-auto"><div class="border-border flex flex-col items-center justify-between border-t py-6 sm:flex-row-reverse sm:py-4"><div class="flex flex-wrap items-center gap-1"><a href="https://github.com/SaromChars" title="Sarom Chars 的 GitHub" class="group inline-flex items-center gap-1 hover:text-accent p-2 hover:rotate-6 sm:p-1"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="inline-block size-6 scale-125 fill-transparent stroke-current stroke-2 opacity-90 group-hover:fill-transparent sm:scale-110" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M9 19c-4.3 1.4-4.3-2.5-6-3m12 5v-3.5c0-1 .1-1.4-.5-2 2.8-.3 5.5-1.4 5.5-6a4.6 4.6 0 0 0-1.3-3.2 4.2 4.2 0 0 0-.1-3.2s-1.1-.3-3.5 1.3a12.3 12.3 0 0 0-6.2 0C6.5 2.8 5.4 3.1 5.4 3.1a4.2 4.2 0 0 0-.1 3.2A4.6 4.6 0 0 0 4 9.5c0 4.6 2.7 5.7 5.5 6-.6.6-.6 1.2-.5 2V21" /></svg><span class="sr-only">Sarom Chars 的 GitHub</span></a></div><div class="my-2 flex flex-col items-center whitespace-nowrap sm:flex-row"><span>版权 &#169; 2026</span><span class="hidden sm:inline">&nbsp;|&nbsp;</span><span>保留所有权利。</span></div></div></footer><script type="module">var e=`theme`,t=`light`,n=`dark`;function r(){return localStorage.getItem(e)||(window.matchMedia(`(prefers-color-scheme: dark)`).matches?n:t)}var i=window.__theme?.value??r();function a(){localStorage.setItem(e,i),o()}function o(){let e=document.firstElementChild;e?.setAttribute(`data-theme`,i),e?.classList.toggle(`dark`,i===n),document.querySelector(`#theme-btn`)?.setAttribute(`aria-label`,i);let t=window.getComputedStyle(document.body).backgroundColor;document.querySelector(`meta[name='theme-color']`)?.setAttribute(`content`,t)}function s(){o(),document.querySelector(`#theme-btn`)?.addEventListener(`click`,()=>{i=i===t?n:t,a()})}s(),document.addEventListener(`astro:after-swap`,s),document.addEventListener(`astro:before-swap`,e=>{let t=document.querySelector(`meta[name='theme-color']`)?.getAttribute(`content`);t&&e.newDocument.querySelector(`meta[name='theme-color']`)?.setAttribute(`content`,t)}),window.matchMedia(`(prefers-color-scheme: dark)`).addEventListener(`change`,({matches:e})=>{i=e?n:t,a()});</script></body></html><script type="module">var e=document.querySelector(`#article`);if(e?.querySelector(`a[href^="#ref-"]`)){let t=null,n=!1,r=document.createElement(`button`);r.type=`button`,r.className=`citation-return`,r.textContent=`返回阅读位置`,r.setAttribute(`data-pagefind-ignore`,``),e.addEventListener(`click`,n=>{if(n.button!==0||n.metaKey||n.ctrlKey||n.shiftKey||n.altKey)return;let i=n.target instanceof Element?n.target.closest(`a[href^="#ref-"]`):null;if(!i||!e.contains(i))return;let a=i.hash,o=document.getElementById(decodeURIComponent(a.slice(1)));o&&e.contains(o)&&(t={source:i,url:window.location.href,top:window.scrollY,left:window.scrollX,targetHash:a},o.insertAdjacentElement(`afterend`,r))}),r.addEventListener(`click`,()=>{if(!t||n)return;let e=t,i=i=>{r.remove(),window.requestAnimationFrame(()=>{window.requestAnimationFrame(()=>{e.source.focus({preventScroll:!0}),window.scrollTo({top:e.top,left:e.left,behavior:`instant`}),t=null,n=!1,i?.()})})};window.location.href===e.url?i():(n=!0,window.addEventListener(`popstate`,()=>{let e=window.history.scrollRestoration;window.history.scrollRestoration=`manual`,window.setTimeout(()=>{i(()=>{window.history.scrollRestoration=e})},0)},{once:!0}),window.history.back())}),window.addEventListener(`hashchange`,()=>{!n&&t&&window.location.hash!==t.targetHash&&(r.remove(),t=null)})}</script><script data-astro-rerun>
+  function createProgressBar() {
+    const progressContainer = document.createElement("div");
+    progressContainer.className =
+      "progress-container fixed top-0 z-10 h-1 w-full bg-background";
+
+    const progressBar = document.createElement("div");
+    progressBar.className = "progress-bar h-1 w-0 bg-accent";
+    progressBar.id = "myBar";
+
+    progressContainer.appendChild(progressBar);
+    document.body.appendChild(progressContainer);
+  }
+  createProgressBar();
+
+  function updateScrollProgress() {
+    document.addEventListener("scroll", () => {
+      const winScroll =
+        document.body.scrollTop || document.documentElement.scrollTop;
+      const height =
+        document.documentElement.scrollHeight -
+        document.documentElement.clientHeight;
+      const scrolled = (winScroll / height) * 100;
+      if (document) {
+        const myBar = document.getElementById("myBar");
+        if (myBar) {
+          myBar.style.width = scrolled + "%";
+        }
+      }
+    });
+  }
+  updateScrollProgress();
+
+  function addHeadingLinks() {
+    const headings = Array.from(
+      document.querySelectorAll("h2, h3, h4, h5, h6")
+    );
+    for (const heading of headings) {
+      heading.classList.add("group");
+      const link = document.createElement("a");
+      link.className =
+        "heading-link ms-2 no-underline opacity-75 md:opacity-0 md:group-hover:opacity-100 md:focus:opacity-100";
+      link.href = "#" + heading.id;
+
+      const span = document.createElement("span");
+      span.ariaHidden = "true";
+      span.innerText = "#";
+      link.appendChild(span);
+      heading.appendChild(link);
+    }
+  }
+  addHeadingLinks();
+
+  function attachCopyButtons() {
+    const copyButtonLabel = "Copy";
+    const codeBlocks = Array.from(document.querySelectorAll("pre"));
+
+    for (const codeBlock of codeBlocks) {
+      const wrapper = document.createElement("div");
+      wrapper.style.position = "relative";
+
+      const computedStyle = getComputedStyle(codeBlock);
+      const hasFileNameOffset =
+        computedStyle.getPropertyValue("--file-name-offset").trim() !== "";
+
+      const topClass = hasFileNameOffset
+        ? "top-(--file-name-offset)"
+        : "-top-3";
+
+      const copyButton = document.createElement("button");
+      copyButton.className = `copy-code absolute end-3 ${topClass} rounded bg-muted border border-muted px-2 py-1 text-xs leading-4 text-foreground font-medium`;
+      copyButton.innerHTML = copyButtonLabel;
+      codeBlock.setAttribute("tabindex", "0");
+      codeBlock.appendChild(copyButton);
+
+      codeBlock?.parentNode?.insertBefore(wrapper, codeBlock);
+      wrapper.appendChild(codeBlock);
+
+      copyButton.addEventListener("click", async () => {
+        await copyCode(codeBlock, copyButton);
+      });
+    }
+
+    async function copyCode(block, button) {
+      const code = block.querySelector("code");
+      const text = code?.innerText;
+
+      await navigator.clipboard.writeText(text ?? "");
+
+      button.innerText = "Copied";
+
+      setTimeout(() => {
+        button.innerText = copyButtonLabel;
+      }, 700);
+    }
+  }
+  attachCopyButtons();
+
+  /** Accessible image lightbox for article images. */
+  function initLightbox() {
+    const article = document.getElementById("article");
+    if (!article) return;
+
+    const prefersReducedMotion = () =>
+      window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+    let overlay = null;
+    let lastFocused = null;
+    let removeDragListeners = null;
+
+    // Defer attribute mutations so they don't push the LCP timestamp.
+    // Event listeners below use delegation and don't need the attributes to exist yet.
+    requestAnimationFrame(() => {
+      const images = Array.from(article.querySelectorAll("img"));
+      for (const image of images) {
+        if (image.closest("a")) continue;
+        image.setAttribute("role", "button");
+        image.setAttribute("tabindex", "0");
+        image.setAttribute("aria-haspopup", "dialog");
+        image.setAttribute(
+          "aria-label",
+          image.alt ? `Zoom image: ${image.alt}` : "Zoom image"
+        );
+      }
+    });
+
+    function open(src, alt, trigger) {
+      if (overlay) return;
+      lastFocused = trigger ?? document.activeElement;
+
+      overlay = document.createElement("div");
+      overlay.setAttribute("role", "dialog");
+      overlay.setAttribute("aria-modal", "true");
+      overlay.setAttribute(
+        "aria-label",
+        alt ? `Image preview: ${alt}` : "Image preview"
+      );
+      overlay.className =
+        "fixed inset-0 z-50 flex cursor-zoom-out items-center justify-center bg-black/70 backdrop-blur-sm opacity-0 transition-opacity duration-200 motion-reduce:transition-none";
+
+      const closeButton = document.createElement("button");
+      closeButton.type = "button";
+      closeButton.setAttribute("aria-label", "Close image preview");
+      closeButton.className =
+        "absolute end-4 top-4 z-1 flex size-11 items-center justify-center rounded bg-black/50 text-3xl leading-none text-white";
+      closeButton.innerHTML = "&#10005;";
+      closeButton.addEventListener("click", close);
+
+      const image = document.createElement("img");
+      image.src = src;
+      image.alt = "";
+      image.className =
+        "max-h-[90dvh] max-w-[90dvw] cursor-default object-contain transition-transform duration-100 ease-out motion-reduce:transition-none data-[zoom=drag]:cursor-grabbing data-[zoom=drag]:transition-none data-[zoom=in]:cursor-grab";
+
+      overlay.append(closeButton, image);
+      overlay.addEventListener("click", e => {
+        if (e.target === overlay && currentScale <= 1) close();
+      });
+
+      let currentScale = 1;
+      let translateX = 0;
+      let translateY = 0;
+      let initialDist = 0;
+      let initialScale = 1;
+      let panStartX = 0;
+      let panStartY = 0;
+      let panStartTranslateX = 0;
+      let panStartTranslateY = 0;
+      let lastTapTime = 0;
+
+      function applyTransform() {
+        image.style.transform = `scale(${currentScale}) translate(${translateX}px, ${translateY}px)`;
+        // A backdrop click only closes at fit size, so drop the zoom-out cursor while zoomed.
+        overlay?.classList.toggle("cursor-zoom-out", currentScale <= 1);
+      }
+
+      function resetTransform() {
+        currentScale = 1;
+        translateX = 0;
+        translateY = 0;
+        image.style.transform = "";
+        image.removeAttribute("data-zoom");
+        overlay?.classList.add("cursor-zoom-out");
+      }
+
+      // Keep the zoomed image from being panned past its edges.
+      function clampTranslate() {
+        if (!overlay) return;
+        const maxX = Math.max(
+          0,
+          (image.clientWidth - overlay.clientWidth / currentScale) / 2
+        );
+        const maxY = Math.max(
+          0,
+          (image.clientHeight - overlay.clientHeight / currentScale) / 2
+        );
+        translateX = Math.min(maxX, Math.max(-maxX, translateX));
+        translateY = Math.min(maxY, Math.max(-maxY, translateY));
+      }
+
+      overlay.addEventListener(
+        "touchstart",
+        e => {
+          const t = e.touches;
+          if (t.length === 2) {
+            image.setAttribute("data-zoom", "drag");
+            initialDist = Math.hypot(
+              t[1].clientX - t[0].clientX,
+              t[1].clientY - t[0].clientY
+            );
+            initialScale = currentScale;
+          } else if (t.length === 1) {
+            const now = Date.now();
+            if (now - lastTapTime < 300) {
+              e.preventDefault();
+              if (currentScale > 1) {
+                resetTransform();
+              } else {
+                currentScale = 2;
+                translateX = 0;
+                translateY = 0;
+                applyTransform();
+                image.setAttribute("data-zoom", "in");
+              }
+              lastTapTime = 0;
+              panStartX = t[0].clientX;
+              panStartY = t[0].clientY;
+              panStartTranslateX = translateX;
+              panStartTranslateY = translateY;
+            } else {
+              lastTapTime = now;
+              if (currentScale > 1) {
+                image.setAttribute("data-zoom", "drag");
+                panStartX = t[0].clientX;
+                panStartY = t[0].clientY;
+                panStartTranslateX = translateX;
+                panStartTranslateY = translateY;
+              }
+            }
+          }
+        },
+        { passive: false }
+      );
+
+      overlay.addEventListener(
+        "touchmove",
+        e => {
+          const t = e.touches;
+          if (t.length === 2) {
+            e.preventDefault();
+            const dist = Math.hypot(
+              t[1].clientX - t[0].clientX,
+              t[1].clientY - t[0].clientY
+            );
+            const oldScale = currentScale;
+            currentScale = Math.min(
+              4,
+              Math.max(1, initialScale * (dist / initialDist))
+            );
+
+            // Zoom to the geometric center of the two fingers
+            const midX = (t[0].clientX + t[1].clientX) / 2;
+            const midY = (t[0].clientY + t[1].clientY) / 2;
+            const ox = overlay.clientWidth / 2;
+            const oy = overlay.clientHeight / 2;
+            translateX =
+              (midX - ox) * (1 / currentScale - 1 / oldScale) + translateX;
+            translateY =
+              (midY - oy) * (1 / currentScale - 1 / oldScale) + translateY;
+            clampTranslate();
+            applyTransform();
+          } else if (t.length === 1) {
+            if (currentScale > 1) {
+              e.preventDefault();
+              image.setAttribute("data-zoom", "drag");
+              translateX =
+                panStartTranslateX + (t[0].clientX - panStartX) / currentScale;
+              translateY =
+                panStartTranslateY + (t[0].clientY - panStartY) / currentScale;
+              clampTranslate();
+              applyTransform();
+            } else {
+              e.preventDefault();
+            }
+          }
+        },
+        { passive: false }
+      );
+
+      overlay.addEventListener("touchend", e => {
+        if (e.touches.length === 0) {
+          if (currentScale > 1) {
+            image.setAttribute("data-zoom", "in");
+          } else {
+            image.removeAttribute("data-zoom");
+          }
+          if (currentScale <= 1.05) resetTransform();
+        }
+      });
+
+      overlay.addEventListener("touchcancel", e => {
+        if (e.touches.length === 0) {
+          if (currentScale > 1) {
+            image.setAttribute("data-zoom", "in");
+          } else {
+            image.removeAttribute("data-zoom");
+          }
+          if (currentScale <= 1.05) resetTransform();
+        }
+      });
+
+      overlay.addEventListener(
+        "wheel",
+        e => {
+          e.preventDefault();
+          const oldScale = currentScale;
+          const delta = -e.deltaY * 0.001;
+          currentScale = Math.min(4, Math.max(1, currentScale * (1 + delta)));
+
+          if (currentScale <= 1.05) {
+            resetTransform();
+          } else {
+            image.setAttribute("data-zoom", "in");
+            // Zoom to cursor: adjust translate so the point under cursor stays fixed
+            const ox = overlay.clientWidth / 2;
+            const oy = overlay.clientHeight / 2;
+            translateX =
+              (e.clientX - ox) * (1 / currentScale - 1 / oldScale) + translateX;
+            translateY =
+              (e.clientY - oy) * (1 / currentScale - 1 / oldScale) + translateY;
+            clampTranslate();
+            applyTransform();
+          }
+        },
+        { passive: false }
+      );
+
+      let isMouseDown = false;
+      let mouseStartX = 0;
+      let mouseStartY = 0;
+
+      overlay.addEventListener("mousedown", e => {
+        if (e.button !== 0 || currentScale <= 1) return;
+        if (e.target.closest("button")) return;
+        isMouseDown = true;
+        mouseStartX = e.clientX;
+        mouseStartY = e.clientY;
+        panStartTranslateX = translateX;
+        panStartTranslateY = translateY;
+        image.setAttribute("data-zoom", "drag");
+        e.preventDefault();
+      });
+
+      function onMouseMove(e) {
+        if (!isMouseDown || !overlay) return;
+        translateX =
+          panStartTranslateX + (e.clientX - mouseStartX) / currentScale;
+        translateY =
+          panStartTranslateY + (e.clientY - mouseStartY) / currentScale;
+        clampTranslate();
+        applyTransform();
+      }
+
+      function onMouseUp() {
+        if (!isMouseDown) return;
+        isMouseDown = false;
+        if (currentScale > 1) {
+          image.setAttribute("data-zoom", "in");
+        } else {
+          image.removeAttribute("data-zoom");
+        }
+      }
+
+      document.addEventListener("mousemove", onMouseMove);
+      document.addEventListener("mouseup", onMouseUp);
+      removeDragListeners = () => {
+        document.removeEventListener("mousemove", onMouseMove);
+        document.removeEventListener("mouseup", onMouseUp);
+      };
+
+      document.body.appendChild(overlay);
+      document.documentElement.style.overflow = "hidden";
+      document.addEventListener("keydown", onKeyDown);
+      window.__closeLightbox = close;
+
+      requestAnimationFrame(() => overlay?.classList.add("opacity-100"));
+      closeButton.focus();
+    }
+
+    function close() {
+      if (!overlay) return;
+      const el = overlay;
+      overlay = null;
+      el.classList.add("pointer-events-none");
+      window.__closeLightbox = null;
+
+      document.removeEventListener("keydown", onKeyDown);
+      removeDragListeners?.();
+      removeDragListeners = null;
+      document.documentElement.style.overflow = "";
+      lastFocused?.focus();
+      lastFocused = null;
+
+      if (prefersReducedMotion()) {
+        el.remove();
+        return;
+      }
+      const remove = () => el.remove();
+      el.addEventListener("transitionend", remove, { once: true });
+      setTimeout(remove, 250); // fallback in case transitionend never fires
+      el.classList.remove("opacity-100");
+    }
+
+    function onKeyDown(e) {
+      if (e.key === "Escape") {
+        close();
+      } else if (e.key === "Tab") {
+        trapFocus(e);
+      }
+    }
+
+    // Keep keyboard focus inside the open dialog.
+    function trapFocus(e) {
+      if (!overlay) return;
+      const focusables = overlay.querySelectorAll(
+        'a[href], button, [tabindex]:not([tabindex="-1"])'
+      );
+      if (focusables.length === 0) return;
+      const first = focusables[0];
+      const last = focusables[focusables.length - 1];
+      if (e.shiftKey && document.activeElement === first) {
+        e.preventDefault();
+        last.focus();
+      } else if (!e.shiftKey && document.activeElement === last) {
+        e.preventDefault();
+        first.focus();
+      }
+    }
+
+    function triggerFromEvent(e) {
+      const image = e.target.closest("img");
+      if (!image || !article.contains(image) || image.closest("a")) return null;
+      return image;
+    }
+
+    function activate(image) {
+      open(image.currentSrc || image.src, image.alt, image);
+    }
+
+    article.addEventListener("click", e => {
+      const image = triggerFromEvent(e);
+      if (!image) return;
+      e.preventDefault();
+      activate(image);
+    });
+
+    article.addEventListener("keydown", e => {
+      if (e.key !== "Enter" && e.key !== " " && e.key !== "Spacebar") return;
+      const image = triggerFromEvent(e);
+      if (!image) return;
+      e.preventDefault();
+      activate(image);
+    });
+  }
+  initLightbox();
+
+  if (!window.__lightboxSwapBound) {
+    window.__lightboxSwapBound = true;
+    document.addEventListener("astro:before-swap", () =>
+      window.__closeLightbox?.()
+    );
+  }
+
+  document.addEventListener("astro:after-swap", () =>
+    window.scrollTo({ left: 0, top: 0, behavior: "instant" })
+  );
+</script>

@@ -1,0 +1,715 @@
+<!DOCTYPE html><html dir="ltr" lang="zh-CN" class="overflow-y-scroll scroll-smooth"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1"><link rel="icon" type="image/png" href="/images/favicon-32x32-next.png"><link rel="icon" href="/favicon.ico"><link rel="canonical" href="https://www.saromchars.tech/posts/mail-rspamd-worker-request/"><meta name="generator" content="Astro v7.4.5"><!-- Primary meta --><title>Rspamd 工作进程与扫描请求生命周期 | Sarom&#39;s Blog</title><meta name="title" content="Rspamd 工作进程与扫描请求生命周期 | Sarom's Blog"><meta name="description" content="解析 Rspamd 工作进程模型与扫描任务的生命周期、异步状态机与失败清理机制。"><meta name="author" content="Sarom Chars"><link rel="sitemap" href="/sitemap-index.xml"><!-- Open Graph --><meta property="og:type" content="article"><meta property="og:site_name" content="Sarom's Blog"><meta property="og:title" content="Rspamd 工作进程与扫描请求生命周期 | Sarom's Blog"><meta property="og:description" content="解析 Rspamd 工作进程模型与扫描任务的生命周期、异步状态机与失败清理机制。"><meta property="og:url" content="https://www.saromchars.tech/posts/mail-rspamd-worker-request/"><meta property="og:image" content="https://www.saromchars.tech/og.png"><!-- Twitter / X --><meta property="twitter:card" content="summary_large_image"><meta property="twitter:url" content="https://www.saromchars.tech/posts/mail-rspamd-worker-request/"><meta property="twitter:title" content="Rspamd 工作进程与扫描请求生命周期 | Sarom's Blog"><meta property="twitter:description" content="解析 Rspamd 工作进程模型与扫描任务的生命周期、异步状态机与失败清理机制。"><meta property="twitter:image" content="https://www.saromchars.tech/og.png"><!-- RSS autodiscovery --><link rel="alternate" type="application/rss+xml" title="Sarom's Blog" href="https://www.saromchars.tech/rss.xml"><!-- Filled at runtime by theme.ts to match the current background colour --><meta name="theme-color" content=""><!-- Extra head content injected by child layouts (e.g. JSON-LD, article meta) --><meta property="article:published_time" content="2021-12-12T02:00:00.000Z"><script type="application/ld+json">{"@context":"https://schema.org","@type":"BlogPosting","headline":"Rspamd 工作进程与扫描请求生命周期","mainEntityOfPage":"https://www.saromchars.tech/posts/mail-rspamd-worker-request/","datePublished":"2021-12-12T02:00:00.000Z","author":[{"@type":"Person","name":"Sarom Chars","url":"https://github.com/SaromChars"}]}</script><!--
+      Inline FOUC-prevention script: sets data-theme on <html> before
+      the browser paints. Runs synchronously, no defer/async.
+    --><script>
+      (function () {
+        const stored = localStorage.getItem("theme");
+        const prefersDark = window.matchMedia(
+          "(prefers-color-scheme: dark)"
+        ).matches;
+        const theme = stored ?? (prefersDark ? "dark" : "light");
+        const root = document.firstElementChild;
+        root?.setAttribute("data-theme", theme);
+        root?.classList.toggle("dark", theme === "dark");
+        // Expose value so theme.ts can skip re-detection.
+        window.__theme = { value: theme };
+      })();
+    </script><meta name="robots" content="index, follow"><script async src="https://www.googletagmanager.com/gtag/js?id=G-WJJJTJ4FWX"></script><script>(function(){const measurementId = "G-WJJJTJ4FWX";
+
+    window.dataLayer = window.dataLayer || [];
+    function gtag(){ window.dataLayer.push(arguments); }
+    gtag('js', new Date());
+    gtag('config', measurementId);
+  })();</script><style>@keyframes astroFadeInOut{0%{opacity:1}to{opacity:0}}@keyframes astroFadeIn{0%{opacity:0;mix-blend-mode:plus-lighter}to{opacity:1;mix-blend-mode:plus-lighter}}@keyframes astroFadeOut{0%{opacity:1;mix-blend-mode:plus-lighter}to{opacity:0;mix-blend-mode:plus-lighter}}@keyframes astroSlideFromRight{0%{transform:translate(100%)}}@keyframes astroSlideFromLeft{0%{transform:translate(-100%)}}@keyframes astroSlideToRight{to{transform:translate(100%)}}@keyframes astroSlideToLeft{to{transform:translate(-100%)}}@media (prefers-reduced-motion){::view-transition-group(*),::view-transition-old(*),::view-transition-new(*),[data-astro-transition-scope]{animation:none!important}}
+</style><link rel="stylesheet" href="/_astro/Footer.wlxowfqU.css"><style>[data-astro-transition-scope="astro-bztu2lml-1"] { view-transition-name: \90AE\7BB1\7CFB\7EDF; }@layer astro { ::view-transition-old(\90AE\7BB1\7CFB\7EDF) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }::view-transition-new(\90AE\7BB1\7CFB\7EDF) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }[data-astro-transition=back]::view-transition-old(\90AE\7BB1\7CFB\7EDF) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition=back]::view-transition-new(\90AE\7BB1\7CFB\7EDF) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; } }[data-astro-transition-fallback="old"] [data-astro-transition-scope="astro-bztu2lml-1"],
+			[data-astro-transition-fallback="old"][data-astro-transition-scope="astro-bztu2lml-1"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition-fallback="new"] [data-astro-transition-scope="astro-bztu2lml-1"],
+			[data-astro-transition-fallback="new"][data-astro-transition-scope="astro-bztu2lml-1"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }[data-astro-transition=back][data-astro-transition-fallback="old"] [data-astro-transition-scope="astro-bztu2lml-1"],
+			[data-astro-transition=back][data-astro-transition-fallback="old"][data-astro-transition-scope="astro-bztu2lml-1"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition=back][data-astro-transition-fallback="new"] [data-astro-transition-scope="astro-bztu2lml-1"],
+			[data-astro-transition=back][data-astro-transition-fallback="new"][data-astro-transition-scope="astro-bztu2lml-1"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }</style><style>[data-astro-transition-scope="astro-bztu2lml-2"] { view-transition-name: \53CD\5783\573E\90AE\4EF6; }@layer astro { ::view-transition-old(\53CD\5783\573E\90AE\4EF6) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }::view-transition-new(\53CD\5783\573E\90AE\4EF6) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }[data-astro-transition=back]::view-transition-old(\53CD\5783\573E\90AE\4EF6) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition=back]::view-transition-new(\53CD\5783\573E\90AE\4EF6) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; } }[data-astro-transition-fallback="old"] [data-astro-transition-scope="astro-bztu2lml-2"],
+			[data-astro-transition-fallback="old"][data-astro-transition-scope="astro-bztu2lml-2"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition-fallback="new"] [data-astro-transition-scope="astro-bztu2lml-2"],
+			[data-astro-transition-fallback="new"][data-astro-transition-scope="astro-bztu2lml-2"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }[data-astro-transition=back][data-astro-transition-fallback="old"] [data-astro-transition-scope="astro-bztu2lml-2"],
+			[data-astro-transition=back][data-astro-transition-fallback="old"][data-astro-transition-scope="astro-bztu2lml-2"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition=back][data-astro-transition-fallback="new"] [data-astro-transition-scope="astro-bztu2lml-2"],
+			[data-astro-transition=back][data-astro-transition-fallback="new"][data-astro-transition-scope="astro-bztu2lml-2"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }</style></head><body class="bg-background font-app text-foreground selection:bg-accent/75 selection:text-accent-foreground flex min-h-svh flex-col"><a id="skip-to-content" href="#main-content" class="bg-background text-accent absolute inset-s-16 -top-full z-50 px-3 py-2 backdrop-blur-lg transition-all focus:top-4">跳到正文</a><header class="app-layout flex flex-col items-center justify-between sm:flex-row"><div class="border-border bg-background relative flex w-full items-baseline justify-between border-b py-4 sm:items-center sm:py-6"><a href="/" class="absolute py-1 text-xl leading-8 font-semibold whitespace-nowrap sm:static sm:my-auto sm:text-2xl sm:leading-none">Sarom&#39;s Blog</a><nav id="nav-menu" class="flex w-full flex-col items-center sm:ms-2 sm:flex-row sm:justify-end sm:space-x-4 sm:py-0"><button id="menu-btn" class="focus-outline self-end p-2 sm:hidden" aria-label="展开菜单" aria-expanded="false" aria-controls="menu-items" data-label-open="展开菜单" data-label-close="收起菜单"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="hidden" viewBox="0 0 24 24" id="close-icon"><path stroke="none" d="M0 0h24v24H0z" /><path d="M18 6 6 18M6 6l12 12" /></svg><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="icon icon-tabler icons-tabler-outline icon-tabler-menu-deep" viewBox="0 0 24 24" id="menu-icon"><path stroke="none" d="M0 0h24v24H0z" /><path d="M4 6h16M7 12h13M10 18h10" /></svg></button><ul id="menu-items" class="[&amp;&gt;li&gt;a]:hover:text-accent mt-4 hidden w-44 grid-cols-2 place-content-center gap-2 sm:mt-0 sm:flex sm:w-auto sm:gap-x-5 sm:gap-y-0 sm:[&amp;&gt;li]:h-8 [&amp;&gt;li&gt;a]:block [&amp;&gt;li&gt;a]:px-4 [&amp;&gt;li&gt;a]:py-3 [&amp;&gt;li&gt;a]:text-center [&amp;&gt;li&gt;a]:font-medium sm:[&amp;&gt;li&gt;a]:px-2 sm:[&amp;&gt;li&gt;a]:py-1"><li class="col-span-2"><a href="/posts/" class="active-nav">文章</a></li><li class="col-span-2"><a href="/tags/">标签</a></li><li class="col-span-2"><a href="/about/">关于</a></li><li class="col-span-2"><a href="/archives/" title="归档" aria-label="归档" class="group inline-flex items-center gap-1 hover:text-accent focus-outline flex size-full justify-center p-3 sm:relative sm:size-8 sm:p-0"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="hidden sm:absolute sm:top-1/2 sm:left-1/2 sm:block sm:size-6 sm:-translate-x-1/2 sm:-translate-y-1/2" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M3 6a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2 2 2 0 0 1-2 2H5a2 2 0 0 1-2-2M5 8v10a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8M10 12h4" /></svg><span class="sm:sr-only">归档</span></a></li><li class="col-span-1 flex items-center justify-center"><a href="/search/" title="搜索" aria-label="搜索" class="group inline-flex items-center gap-1 hover:text-accent focus-outline relative size-8"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="absolute top-1/2 left-1/2 size-6 -translate-x-1/2 -translate-y-1/2" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M3 10a7 7 0 1 0 14 0 7 7 0 1 0-14 0M21 21l-6-6" /></svg><span class="sr-only">搜索</span></a></li><li class="col-span-1 flex items-center justify-center"><button id="theme-btn" class="focus-outline hover:[&amp;&gt;svg]:stroke-accent relative size-12 p-4 sm:size-8" title="切换主题" aria-label="auto" aria-live="polite"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="absolute top-[50%] left-[50%] translate-[-50%] scale-100 rotate-0 transition-all dark:scale-0 dark:-rotate-90" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M12 3h.393a7.5 7.5 0 0 0 7.92 12.446A9 9 0 1 1 12 2.992z" /></svg><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="absolute top-[50%] left-[50%] translate-[-50%] scale-0 rotate-90 transition-all dark:scale-100 dark:rotate-0" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M14.828 14.828a4 4 0 1 0-5.656-5.656 4 4 0 0 0 5.656 5.656M6.343 17.657l-1.414 1.414M6.343 6.343 4.929 4.929M17.657 6.343l1.414-1.414M17.657 17.657l1.414 1.414M4 12H2M12 4V2M20 12h2M12 20v2" /></svg></button></li></ul></nav></div></header><script type="module">function e(){let e=document.querySelector(`#menu-btn`),t=document.querySelector(`#menu-items`),n=document.querySelector(`#menu-icon`),r=document.querySelector(`#close-icon`);if(!e||!t||!n||!r)return;let i=e.dataset.labelOpen??`Open menu`,a=e.dataset.labelClose??`Close menu`;e.addEventListener(`click`,()=>{let o=e.getAttribute(`aria-expanded`)===`true`;e.setAttribute(`aria-expanded`,o?`false`:`true`),e.setAttribute(`aria-label`,o?i:a),t.classList.toggle(`hidden`),t.classList.toggle(`grid`),n.classList.toggle(`hidden`),r.classList.toggle(`hidden`)})}function t(){let e=document.getElementById(`skip-to-content`);e&&e.addEventListener(`click`,e=>{if(e.defaultPrevented||e.metaKey||e.ctrlKey||e.shiftKey||e.button!==0)return;e.preventDefault();let t=document.getElementById(`main-content`);t&&(t.setAttribute(`tabindex`,`-1`),t.addEventListener(`blur`,()=>t.removeAttribute(`tabindex`),{once:!0}),t.focus(),t.scrollIntoView({behavior:`smooth`}))})}e(),document.addEventListener(`astro:after-swap`,e),t(),document.addEventListener(`astro:after-swap`,t);</script><div class="app-layout flex items-center justify-start"><a id="back-button" href="/" class="group inline-flex items-center gap-1 hover:text-accent focus-outline hover:text-foreground/75 -ms-2 mt-8 mb-2"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="inline-block size-6 rtl:rotate-180" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="m15 6-6 6 6 6" /></svg><span>返回</span></a></div><script type="module">function e(){let e=document.querySelector(`#back-button`),t=sessionStorage.getItem(`backUrl`);t&&e&&(e.href=t)}document.addEventListener(`astro:page-load`,e),e();</script><main id="main-content" class="app-layout" data-pagefind-body><h1 style="view-transition-name:mail-rspamd-worker-request" class="text-accent inline-block text-2xl font-bold sm:text-3xl">Rspamd 工作进程与扫描请求生命周期</h1><div class="my-2 flex items-center gap-2"><div class="text-muted-foreground flex flex-wrap items-center gap-x-2 gap-y-1"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="inline-block size-6 min-w-5.5" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M4 7a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2zM16 3v4M8 3v4M4 11h16M7 14h.013M10.01 14h.005M13.01 14h.005M16.015 14h.005M13.015 17h.005M7.01 17h.005M10.01 17h.005" /></svg><time class="text-sm sm:text-base" datetime="2021-12-12T02:00:00.000Z">2021年12月12日</time></div><span aria-hidden="true" class="text-muted-foreground max-sm:hidden hidden">|</span></div><article id="article" class="mt-8 w-full app-prose max-w-app prose-pre:bg-(--shiki-light-bg) dark:prose-pre:bg-(--shiki-dark-bg)"><!--email_off-->
+<p>在开发邮件网关与反垃圾代理时，一个直接的工程疑问是：Rspamd 收到同一封邮件时，为什么既可以直接在代理进程就地处理，也可以转发给后端工作进程；在这个过程中，究竟是谁创建并持有了检测任务上下文，扫描结果与连接资源又如何在异步回调中回收？如果不理清进程职责与任务状态机的推进边界，当遇到网络抖动、依赖超时或对端异常断开时，系统就容易陷入排查无据的困境。</p>
+<p>本文基于固定公开版本 Rspamd 2.7 源码（commit <code>4c56c1210dac78be727fc07d1c29c140034e4b19</code>），聚焦扫描请求在服务进程内的流转主线，解析工作进程的分工拓扑、任务对象的数据结构、异步调度阶段以及超时与异常时的清理机制。</p>
+<h3 id="工作进程分工与请求流转入口">工作进程分工与请求流转入口</h3>
+<p>Rspamd 内部通过结构体 <code>worker_t</code> 划分不同职责的进程实例。在涉及邮件扫描的主路径上，存在三类核心工作进程（worker）配置名：<code>normal</code>、<code>rspamd_proxy</code> 与 <code>controller</code>。</p>
+<p><code>normal</code> 工作进程是核心的扫描计算节点。在 <a href="#ref-src-worker">src/worker.c</a> 中，<code>normal_worker</code> 标记了 <code>RSPAMD_WORKER_SCANNER</code> 与 <code>RSPAMD_WORKER_SOCKET_TCP</code>。它通常监听特定 TCP 端口，通过 HTTP 协议接收扫描请求，装载消息体并驱动后续检测。</p>
+<p><code>rspamd_proxy</code> 工作进程承担网关与代理集成职责。在 <a href="#ref-src-proxy">src/rspamd_proxy.c</a> 中，<code>rspamd_proxy_worker</code> 同样具备 <code>RSPAMD_WORKER_SCANNER</code> 标志。它既可作为 Milter（MTA与过滤器之间的邮件过滤接口）服务端对接外部邮件传输代理（Mail Transfer Agent，MTA），也可接收 HTTP 扫描请求。重要的是，<code>rspamd_proxy</code> 并不一定会将请求跨进程转发出去：如果后端配置匹配到了 <code>backend->self_scan</code>，代理进程便直接调用 <code>rspamd_proxy_self_scan</code> 在当前进程内部创建任务并就地执行扫描；只有在未启用就地扫描时，才经由网络连接转发给远端的 <code>normal</code> 节点。</p>
+<p><code>controller</code> 工作进程则属于管理与控制单元。在 <a href="#ref-controller">src/controller.c</a> 中，<code>controller_worker</code> 带有 <code>RSPAMD_WORKER_CONTROLLER</code> 与 <code>RSPAMD_WORKER_SCANNER</code>。其 HTTP 路由除统计与配置操作外，还挂载了 <code>/scan</code>、<code>/check</code>、<code>/checkv2</code> 等检测端点。这些端点在处理前先经过 <code>rspamd_controller_check_password</code> 访问检查，再进入扫描处理。因此它主要服务于管理工具、调试以及贝叶斯学习等交互，不作为常规 MTA 自动化批量处理邮件的高频必经路径。</p>
+<p>当系统通过 Milter 协议与 MTA 对接时，请求流转的主线十分明确。当邮件数据传输完成，触发 <code>proxy_milter_finish_handler</code>。该函数调用 <code>rspamd_milter_to_http</code> 将 Milter 会话与数据缓冲区转译为内部 HTTP 请求结构，随后执行 <code>proxy_send_master_message</code>。在此处，程序根据配置决定是进入 <code>rspamd_proxy_self_scan</code> 执行就地扫描，还是建立网络连接转发至 <code>normal</code> 后端。</p>
+<h3 id="扫描任务对象结构与上下文边界">扫描任务对象结构与上下文边界</h3>
+<p>扫描请求在进程内被承载于 <code>struct rspamd_task</code>（定义于 <a href="#ref-libserver-task-h">src/libserver/task.h</a>）。该结构体并非 MTA 中具备磁盘持久化与重试队列语义的持久队列条目，而是过滤引擎在内存中执行单次评估的瞬时上下文对象。</p>
+<p>在 <code>struct rspamd_task</code> 中，关键字段维护着网络身份、邮件元数据与运行时环境：</p>
+<ul>
+<li><code>sock</code> 为连接套接字描述符；<code>client_addr</code> 记录当前网络连接对端的 IP 地址（如发起请求的本地代理或 MTA 连接套接字地址）；<code>from_addr</code> 则记录请求中显式声明的邮件发送源 IP。网关开发中需明确二者边界，避免将内网转发节点的套接字地址与发信源地址混淆。</li>
+<li><code>from_envelope</code> 与 <code>rcpt_envelope</code> 分别记录简单邮件传输协议（Simple Mail Transfer Protocol，SMTP）握手中的信封发件人与信封收件人；而多用途互联网邮件扩展（Multipurpose Internet Mail Extensions，MIME）报文解析得到的 <code>From:</code>、<code>To:</code> 等头字段保存在 <code>message</code> 中。二者分别存储，后续安全规则根据不同策略选用对应的身份。</li>
+<li><code>processed_stages</code> 为记录处理进度的位掩码；<code>s</code> 是异步会话指针 <code>struct rspamd_async_session</code>，负责追踪并发未决事件计数；<code>re_rt</code> 为正则表达式运行时缓存；<code>msg</code> 为原始报文存储；<code>result</code> 指向综合指标结果 <code>struct rspamd_scan_result</code>；<code>err</code> 保存执行错误 <code>GError</code>。</li>
+<li><code>task_pool</code> 为该任务运行所使用的内存池（<code>rspamd_mempool_t</code>）。</li>
+</ul>
+<p>任务初始化由 <code>rspamd_task_new</code> 实现（<a href="#ref-libserver-task-c">src/libserver/task.c</a>）。当调用者传入的 <code>pool</code> 为 <code>NULL</code> 时，函数内部创建新内存池并标记 <code>RSPAMD_TASK_FLAG_OWN_POOL</code>；若调用者传入了已有池，则该任务复用现有内存池。在 <code>normal_worker</code> 接收连接时（<a href="#ref-src-worker">src/worker.c</a> 的 <code>rspamd_worker_body_handler</code>），连接关联的 <code>session</code> 结构体所有权会直接移交给 <code>task</code>，并在其内存池中注册析构器，在池销毁时代为调用 <code>g_free</code> 释放 <code>session</code> 并减少工作进程连接计数 <code>worker->nconns</code>。</p>
+<p>在具体调用链路中，请求并不是在建立 TCP 连接时就立刻装载完毕，而是经历如下逐步解析与启动链：</p>
+<pre class="astro-code astro-code-themes min-light night-owl" style="--shiki-light:#24292eff;--shiki-dark:#d6deeb;--shiki-light-bg:#ffffff;--shiki-dark-bg:#011627; overflow-x: auto;--file-name-offset: -0.75rem;" tabindex="0" data-language="text"><code><span class="line"><span>rspamd_worker_body_handler</span></span>
+<span class="line"><span>  -> rspamd_task_new -> rspamd_session_create</span></span>
+<span class="line"><span>  -> rspamd_protocol_handle_request -> rspamd_task_load_message</span></span>
+<span class="line"><span>  -> ev_timer_init/ev_io_init (timeout/guard) -> rspamd_task_process</span></span></code></pre>
+<p>其中 <code>rspamd_protocol_handle_request</code> 解析请求命令；<code>rspamd_task_load_message</code> 内部先调用 <code>rspamd_protocol_handle_headers</code> 处理请求头参数，再装载邮件数据。输入可以来自请求体，也可以走文件或共享内存映射路径。随后激活全局超时定时器与套接字看门狗，最后才驱动 <code>rspamd_task_process</code>。在 <code>rspamd_proxy</code> 的 <code>self_scan</code> 路径下，同样使用这组协议处理、消息装载与任务处理函数组合。</p>
+<h3 id="异步状态机调度与阶段运转">异步状态机调度与阶段运转</h3>
+<p>Rspamd 扫描的核心驱动力是 <code>rspamd_task_process</code> 状态机。在任务生存期内，状态机按预设顺序依次调度不同阶段。</p>
+<p>在前半程中，状态机依次处理连接与正文解析：先执行连接过滤器（<code>CONNFILTERS</code>），随后调用 <code>rspamd_message_parse</code> 执行报文与 MIME 解析（<code>READ_MESSAGE</code>），并调用 <code>rspamd_message_process</code> 提取正文文本与特征（<code>PROCESS_MESSAGE</code>）。</p>
+<p>在主体过滤与分类计算中，依次执行预过滤器（<code>PRE_FILTERS</code>）与主体过滤器（<code>FILTERS</code>），后者承载并行的异步检测。接着依次经过三段分类器阶段（<code>CLASSIFIERS_PRE</code>、<code>CLASSIFIERS</code>、<code>CLASSIFIERS_POST</code>），并进入复合符号计算阶段（<code>COMPOSITES</code>）。</p>
+<p>在收尾与后处理阶段，状态机依次经过后置过滤器（<code>POST_FILTERS</code>）、三段学习阶段（<code>LEARN_PRE</code>、<code>LEARN</code>、<code>LEARN_POST</code>）以及后置复合符号计算（<code>COMPOSITES_POST</code>）。学习阶段按 LEARN_SPAM 或 LEARN_HAM 标志决定是否执行学习；自动学习是设置学习条件的另一条入口。当进入幂等过滤回调（<code>IDEMPOTENT</code>）时，状态机首先主动停止任务超时定时器 <code>timeout_ev</code>，随后执行符号缓存中注册的该阶段回调，最后推进至完成阶段（<code>DONE</code>）。</p>
+<p>状态机推进的核心控制逻辑体现为事件挂起与收敛推进：</p>
+<pre class="astro-code astro-code-themes min-light night-owl" style="--shiki-light:#24292eff;--shiki-dark:#d6deeb;--shiki-light-bg:#ffffff;--shiki-dark-bg:#011627; overflow-x: auto;--file-name-offset: -0.75rem;" tabindex="0" data-language="c"><code><span class="line"><span style="--shiki-light:#C2C3C5;--shiki-light-font-style:inherit;--shiki-dark:#637777;--shiki-dark-font-style:italic">/* 基于 Rspamd 2.7 源码 (src/libserver/task.c, Apache-2.0) 整理的简化逻辑 */</span></span>
+<span class="line"><span style="--shiki-light:#D32F2F;--shiki-light-font-style:inherit;--shiki-dark:#C792EA;--shiki-dark-font-style:italic">if</span><span style="--shiki-light:#24292EFF;--shiki-dark:#D6DEEB"> (</span><span style="--shiki-light:#6F42C1;--shiki-light-font-style:inherit;--shiki-dark:#82AAFF;--shiki-dark-font-style:italic">rspamd_session_events_pending</span><span style="--shiki-light:#24292EFF;--shiki-dark:#D6DEEB"> (task</span><span style="--shiki-light:#D32F2F;--shiki-dark:#7FDBCA">-</span><span style="--shiki-light:#D32F2F;--shiki-dark:#C792EA">></span><span style="--shiki-light:#24292EFF;--shiki-dark:#D7DBE0">s</span><span style="--shiki-light:#24292EFF;--shiki-dark:#D6DEEB">) </span><span style="--shiki-light:#D32F2F;--shiki-dark:#C792EA">!=</span><span style="--shiki-light:#1976D2;--shiki-dark:#F78C6C"> 0</span><span style="--shiki-light:#24292EFF;--shiki-dark:#D6DEEB">) {</span></span>
+<span class="line"><span style="--shiki-light:#C2C3C5;--shiki-light-font-style:inherit;--shiki-dark:#637777;--shiki-dark-font-style:italic">    /* 存在未决的异步事件，等待事件循环回调触发 */</span></span>
+<span class="line"><span style="--shiki-light:#D32F2F;--shiki-light-font-style:inherit;--shiki-dark:#C792EA;--shiki-dark-font-style:italic">    return</span><span style="--shiki-light:#24292EFF;--shiki-dark:#D6DEEB"> ret;</span></span>
+<span class="line"><span style="--shiki-light:#24292EFF;--shiki-dark:#D6DEEB">}</span></span>
+<span class="line"><span style="--shiki-light:#D32F2F;--shiki-light-font-style:inherit;--shiki-dark:#C792EA;--shiki-dark-font-style:italic">else</span><span style="--shiki-light:#24292EFF;--shiki-dark:#D6DEEB"> {</span></span>
+<span class="line"><span style="--shiki-light:#D32F2F;--shiki-light-font-style:inherit;--shiki-dark:#C792EA;--shiki-dark-font-style:italic">    if</span><span style="--shiki-light:#24292EFF;--shiki-dark:#D6DEEB"> (all_done) {</span></span>
+<span class="line"><span style="--shiki-light:#C2C3C5;--shiki-light-font-style:inherit;--shiki-dark:#637777;--shiki-dark-font-style:italic">        /* 当前阶段完成，置位当前阶段标志，推进下一阶段 */</span></span>
+<span class="line"><span style="--shiki-light:#1976D2;--shiki-dark:#C5E478">        task</span><span style="--shiki-light:#212121;--shiki-dark:#D6DEEB">-></span><span style="--shiki-light:#24292EFF;--shiki-dark:#C5E478">processed_stages</span><span style="--shiki-light:#D32F2F;--shiki-dark:#C792EA"> |=</span><span style="--shiki-light:#24292EFF;--shiki-dark:#D6DEEB"> st;</span></span>
+<span class="line"><span style="--shiki-light:#24292EFF;--shiki-dark:#D6DEEB">    }</span></span>
+<span class="line"><span style="--shiki-light:#D32F2F;--shiki-light-font-style:inherit;--shiki-dark:#C792EA;--shiki-dark-font-style:italic">    return</span><span style="--shiki-light:#6F42C1;--shiki-light-font-style:inherit;--shiki-dark:#82AAFF;--shiki-dark-font-style:italic"> rspamd_task_process</span><span style="--shiki-light:#6F42C1;--shiki-dark:#82AAFF"> (task</span><span style="--shiki-light:#212121;--shiki-dark:#82AAFF">,</span><span style="--shiki-light:#6F42C1;--shiki-dark:#82AAFF"> stages)</span><span style="--shiki-light:#24292EFF;--shiki-dark:#D6DEEB">;</span></span>
+<span class="line"><span style="--shiki-light:#24292EFF;--shiki-dark:#D6DEEB">}</span></span></code></pre>
+<p>当某阶段派发了异步请求时，异步会话 <code>task->s</code> 内的挂起计数增加，<code>rspamd_task_process</code> 立即退出以让出事件循环。当所有挂起事件归零后，异步会话唤醒注册的恢复函数（如 <code>rspamd_task_fin</code>、<code>rspamd_proxy_task_fin</code> 或 <code>rspamd_controller_check_fin_task</code>），驱动状态机继续往下流转。</p>
+<h3 id="结果输出与职责边界">结果输出与职责边界</h3>
+<p>当状态机推进完毕或发生中断时，完成回调调用应答逻辑：</p>
+<ul>
+<li>在 <code>normal</code> 进程中，调用 <code>rspamd_protocol_write_reply</code> 向套接字输出；</li>
+<li>在 <code>rspamd_proxy</code> 就地扫描路径下（<code>rspamd_proxy_scan_self_reply</code>），对 Milter 客户端通过 <code>rspamd_milter_send_task_results</code> 回写修改动作，对 HTTP 客户端通过 <code>rspamd_http_connection_write_message</code> 输出响应；</li>
+<li>在 <code>controller</code> 进程中，通过 <code>rspamd_controller_scan_reply</code> 输出响应。</li>
+</ul>
+<p>根据协议序列化逻辑（<a href="#ref-protocol">src/libserver/protocol.c</a>），现代 <code>CHECK_V2</code> 命令通常输出包含以下字段的 JSON 结构：</p>
+<ul>
+<li><code>score</code>：累积计算的评估得分；</li>
+<li><code>required_score</code>：响应中报告的分数门槛，取自可用且非 HAM、非无阈值动作的限制；不能用它单独代替 action 判断所有处置；</li>
+<li><code>action</code>：引擎建议的处置动作（如 <code>no action</code>、<code>greylist</code>、<code>add header</code>、<code>rewrite subject</code>、<code>soft reject</code> 或 <code>reject</code>）；</li>
+<li><code>symbols</code>：命中的特征符号集合及详情。</li>
+</ul>
+<p>需要强调的是，HTTP 传输层返回 200 状态码并带有 JSON 内容，仅代表 HTTP 通信与协议应答本身成功，不能直接证明扫描分析一定无误或已完整执行。响应中仍需检查 <code>is_skipped</code>、错误信息或超时中断痕迹。同时，过滤引擎给出的建议动作与 MTA 最终是否接收邮件属于完全不同的职责层次：MTA 需结合本地配置、Milter 状态码与实际投递约束，决定是否向发件方回复最终的 SMTP 接收响应。</p>
+<h3 id="失败处理超时控制与生命周期清理">失败处理、超时控制与生命周期清理</h3>
+<p>在网关运行过程中，异常处理与资源回收机制决定了系统的健壮性。</p>
+<h4 id="1-全局超时与-soft-reject-条件">1. 全局超时与 Soft Reject 条件</h4>
+<p>任务超时由 <code>rspamd_task_timeout</code> 定时器函数处理（<a href="#ref-libserver-task-c">src/libserver/task.c</a>）。若超时触发时任务仍未完成 <code>FILTERS</code> 阶段，系统检查配置 <code>soft_reject_on_timeout</code>：如果该选项开启且当前动作不是 <code>reject</code>（<code>action->action_type != METRIC_ACTION_REJECT</code>），系统将通过 <code>rspamd_add_passthrough_result</code> 注入 <code>METRIC_ACTION_SOFT_REJECT</code> 动作，附带原因 <code>"timeout processing message"</code>。接着执行 <code>rspamd_session_cleanup(task->s)</code> 清理挂起事件，强行将 <code>processed_stages</code> 置上 <code>FILTERS</code> 完成位，并再次调用 <code>rspamd_task_process</code> 继续执行后续阶段。</p>
+<p>可见，超时并不必然产生软拒收（若配置未开启或已被判定为 reject），也不会立刻中断全部生命周期，而是跳过尚未完成的主体过滤器并尝试让后续阶段收敛。若超时发生在后处理阶段，同样检查该选项并确认当前动作不是 reject 后注入软拒收，再置位 <code>RSPAMD_TASK_STAGE_DONE</code> 推进结束。</p>
+<h4 id="2-套接字看门狗防护">2. 套接字看门狗防护</h4>
+<p>在任务完整装载完毕后，系统通过 <code>guard_ev</code> 监听连接套接字（<code>rspamd_worker_guard_handler</code>），用于检测客户端是否在发送完毕后过早关闭连接。当套接字产生可读事件：</p>
+<ul>
+<li>若读取到数据，提示多余数据告警；</li>
+<li>若读取到对端关闭（<code>r == 0</code>），代码判定为对端异常关闭。此时只有在命令非 <code>CMD_CHECK_V2</code> 且配置启用了 <code>enable_shutdown_workaround</code> 时，才执行读关断兼容；对于正常的 <code>CMD_CHECK_V2</code> 命令，即便开启该兼容选项，依然会视作异常关闭并调用 <code>rspamd_session_destroy(task->s)</code> 销毁会话。</li>
+</ul>
+<h4 id="3-释放清理与所有权约束">3. 释放清理与所有权约束</h4>
+<p>任务对象的回收通常在异步会话收敛后由终结器（finalizer）触发 <code>rspamd_task_free</code> 执行，不能将其内存释放与物理网络写入完成的绝对时间顺序画等号。在 <code>rspamd_task_free</code> 中：</p>
+<ul>
+<li>逐一释放信封地址、正则运行时、HTTP 连接引用、网络地址对象以及错误对象；</li>
+<li>注销 <code>timeout_ev</code> 与 <code>guard_ev</code> 事件，关闭连接套接字 <code>sock</code>；</li>
+<li>解除 Lua 缓存引用并释放配置引用计数；</li>
+<li>只有当 <code>task->flags &#x26; RSPAMD_TASK_FLAG_OWN_POOL</code> 成立时，才会调用 <code>rspamd_mempool_delete</code> 销毁内存池。</li>
+</ul>
+<p>这意味着当 <code>rspamd_proxy</code> 或 <code>controller</code> 借用外部已有 session 内存池创建 task 时，task 销毁并不会释放借来的内存池。工程推导表明：任何生命周期需要超出 task 异步执行范围的数据，都必须自行深拷贝或建立独立所有者，不可依赖 task 内存池的隐式存续。</p>
+<h3 id="最小验证方案未运行教学设计">最小验证方案（未运行教学设计）</h3>
+<p>本方案用于在隔离环境中观察请求调用流转与超时清理边界，<strong>本方案为未运行的教学设计方案，不作为已测试保证</strong>。</p>
+<ol>
+<li><strong>测试准备</strong>：构造一封脱敏测试邮件样本（设定固定发件人、收件人），并在隔离测试网络中配置本地测试 MTA 与 Rspamd 实例。确保两路对比使用一致的规则、设置与受控依赖。记录请求关联的队列 ID（Queue-ID）、连接对端 IP（<code>client_addr</code>）及声明来源 IP（<code>from_addr</code>）。注意：队列 ID 由协议参数指定，并非直接来自 EML 头部。</li>
+<li><strong>两路转发与网络身份传递</strong>：分别配置代理开启 <code>self_scan = true</code> 以及将请求转发至独立的 <code>normal</code> 节点。通过隔离 MTA 发送相同样本。在 proxy 转发至 normal 时，连接对端 IP 自然发生改变（由客户端地址变为 proxy 地址），但声明来源 IP 应被正确保持并传递至后端。由于本地 DNS 缓存与外部规则集环境可能不同，验证时着重比对连接与信封头字段是否正确传递，不应强求两次检测输出的特征符号完全相同。</li>
+<li><strong>依赖超时与连接断开观察</strong>：配置外部测试依赖产生确定性延迟并使总耗时超出 <code>task_timeout</code>，在开启 <code>soft_reject_on_timeout</code> 后，分别验证当前命中为非 reject（注入软拒收）与已被判定为 reject（保留 reject）时的输出差异，观察超时处理中挂起事件的清理与后续阶段推进；同时模拟客户端在发起 HTTP 检测后主动重置套接字，验证看门狗捕获异常关闭后销毁异步会话与释放资源的过程。在此过程中，MTA 最终对发件方返回的 SMTP 状态码需在隔离 MTA 端进行观察。</li>
+</ol>
+<!--/email_off-->
+<hr>
+<h3 id="参考资料与源码位置">参考资料与源码位置</h3>
+<p><a id="ref-src-worker" href="https://github.com/rspamd/rspamd/blob/4c56c1210dac78be727fc07d1c29c140034e4b19/src/worker.c" target="_blank" rel="noopener noreferrer">Rspamd 2.7 源码: src/worker.c (normal_worker 定义与请求入口)</a></p>
+<p><a id="ref-src-proxy" href="https://github.com/rspamd/rspamd/blob/4c56c1210dac78be727fc07d1c29c140034e4b19/src/rspamd_proxy.c" target="_blank" rel="noopener noreferrer">Rspamd 2.7 源码: src/rspamd_proxy.c (rspamd_proxy_worker、self_scan 与 Milter 处理)</a></p>
+<p><a id="ref-controller" href="https://github.com/rspamd/rspamd/blob/4c56c1210dac78be727fc07d1c29c140034e4b19/src/controller.c" target="_blank" rel="noopener noreferrer">Rspamd 2.7 源码: src/controller.c (controller_worker 与鉴权扫描端点)</a></p>
+<p><a id="ref-libserver-task-h" href="https://github.com/rspamd/rspamd/blob/4c56c1210dac78be727fc07d1c29c140034e4b19/src/libserver/task.h" target="_blank" rel="noopener noreferrer">Rspamd 2.7 源码: src/libserver/task.h (struct rspamd_task 核心数据结构定义)</a></p>
+<p><a id="ref-libserver-task-c" href="https://github.com/rspamd/rspamd/blob/4c56c1210dac78be727fc07d1c29c140034e4b19/src/libserver/task.c" target="_blank" rel="noopener noreferrer">Rspamd 2.7 源码: src/libserver/task.c (任务创建、状态机推进、超时与释放)</a></p>
+<p><a id="ref-protocol" href="https://github.com/rspamd/rspamd/blob/4c56c1210dac78be727fc07d1c29c140034e4b19/src/libserver/protocol.c" target="_blank" rel="noopener noreferrer">Rspamd 2.7 源码: src/libserver/protocol.c (HTTP 与 JSON 协议响应生成)</a></p></article><hr class="my-8 border-dashed"><div id="btt-btn-container" class="fixed inset-e-4 bottom-8 z-50 md:sticky md:inset-e-auto md:float-end md:me-1 translate-y-14 opacity-0 transition duration-500"><button data-button="back-to-top" class="group bg-background relative px-2 py-1 size-14 rounded-full shadow-xl md:h-8 md:w-fit md:rounded-md md:shadow-none md:focus-visible:rounded-none md:bg-background/35 md:bg-clip-padding md:backdrop-blur-lg"><span id="progress-indicator" class="absolute inset-0 -z-10 block size-14 scale-110 rounded-full bg-transparent md:hidden md:h-8 md:rounded-md"></span><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="inline-block rotate-90 md:hidden" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M5 12h14M5 12l6 6M5 12l6-6" /></svg><span class="group-hover:text-accent sr-only text-sm md:not-sr-only"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="inline-block size-4" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M12 5v14M16 9l-4-4M8 9l4-4" /></svg> 回到顶部</span></button></div><script data-astro-rerun>
+  function backToTop() {
+    const rootElement = document.documentElement;
+    const btnContainer = document.querySelector("#btt-btn-container");
+    const backToTopBtn = document.querySelector("[data-button='back-to-top']");
+    const progressIndicator = document.querySelector("#progress-indicator");
+
+    if (!rootElement || !btnContainer || !backToTopBtn || !progressIndicator)
+      return;
+
+    backToTopBtn.addEventListener("click", () => {
+      document.body.scrollTop = 0;
+      document.documentElement.scrollTop = 0;
+    });
+
+    let lastVisible = null;
+    function handleScroll() {
+      const scrollTotal = rootElement.scrollHeight - rootElement.clientHeight;
+      const scrollTop = rootElement.scrollTop;
+      const scrollPercent = Math.floor((scrollTop / scrollTotal) * 100);
+
+      progressIndicator.style.setProperty(
+        "background-image",
+        `conic-gradient(var(--accent), var(--accent) ${scrollPercent}%, transparent ${scrollPercent}%)`
+      );
+
+      const isVisible = scrollTop / scrollTotal > 0.3;
+
+      if (isVisible !== lastVisible) {
+        btnContainer.classList.toggle("opacity-100", isVisible);
+        btnContainer.classList.toggle("translate-y-0", isVisible);
+        btnContainer.classList.toggle("opacity-0", !isVisible);
+        btnContainer.classList.toggle("translate-y-14", !isVisible);
+        lastVisible = isVisible;
+      }
+    }
+
+    let ticking = false;
+    document.addEventListener("scroll", () => {
+      if (!ticking) {
+        window.requestAnimationFrame(() => {
+          handleScroll();
+          ticking = false;
+        });
+        ticking = true;
+      }
+    });
+  }
+  backToTop();
+</script><ul class="mt-4 mb-8 flex flex-wrap gap-4 sm:my-8"><li><a data-astro-transition-scope="astro-bztu2lml-1" href="/tags/邮箱系统/" class="flex items-center gap-0.5 border-foreground border-b-2 border-dashed hover:border-accent hover:text-accent hover:-mt-0.5 focus-visible:text-accent focus-visible:border-none text-sm"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="opacity-80 size-4" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M5 9h14M5 15h14M11 4 7 20M17 4l-4 16" /></svg>邮箱系统</a></li><li><a data-astro-transition-scope="astro-bztu2lml-2" href="/tags/反垃圾邮件/" class="flex items-center gap-0.5 border-foreground border-b-2 border-dashed hover:border-accent hover:text-accent hover:-mt-0.5 focus-visible:text-accent focus-visible:border-none text-sm"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="opacity-80 size-4" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M5 9h14M5 15h14M11 4 7 20M17 4l-4 16" /></svg>反垃圾邮件</a></li></ul><hr class="my-8 border-dashed"><div data-pagefind-ignore class="my-8 grid grid-cols-1 gap-6 sm:grid-cols-2"><a href="/posts/mail-gateway-milter-topology/" class="flex w-full gap-1 hover:opacity-75"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="inline-block flex-none rtl:rotate-180" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M5 12h14M5 12l6 6M5 12l6-6" /></svg><div><span>上一篇</span><div class="text-accent/85 text-sm">反垃圾邮件网关的拓扑与 Milter 接入设计</div></div></a><a href="/posts/mail-rspamd-mime-task/" class="flex w-full justify-end gap-1 text-end hover:opacity-75 sm:col-start-2"><div><span>下一篇</span><div class="text-accent/85 text-sm">Rspamd的MIME解析与任务生命周期</div></div><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="inline-block flex-none rtl:rotate-180" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M5 12h14M13 18l6-6M13 6l6 6" /></svg></a></div></main><footer class="app-layout mt-auto"><div class="border-border flex flex-col items-center justify-between border-t py-6 sm:flex-row-reverse sm:py-4"><div class="flex flex-wrap items-center gap-1"><a href="https://github.com/SaromChars" title="Sarom Chars 的 GitHub" class="group inline-flex items-center gap-1 hover:text-accent p-2 hover:rotate-6 sm:p-1"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="inline-block size-6 scale-125 fill-transparent stroke-current stroke-2 opacity-90 group-hover:fill-transparent sm:scale-110" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M9 19c-4.3 1.4-4.3-2.5-6-3m12 5v-3.5c0-1 .1-1.4-.5-2 2.8-.3 5.5-1.4 5.5-6a4.6 4.6 0 0 0-1.3-3.2 4.2 4.2 0 0 0-.1-3.2s-1.1-.3-3.5 1.3a12.3 12.3 0 0 0-6.2 0C6.5 2.8 5.4 3.1 5.4 3.1a4.2 4.2 0 0 0-.1 3.2A4.6 4.6 0 0 0 4 9.5c0 4.6 2.7 5.7 5.5 6-.6.6-.6 1.2-.5 2V21" /></svg><span class="sr-only">Sarom Chars 的 GitHub</span></a></div><div class="my-2 flex flex-col items-center whitespace-nowrap sm:flex-row"><span>版权 &#169; 2026</span><span class="hidden sm:inline">&nbsp;|&nbsp;</span><span>保留所有权利。</span></div></div></footer><script type="module">var e=`theme`,t=`light`,n=`dark`;function r(){return localStorage.getItem(e)||(window.matchMedia(`(prefers-color-scheme: dark)`).matches?n:t)}var i=window.__theme?.value??r();function a(){localStorage.setItem(e,i),o()}function o(){let e=document.firstElementChild;e?.setAttribute(`data-theme`,i),e?.classList.toggle(`dark`,i===n),document.querySelector(`#theme-btn`)?.setAttribute(`aria-label`,i);let t=window.getComputedStyle(document.body).backgroundColor;document.querySelector(`meta[name='theme-color']`)?.setAttribute(`content`,t)}function s(){o(),document.querySelector(`#theme-btn`)?.addEventListener(`click`,()=>{i=i===t?n:t,a()})}s(),document.addEventListener(`astro:after-swap`,s),document.addEventListener(`astro:before-swap`,e=>{let t=document.querySelector(`meta[name='theme-color']`)?.getAttribute(`content`);t&&e.newDocument.querySelector(`meta[name='theme-color']`)?.setAttribute(`content`,t)}),window.matchMedia(`(prefers-color-scheme: dark)`).addEventListener(`change`,({matches:e})=>{i=e?n:t,a()});</script></body></html><script type="module">var e=document.querySelector(`#article`);if(e?.querySelector(`a[href^="#ref-"]`)){let t=null,n=!1,r=document.createElement(`button`);r.type=`button`,r.className=`citation-return`,r.textContent=`返回阅读位置`,r.setAttribute(`data-pagefind-ignore`,``),e.addEventListener(`click`,n=>{if(n.button!==0||n.metaKey||n.ctrlKey||n.shiftKey||n.altKey)return;let i=n.target instanceof Element?n.target.closest(`a[href^="#ref-"]`):null;if(!i||!e.contains(i))return;let a=i.hash,o=document.getElementById(decodeURIComponent(a.slice(1)));o&&e.contains(o)&&(t={source:i,url:window.location.href,top:window.scrollY,left:window.scrollX,targetHash:a},o.insertAdjacentElement(`afterend`,r))}),r.addEventListener(`click`,()=>{if(!t||n)return;let e=t,i=i=>{r.remove(),window.requestAnimationFrame(()=>{window.requestAnimationFrame(()=>{e.source.focus({preventScroll:!0}),window.scrollTo({top:e.top,left:e.left,behavior:`instant`}),t=null,n=!1,i?.()})})};window.location.href===e.url?i():(n=!0,window.addEventListener(`popstate`,()=>{let e=window.history.scrollRestoration;window.history.scrollRestoration=`manual`,window.setTimeout(()=>{i(()=>{window.history.scrollRestoration=e})},0)},{once:!0}),window.history.back())}),window.addEventListener(`hashchange`,()=>{!n&&t&&window.location.hash!==t.targetHash&&(r.remove(),t=null)})}</script><script data-astro-rerun>
+  function createProgressBar() {
+    const progressContainer = document.createElement("div");
+    progressContainer.className =
+      "progress-container fixed top-0 z-10 h-1 w-full bg-background";
+
+    const progressBar = document.createElement("div");
+    progressBar.className = "progress-bar h-1 w-0 bg-accent";
+    progressBar.id = "myBar";
+
+    progressContainer.appendChild(progressBar);
+    document.body.appendChild(progressContainer);
+  }
+  createProgressBar();
+
+  function updateScrollProgress() {
+    document.addEventListener("scroll", () => {
+      const winScroll =
+        document.body.scrollTop || document.documentElement.scrollTop;
+      const height =
+        document.documentElement.scrollHeight -
+        document.documentElement.clientHeight;
+      const scrolled = (winScroll / height) * 100;
+      if (document) {
+        const myBar = document.getElementById("myBar");
+        if (myBar) {
+          myBar.style.width = scrolled + "%";
+        }
+      }
+    });
+  }
+  updateScrollProgress();
+
+  function addHeadingLinks() {
+    const headings = Array.from(
+      document.querySelectorAll("h2, h3, h4, h5, h6")
+    );
+    for (const heading of headings) {
+      heading.classList.add("group");
+      const link = document.createElement("a");
+      link.className =
+        "heading-link ms-2 no-underline opacity-75 md:opacity-0 md:group-hover:opacity-100 md:focus:opacity-100";
+      link.href = "#" + heading.id;
+
+      const span = document.createElement("span");
+      span.ariaHidden = "true";
+      span.innerText = "#";
+      link.appendChild(span);
+      heading.appendChild(link);
+    }
+  }
+  addHeadingLinks();
+
+  function attachCopyButtons() {
+    const copyButtonLabel = "Copy";
+    const codeBlocks = Array.from(document.querySelectorAll("pre"));
+
+    for (const codeBlock of codeBlocks) {
+      const wrapper = document.createElement("div");
+      wrapper.style.position = "relative";
+
+      const computedStyle = getComputedStyle(codeBlock);
+      const hasFileNameOffset =
+        computedStyle.getPropertyValue("--file-name-offset").trim() !== "";
+
+      const topClass = hasFileNameOffset
+        ? "top-(--file-name-offset)"
+        : "-top-3";
+
+      const copyButton = document.createElement("button");
+      copyButton.className = `copy-code absolute end-3 ${topClass} rounded bg-muted border border-muted px-2 py-1 text-xs leading-4 text-foreground font-medium`;
+      copyButton.innerHTML = copyButtonLabel;
+      codeBlock.setAttribute("tabindex", "0");
+      codeBlock.appendChild(copyButton);
+
+      codeBlock?.parentNode?.insertBefore(wrapper, codeBlock);
+      wrapper.appendChild(codeBlock);
+
+      copyButton.addEventListener("click", async () => {
+        await copyCode(codeBlock, copyButton);
+      });
+    }
+
+    async function copyCode(block, button) {
+      const code = block.querySelector("code");
+      const text = code?.innerText;
+
+      await navigator.clipboard.writeText(text ?? "");
+
+      button.innerText = "Copied";
+
+      setTimeout(() => {
+        button.innerText = copyButtonLabel;
+      }, 700);
+    }
+  }
+  attachCopyButtons();
+
+  /** Accessible image lightbox for article images. */
+  function initLightbox() {
+    const article = document.getElementById("article");
+    if (!article) return;
+
+    const prefersReducedMotion = () =>
+      window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+    let overlay = null;
+    let lastFocused = null;
+    let removeDragListeners = null;
+
+    // Defer attribute mutations so they don't push the LCP timestamp.
+    // Event listeners below use delegation and don't need the attributes to exist yet.
+    requestAnimationFrame(() => {
+      const images = Array.from(article.querySelectorAll("img"));
+      for (const image of images) {
+        if (image.closest("a")) continue;
+        image.setAttribute("role", "button");
+        image.setAttribute("tabindex", "0");
+        image.setAttribute("aria-haspopup", "dialog");
+        image.setAttribute(
+          "aria-label",
+          image.alt ? `Zoom image: ${image.alt}` : "Zoom image"
+        );
+      }
+    });
+
+    function open(src, alt, trigger) {
+      if (overlay) return;
+      lastFocused = trigger ?? document.activeElement;
+
+      overlay = document.createElement("div");
+      overlay.setAttribute("role", "dialog");
+      overlay.setAttribute("aria-modal", "true");
+      overlay.setAttribute(
+        "aria-label",
+        alt ? `Image preview: ${alt}` : "Image preview"
+      );
+      overlay.className =
+        "fixed inset-0 z-50 flex cursor-zoom-out items-center justify-center bg-black/70 backdrop-blur-sm opacity-0 transition-opacity duration-200 motion-reduce:transition-none";
+
+      const closeButton = document.createElement("button");
+      closeButton.type = "button";
+      closeButton.setAttribute("aria-label", "Close image preview");
+      closeButton.className =
+        "absolute end-4 top-4 z-1 flex size-11 items-center justify-center rounded bg-black/50 text-3xl leading-none text-white";
+      closeButton.innerHTML = "&#10005;";
+      closeButton.addEventListener("click", close);
+
+      const image = document.createElement("img");
+      image.src = src;
+      image.alt = "";
+      image.className =
+        "max-h-[90dvh] max-w-[90dvw] cursor-default object-contain transition-transform duration-100 ease-out motion-reduce:transition-none data-[zoom=drag]:cursor-grabbing data-[zoom=drag]:transition-none data-[zoom=in]:cursor-grab";
+
+      overlay.append(closeButton, image);
+      overlay.addEventListener("click", e => {
+        if (e.target === overlay && currentScale <= 1) close();
+      });
+
+      let currentScale = 1;
+      let translateX = 0;
+      let translateY = 0;
+      let initialDist = 0;
+      let initialScale = 1;
+      let panStartX = 0;
+      let panStartY = 0;
+      let panStartTranslateX = 0;
+      let panStartTranslateY = 0;
+      let lastTapTime = 0;
+
+      function applyTransform() {
+        image.style.transform = `scale(${currentScale}) translate(${translateX}px, ${translateY}px)`;
+        // A backdrop click only closes at fit size, so drop the zoom-out cursor while zoomed.
+        overlay?.classList.toggle("cursor-zoom-out", currentScale <= 1);
+      }
+
+      function resetTransform() {
+        currentScale = 1;
+        translateX = 0;
+        translateY = 0;
+        image.style.transform = "";
+        image.removeAttribute("data-zoom");
+        overlay?.classList.add("cursor-zoom-out");
+      }
+
+      // Keep the zoomed image from being panned past its edges.
+      function clampTranslate() {
+        if (!overlay) return;
+        const maxX = Math.max(
+          0,
+          (image.clientWidth - overlay.clientWidth / currentScale) / 2
+        );
+        const maxY = Math.max(
+          0,
+          (image.clientHeight - overlay.clientHeight / currentScale) / 2
+        );
+        translateX = Math.min(maxX, Math.max(-maxX, translateX));
+        translateY = Math.min(maxY, Math.max(-maxY, translateY));
+      }
+
+      overlay.addEventListener(
+        "touchstart",
+        e => {
+          const t = e.touches;
+          if (t.length === 2) {
+            image.setAttribute("data-zoom", "drag");
+            initialDist = Math.hypot(
+              t[1].clientX - t[0].clientX,
+              t[1].clientY - t[0].clientY
+            );
+            initialScale = currentScale;
+          } else if (t.length === 1) {
+            const now = Date.now();
+            if (now - lastTapTime < 300) {
+              e.preventDefault();
+              if (currentScale > 1) {
+                resetTransform();
+              } else {
+                currentScale = 2;
+                translateX = 0;
+                translateY = 0;
+                applyTransform();
+                image.setAttribute("data-zoom", "in");
+              }
+              lastTapTime = 0;
+              panStartX = t[0].clientX;
+              panStartY = t[0].clientY;
+              panStartTranslateX = translateX;
+              panStartTranslateY = translateY;
+            } else {
+              lastTapTime = now;
+              if (currentScale > 1) {
+                image.setAttribute("data-zoom", "drag");
+                panStartX = t[0].clientX;
+                panStartY = t[0].clientY;
+                panStartTranslateX = translateX;
+                panStartTranslateY = translateY;
+              }
+            }
+          }
+        },
+        { passive: false }
+      );
+
+      overlay.addEventListener(
+        "touchmove",
+        e => {
+          const t = e.touches;
+          if (t.length === 2) {
+            e.preventDefault();
+            const dist = Math.hypot(
+              t[1].clientX - t[0].clientX,
+              t[1].clientY - t[0].clientY
+            );
+            const oldScale = currentScale;
+            currentScale = Math.min(
+              4,
+              Math.max(1, initialScale * (dist / initialDist))
+            );
+
+            // Zoom to the geometric center of the two fingers
+            const midX = (t[0].clientX + t[1].clientX) / 2;
+            const midY = (t[0].clientY + t[1].clientY) / 2;
+            const ox = overlay.clientWidth / 2;
+            const oy = overlay.clientHeight / 2;
+            translateX =
+              (midX - ox) * (1 / currentScale - 1 / oldScale) + translateX;
+            translateY =
+              (midY - oy) * (1 / currentScale - 1 / oldScale) + translateY;
+            clampTranslate();
+            applyTransform();
+          } else if (t.length === 1) {
+            if (currentScale > 1) {
+              e.preventDefault();
+              image.setAttribute("data-zoom", "drag");
+              translateX =
+                panStartTranslateX + (t[0].clientX - panStartX) / currentScale;
+              translateY =
+                panStartTranslateY + (t[0].clientY - panStartY) / currentScale;
+              clampTranslate();
+              applyTransform();
+            } else {
+              e.preventDefault();
+            }
+          }
+        },
+        { passive: false }
+      );
+
+      overlay.addEventListener("touchend", e => {
+        if (e.touches.length === 0) {
+          if (currentScale > 1) {
+            image.setAttribute("data-zoom", "in");
+          } else {
+            image.removeAttribute("data-zoom");
+          }
+          if (currentScale <= 1.05) resetTransform();
+        }
+      });
+
+      overlay.addEventListener("touchcancel", e => {
+        if (e.touches.length === 0) {
+          if (currentScale > 1) {
+            image.setAttribute("data-zoom", "in");
+          } else {
+            image.removeAttribute("data-zoom");
+          }
+          if (currentScale <= 1.05) resetTransform();
+        }
+      });
+
+      overlay.addEventListener(
+        "wheel",
+        e => {
+          e.preventDefault();
+          const oldScale = currentScale;
+          const delta = -e.deltaY * 0.001;
+          currentScale = Math.min(4, Math.max(1, currentScale * (1 + delta)));
+
+          if (currentScale <= 1.05) {
+            resetTransform();
+          } else {
+            image.setAttribute("data-zoom", "in");
+            // Zoom to cursor: adjust translate so the point under cursor stays fixed
+            const ox = overlay.clientWidth / 2;
+            const oy = overlay.clientHeight / 2;
+            translateX =
+              (e.clientX - ox) * (1 / currentScale - 1 / oldScale) + translateX;
+            translateY =
+              (e.clientY - oy) * (1 / currentScale - 1 / oldScale) + translateY;
+            clampTranslate();
+            applyTransform();
+          }
+        },
+        { passive: false }
+      );
+
+      let isMouseDown = false;
+      let mouseStartX = 0;
+      let mouseStartY = 0;
+
+      overlay.addEventListener("mousedown", e => {
+        if (e.button !== 0 || currentScale <= 1) return;
+        if (e.target.closest("button")) return;
+        isMouseDown = true;
+        mouseStartX = e.clientX;
+        mouseStartY = e.clientY;
+        panStartTranslateX = translateX;
+        panStartTranslateY = translateY;
+        image.setAttribute("data-zoom", "drag");
+        e.preventDefault();
+      });
+
+      function onMouseMove(e) {
+        if (!isMouseDown || !overlay) return;
+        translateX =
+          panStartTranslateX + (e.clientX - mouseStartX) / currentScale;
+        translateY =
+          panStartTranslateY + (e.clientY - mouseStartY) / currentScale;
+        clampTranslate();
+        applyTransform();
+      }
+
+      function onMouseUp() {
+        if (!isMouseDown) return;
+        isMouseDown = false;
+        if (currentScale > 1) {
+          image.setAttribute("data-zoom", "in");
+        } else {
+          image.removeAttribute("data-zoom");
+        }
+      }
+
+      document.addEventListener("mousemove", onMouseMove);
+      document.addEventListener("mouseup", onMouseUp);
+      removeDragListeners = () => {
+        document.removeEventListener("mousemove", onMouseMove);
+        document.removeEventListener("mouseup", onMouseUp);
+      };
+
+      document.body.appendChild(overlay);
+      document.documentElement.style.overflow = "hidden";
+      document.addEventListener("keydown", onKeyDown);
+      window.__closeLightbox = close;
+
+      requestAnimationFrame(() => overlay?.classList.add("opacity-100"));
+      closeButton.focus();
+    }
+
+    function close() {
+      if (!overlay) return;
+      const el = overlay;
+      overlay = null;
+      el.classList.add("pointer-events-none");
+      window.__closeLightbox = null;
+
+      document.removeEventListener("keydown", onKeyDown);
+      removeDragListeners?.();
+      removeDragListeners = null;
+      document.documentElement.style.overflow = "";
+      lastFocused?.focus();
+      lastFocused = null;
+
+      if (prefersReducedMotion()) {
+        el.remove();
+        return;
+      }
+      const remove = () => el.remove();
+      el.addEventListener("transitionend", remove, { once: true });
+      setTimeout(remove, 250); // fallback in case transitionend never fires
+      el.classList.remove("opacity-100");
+    }
+
+    function onKeyDown(e) {
+      if (e.key === "Escape") {
+        close();
+      } else if (e.key === "Tab") {
+        trapFocus(e);
+      }
+    }
+
+    // Keep keyboard focus inside the open dialog.
+    function trapFocus(e) {
+      if (!overlay) return;
+      const focusables = overlay.querySelectorAll(
+        'a[href], button, [tabindex]:not([tabindex="-1"])'
+      );
+      if (focusables.length === 0) return;
+      const first = focusables[0];
+      const last = focusables[focusables.length - 1];
+      if (e.shiftKey && document.activeElement === first) {
+        e.preventDefault();
+        last.focus();
+      } else if (!e.shiftKey && document.activeElement === last) {
+        e.preventDefault();
+        first.focus();
+      }
+    }
+
+    function triggerFromEvent(e) {
+      const image = e.target.closest("img");
+      if (!image || !article.contains(image) || image.closest("a")) return null;
+      return image;
+    }
+
+    function activate(image) {
+      open(image.currentSrc || image.src, image.alt, image);
+    }
+
+    article.addEventListener("click", e => {
+      const image = triggerFromEvent(e);
+      if (!image) return;
+      e.preventDefault();
+      activate(image);
+    });
+
+    article.addEventListener("keydown", e => {
+      if (e.key !== "Enter" && e.key !== " " && e.key !== "Spacebar") return;
+      const image = triggerFromEvent(e);
+      if (!image) return;
+      e.preventDefault();
+      activate(image);
+    });
+  }
+  initLightbox();
+
+  if (!window.__lightboxSwapBound) {
+    window.__lightboxSwapBound = true;
+    document.addEventListener("astro:before-swap", () =>
+      window.__closeLightbox?.()
+    );
+  }
+
+  document.addEventListener("astro:after-swap", () =>
+    window.scrollTo({ left: 0, top: 0, behavior: "instant" })
+  );
+</script>

@@ -1,0 +1,904 @@
+<!DOCTYPE html><html dir="ltr" lang="zh-CN" class="overflow-y-scroll scroll-smooth"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1"><link rel="icon" type="image/png" href="/images/favicon-32x32-next.png"><link rel="icon" href="/favicon.ico"><link rel="canonical" href="https://www.saromchars.tech/posts/mail-dovecot-auth-userdb/"><meta name="generator" content="Astro v7.4.5"><!-- Primary meta --><title>Dovecot 认证与用户信息查询 | Sarom&#39;s Blog</title><meta name="title" content="Dovecot 认证与用户信息查询 | Sarom's Blog"><meta name="description" content="面向自研账号系统接入 Dovecot 的后端工程师，解析 passdb 与 userdb 职责切分、auth-worker 进程模型、字段契约与凭据失效方案。"><meta name="author" content="Sarom Chars"><link rel="sitemap" href="/sitemap-index.xml"><!-- Open Graph --><meta property="og:type" content="article"><meta property="og:site_name" content="Sarom's Blog"><meta property="og:title" content="Dovecot 认证与用户信息查询 | Sarom's Blog"><meta property="og:description" content="面向自研账号系统接入 Dovecot 的后端工程师，解析 passdb 与 userdb 职责切分、auth-worker 进程模型、字段契约与凭据失效方案。"><meta property="og:url" content="https://www.saromchars.tech/posts/mail-dovecot-auth-userdb/"><meta property="og:image" content="https://www.saromchars.tech/og.png"><!-- Twitter / X --><meta property="twitter:card" content="summary_large_image"><meta property="twitter:url" content="https://www.saromchars.tech/posts/mail-dovecot-auth-userdb/"><meta property="twitter:title" content="Dovecot 认证与用户信息查询 | Sarom's Blog"><meta property="twitter:description" content="面向自研账号系统接入 Dovecot 的后端工程师，解析 passdb 与 userdb 职责切分、auth-worker 进程模型、字段契约与凭据失效方案。"><meta property="twitter:image" content="https://www.saromchars.tech/og.png"><!-- RSS autodiscovery --><link rel="alternate" type="application/rss+xml" title="Sarom's Blog" href="https://www.saromchars.tech/rss.xml"><!-- Filled at runtime by theme.ts to match the current background colour --><meta name="theme-color" content=""><!-- Extra head content injected by child layouts (e.g. JSON-LD, article meta) --><meta property="article:published_time" content="2021-11-14T02:00:00.000Z"><script type="application/ld+json">{"@context":"https://schema.org","@type":"BlogPosting","headline":"Dovecot 认证与用户信息查询","mainEntityOfPage":"https://www.saromchars.tech/posts/mail-dovecot-auth-userdb/","datePublished":"2021-11-14T02:00:00.000Z","author":[{"@type":"Person","name":"Sarom Chars","url":"https://github.com/SaromChars"}]}</script><!--
+      Inline FOUC-prevention script: sets data-theme on <html> before
+      the browser paints. Runs synchronously, no defer/async.
+    --><script>
+      (function () {
+        const stored = localStorage.getItem("theme");
+        const prefersDark = window.matchMedia(
+          "(prefers-color-scheme: dark)"
+        ).matches;
+        const theme = stored ?? (prefersDark ? "dark" : "light");
+        const root = document.firstElementChild;
+        root?.setAttribute("data-theme", theme);
+        root?.classList.toggle("dark", theme === "dark");
+        // Expose value so theme.ts can skip re-detection.
+        window.__theme = { value: theme };
+      })();
+    </script><meta name="robots" content="index, follow"><script async src="https://www.googletagmanager.com/gtag/js?id=G-WJJJTJ4FWX"></script><script>(function(){const measurementId = "G-WJJJTJ4FWX";
+
+    window.dataLayer = window.dataLayer || [];
+    function gtag(){ window.dataLayer.push(arguments); }
+    gtag('js', new Date());
+    gtag('config', measurementId);
+  })();</script><style>@keyframes astroFadeInOut{0%{opacity:1}to{opacity:0}}@keyframes astroFadeIn{0%{opacity:0;mix-blend-mode:plus-lighter}to{opacity:1;mix-blend-mode:plus-lighter}}@keyframes astroFadeOut{0%{opacity:1;mix-blend-mode:plus-lighter}to{opacity:0;mix-blend-mode:plus-lighter}}@keyframes astroSlideFromRight{0%{transform:translate(100%)}}@keyframes astroSlideFromLeft{0%{transform:translate(-100%)}}@keyframes astroSlideToRight{to{transform:translate(100%)}}@keyframes astroSlideToLeft{to{transform:translate(-100%)}}@media (prefers-reduced-motion){::view-transition-group(*),::view-transition-old(*),::view-transition-new(*),[data-astro-transition-scope]{animation:none!important}}
+</style><link rel="stylesheet" href="/_astro/Footer.wlxowfqU.css"><style>[data-astro-transition-scope="astro-bztu2lml-1"] { view-transition-name: \90AE\7BB1\7CFB\7EDF; }@layer astro { ::view-transition-old(\90AE\7BB1\7CFB\7EDF) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }::view-transition-new(\90AE\7BB1\7CFB\7EDF) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }[data-astro-transition=back]::view-transition-old(\90AE\7BB1\7CFB\7EDF) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition=back]::view-transition-new(\90AE\7BB1\7CFB\7EDF) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; } }[data-astro-transition-fallback="old"] [data-astro-transition-scope="astro-bztu2lml-1"],
+			[data-astro-transition-fallback="old"][data-astro-transition-scope="astro-bztu2lml-1"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition-fallback="new"] [data-astro-transition-scope="astro-bztu2lml-1"],
+			[data-astro-transition-fallback="new"][data-astro-transition-scope="astro-bztu2lml-1"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }[data-astro-transition=back][data-astro-transition-fallback="old"] [data-astro-transition-scope="astro-bztu2lml-1"],
+			[data-astro-transition=back][data-astro-transition-fallback="old"][data-astro-transition-scope="astro-bztu2lml-1"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition=back][data-astro-transition-fallback="new"] [data-astro-transition-scope="astro-bztu2lml-1"],
+			[data-astro-transition=back][data-astro-transition-fallback="new"][data-astro-transition-scope="astro-bztu2lml-1"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }</style><style>[data-astro-transition-scope="astro-bztu2lml-2"] { view-transition-name: \8EAB\4EFD\8BA4\8BC1; }@layer astro { ::view-transition-old(\8EAB\4EFD\8BA4\8BC1) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }::view-transition-new(\8EAB\4EFD\8BA4\8BC1) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }[data-astro-transition=back]::view-transition-old(\8EAB\4EFD\8BA4\8BC1) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition=back]::view-transition-new(\8EAB\4EFD\8BA4\8BC1) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; } }[data-astro-transition-fallback="old"] [data-astro-transition-scope="astro-bztu2lml-2"],
+			[data-astro-transition-fallback="old"][data-astro-transition-scope="astro-bztu2lml-2"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition-fallback="new"] [data-astro-transition-scope="astro-bztu2lml-2"],
+			[data-astro-transition-fallback="new"][data-astro-transition-scope="astro-bztu2lml-2"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }[data-astro-transition=back][data-astro-transition-fallback="old"] [data-astro-transition-scope="astro-bztu2lml-2"],
+			[data-astro-transition=back][data-astro-transition-fallback="old"][data-astro-transition-scope="astro-bztu2lml-2"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition=back][data-astro-transition-fallback="new"] [data-astro-transition-scope="astro-bztu2lml-2"],
+			[data-astro-transition=back][data-astro-transition-fallback="new"][data-astro-transition-scope="astro-bztu2lml-2"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }</style><style>[data-astro-transition-scope="astro-bztu2lml-3"] { view-transition-name: \8BBF\95EE\63A7\5236; }@layer astro { ::view-transition-old(\8BBF\95EE\63A7\5236) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }::view-transition-new(\8BBF\95EE\63A7\5236) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }[data-astro-transition=back]::view-transition-old(\8BBF\95EE\63A7\5236) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition=back]::view-transition-new(\8BBF\95EE\63A7\5236) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; } }[data-astro-transition-fallback="old"] [data-astro-transition-scope="astro-bztu2lml-3"],
+			[data-astro-transition-fallback="old"][data-astro-transition-scope="astro-bztu2lml-3"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition-fallback="new"] [data-astro-transition-scope="astro-bztu2lml-3"],
+			[data-astro-transition-fallback="new"][data-astro-transition-scope="astro-bztu2lml-3"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }[data-astro-transition=back][data-astro-transition-fallback="old"] [data-astro-transition-scope="astro-bztu2lml-3"],
+			[data-astro-transition=back][data-astro-transition-fallback="old"][data-astro-transition-scope="astro-bztu2lml-3"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition=back][data-astro-transition-fallback="new"] [data-astro-transition-scope="astro-bztu2lml-3"],
+			[data-astro-transition=back][data-astro-transition-fallback="new"][data-astro-transition-scope="astro-bztu2lml-3"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }</style></head><body class="bg-background font-app text-foreground selection:bg-accent/75 selection:text-accent-foreground flex min-h-svh flex-col"><a id="skip-to-content" href="#main-content" class="bg-background text-accent absolute inset-s-16 -top-full z-50 px-3 py-2 backdrop-blur-lg transition-all focus:top-4">跳到正文</a><header class="app-layout flex flex-col items-center justify-between sm:flex-row"><div class="border-border bg-background relative flex w-full items-baseline justify-between border-b py-4 sm:items-center sm:py-6"><a href="/" class="absolute py-1 text-xl leading-8 font-semibold whitespace-nowrap sm:static sm:my-auto sm:text-2xl sm:leading-none">Sarom&#39;s Blog</a><nav id="nav-menu" class="flex w-full flex-col items-center sm:ms-2 sm:flex-row sm:justify-end sm:space-x-4 sm:py-0"><button id="menu-btn" class="focus-outline self-end p-2 sm:hidden" aria-label="展开菜单" aria-expanded="false" aria-controls="menu-items" data-label-open="展开菜单" data-label-close="收起菜单"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="hidden" viewBox="0 0 24 24" id="close-icon"><path stroke="none" d="M0 0h24v24H0z" /><path d="M18 6 6 18M6 6l12 12" /></svg><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="icon icon-tabler icons-tabler-outline icon-tabler-menu-deep" viewBox="0 0 24 24" id="menu-icon"><path stroke="none" d="M0 0h24v24H0z" /><path d="M4 6h16M7 12h13M10 18h10" /></svg></button><ul id="menu-items" class="[&amp;&gt;li&gt;a]:hover:text-accent mt-4 hidden w-44 grid-cols-2 place-content-center gap-2 sm:mt-0 sm:flex sm:w-auto sm:gap-x-5 sm:gap-y-0 sm:[&amp;&gt;li]:h-8 [&amp;&gt;li&gt;a]:block [&amp;&gt;li&gt;a]:px-4 [&amp;&gt;li&gt;a]:py-3 [&amp;&gt;li&gt;a]:text-center [&amp;&gt;li&gt;a]:font-medium sm:[&amp;&gt;li&gt;a]:px-2 sm:[&amp;&gt;li&gt;a]:py-1"><li class="col-span-2"><a href="/posts/" class="active-nav">文章</a></li><li class="col-span-2"><a href="/tags/">标签</a></li><li class="col-span-2"><a href="/about/">关于</a></li><li class="col-span-2"><a href="/archives/" title="归档" aria-label="归档" class="group inline-flex items-center gap-1 hover:text-accent focus-outline flex size-full justify-center p-3 sm:relative sm:size-8 sm:p-0"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="hidden sm:absolute sm:top-1/2 sm:left-1/2 sm:block sm:size-6 sm:-translate-x-1/2 sm:-translate-y-1/2" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M3 6a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2 2 2 0 0 1-2 2H5a2 2 0 0 1-2-2M5 8v10a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8M10 12h4" /></svg><span class="sm:sr-only">归档</span></a></li><li class="col-span-1 flex items-center justify-center"><a href="/search/" title="搜索" aria-label="搜索" class="group inline-flex items-center gap-1 hover:text-accent focus-outline relative size-8"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="absolute top-1/2 left-1/2 size-6 -translate-x-1/2 -translate-y-1/2" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M3 10a7 7 0 1 0 14 0 7 7 0 1 0-14 0M21 21l-6-6" /></svg><span class="sr-only">搜索</span></a></li><li class="col-span-1 flex items-center justify-center"><button id="theme-btn" class="focus-outline hover:[&amp;&gt;svg]:stroke-accent relative size-12 p-4 sm:size-8" title="切换主题" aria-label="auto" aria-live="polite"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="absolute top-[50%] left-[50%] translate-[-50%] scale-100 rotate-0 transition-all dark:scale-0 dark:-rotate-90" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M12 3h.393a7.5 7.5 0 0 0 7.92 12.446A9 9 0 1 1 12 2.992z" /></svg><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="absolute top-[50%] left-[50%] translate-[-50%] scale-0 rotate-90 transition-all dark:scale-100 dark:rotate-0" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M14.828 14.828a4 4 0 1 0-5.656-5.656 4 4 0 0 0 5.656 5.656M6.343 17.657l-1.414 1.414M6.343 6.343 4.929 4.929M17.657 6.343l1.414-1.414M17.657 17.657l1.414 1.414M4 12H2M12 4V2M20 12h2M12 20v2" /></svg></button></li></ul></nav></div></header><script type="module">function e(){let e=document.querySelector(`#menu-btn`),t=document.querySelector(`#menu-items`),n=document.querySelector(`#menu-icon`),r=document.querySelector(`#close-icon`);if(!e||!t||!n||!r)return;let i=e.dataset.labelOpen??`Open menu`,a=e.dataset.labelClose??`Close menu`;e.addEventListener(`click`,()=>{let o=e.getAttribute(`aria-expanded`)===`true`;e.setAttribute(`aria-expanded`,o?`false`:`true`),e.setAttribute(`aria-label`,o?i:a),t.classList.toggle(`hidden`),t.classList.toggle(`grid`),n.classList.toggle(`hidden`),r.classList.toggle(`hidden`)})}function t(){let e=document.getElementById(`skip-to-content`);e&&e.addEventListener(`click`,e=>{if(e.defaultPrevented||e.metaKey||e.ctrlKey||e.shiftKey||e.button!==0)return;e.preventDefault();let t=document.getElementById(`main-content`);t&&(t.setAttribute(`tabindex`,`-1`),t.addEventListener(`blur`,()=>t.removeAttribute(`tabindex`),{once:!0}),t.focus(),t.scrollIntoView({behavior:`smooth`}))})}e(),document.addEventListener(`astro:after-swap`,e),t(),document.addEventListener(`astro:after-swap`,t);</script><div class="app-layout flex items-center justify-start"><a id="back-button" href="/" class="group inline-flex items-center gap-1 hover:text-accent focus-outline hover:text-foreground/75 -ms-2 mt-8 mb-2"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="inline-block size-6 rtl:rotate-180" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="m15 6-6 6 6 6" /></svg><span>返回</span></a></div><script type="module">function e(){let e=document.querySelector(`#back-button`),t=sessionStorage.getItem(`backUrl`);t&&e&&(e.href=t)}document.addEventListener(`astro:page-load`,e),e();</script><main id="main-content" class="app-layout" data-pagefind-body><h1 style="view-transition-name:mail-dovecot-auth-userdb" class="text-accent inline-block text-2xl font-bold sm:text-3xl">Dovecot 认证与用户信息查询</h1><div class="my-2 flex items-center gap-2"><div class="text-muted-foreground flex flex-wrap items-center gap-x-2 gap-y-1"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="inline-block size-6 min-w-5.5" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M4 7a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2zM16 3v4M8 3v4M4 11h16M7 14h.013M10.01 14h.005M13.01 14h.005M16.015 14h.005M13.015 17h.005M7.01 17h.005M10.01 17h.005" /></svg><time class="text-sm sm:text-base" datetime="2021-11-14T02:00:00.000Z">2021年11月14日</time></div><span aria-hidden="true" class="text-muted-foreground max-sm:hidden hidden">|</span></div><article id="article" class="mt-8 w-full app-prose max-w-app prose-pre:bg-(--shiki-light-bg) dark:prose-pre:bg-(--shiki-dark-bg)"><!--email_off-->
+<p>将自研账号目录接入 Dovecot 邮件存储服务时，后端系统需要完成两个截然不同的查询：一是判断客户端给出的凭据是否有效，二是确定该用户对应的系统运行身份与邮箱存储路径。</p>
+<p>在 Dovecot 的模块化架构中，这两个职责由独立配置的流水线承担：密码数据库（password database，passdb）负责身份认证（authentication）与准入控制；用户数据库（user database，userdb）负责获取运行环境与存储位置。本文以 Dovecot 2.3.16 稳定版源码为依据，分析两者在 <code>src/auth/</code> 内部的执行流水线、auth-worker 辅助工作进程的隔离边界、自研 SQL 对接字段契约，并给出一套覆盖禁用、改密与故障降级的工程验证方案。</p>
+<h2 id="两个查询的职责切分与流水线">两个查询的职责切分与流水线</h2>
+<p>在实际邮件收发中，认证与存储定位并不总是成对触发。区分两者的调用链是理解 Dovecot 设计的关键。</p>
+<h3 id="1-登录协议调用链imap--pop3">1. 登录协议调用链（IMAP / POP3）</h3>
+<p>当用户通过 IMAP 或 POP3 客户端登录时，请求首先由登录进程（<code>imap-login</code> 或 <code>pop3-login</code>）接收，并通过套接字转发给 <code>auth</code> 主服务。</p>
+<p>此时系统按序执行两个阶段：</p>
+<ol>
+<li><strong>passdb 凭据验证</strong>：主服务调用 passdb 模块验证密码。如果密码不匹配、账号不存在或处于禁用状态，认证失败，主服务向登录进程返回失败通知，由协议登录层向客户端给出错误响应。</li>
+<li><strong>userdb 运行环境定位</strong>：如果 passdb 验证通过且不是代理（proxy）会话，<code>auth</code> 主服务会继续执行 userdb 查询（或利用 prefetch 缓存的字段），获取操作系统用户 ID（UID）、操作系统组 ID（GID）、家目录（<code>home</code>）与邮件存储路径（<code>mail</code>）。</li>
+<li><strong>主进程派生存储服务</strong>：认证成功后，登录连接移交给主服务（<code>dovecot</code> master），派生或分配专用的 <code>imap</code> 进程，切换到 userdb 指定的系统权限下打开邮件夹。</li>
+</ol>
+<h3 id="2-邮件投递调用链lmtp--lda">2. 邮件投递调用链（LMTP / LDA）</h3>
+<p>在邮件传输代理（Mail Transfer Agent，MTA）向本地邮箱投递进站信件时，调用的是本地邮件传输协议（Local Mail Transfer Protocol，LMTP）或本地投递代理（Local Delivery Agent，LDA）。</p>
+<p>此时发件方无需提供收件人登录密码。LMTP 服务直接通过 <code>src/lib-storage/mail-storage-service.c</code> 中的 <code>service_auth_userdb_lookup</code>（<a href="#ref-dovecot-mail-storage-service-lookup">存储服务查询源码</a>），向 <code>auth</code> 服务发起 userdb 查询，解析收件人的存储目录并执行投递。在进站投递链路上，passdb 完全不参与工作。</p>
+<h3 id="核心调度状态语义与链式流转">核心调度、状态语义与链式流转</h3>
+<p>在 <code>src/auth/auth-request.c</code> 中，密码验证从 <code>auth_request_verify_plain</code> 入口开始，经策略检查转入 <code>auth_request_default_verify_plain_continue</code>。函数先尝试读取未过期的内存缓存；若未命中，请求状态才置为 <code>AUTH_REQUEST_STATE_PASSDB</code>。若底层模块标记为阻塞，流程进入 <code>passdb_blocking_verify_plain</code>，通过 <code>auth_worker_call</code>（<a href="#ref-dovecot-passdb-blocking-c">阻塞认证调用源码</a>）将请求发往工作进程执行实际的 <code>iface.verify_plain</code>，并在异步回调返回后通过引用计数维护请求对象的生命周期。</p>
+<p>验证返回进入 <code>auth_request_verify_plain_callback</code>（<a href="#ref-dovecot-auth-request-verify-callback">验证回调与缓存回退源码</a>），请求状态转为 <code>AUTH_REQUEST_STATE_MECH_CONTINUE</code>。在 <code>src/auth/passdb.h</code>（<a href="#ref-dovecot-passdb-h">passdb 接口源码</a>）中，结果由 <code>enum passdb_result</code> 建模：</p>
+<ul>
+<li><code>PASSDB_RESULT_OK</code> (1)：密码匹配成功。</li>
+<li><code>PASSDB_RESULT_PASSWORD_MISMATCH</code> (0)：密码不匹配。</li>
+<li><code>PASSDB_RESULT_INTERNAL_FAILURE</code> (-1)：底层数据库连接超时、查询语法错误或驱动异常。</li>
+<li><code>PASSDB_RESULT_SCHEME_NOT_AVAILABLE</code> (-2)：配置的密码哈希方案不可用。</li>
+<li><code>PASSDB_RESULT_USER_UNKNOWN</code> (-3)：账号目录中不存在该用户。</li>
+<li><code>PASSDB_RESULT_USER_DISABLED</code> (-4)：账号已被封禁或禁用。</li>
+<li><code>PASSDB_RESULT_PASS_EXPIRED</code> (-5)：口令已过期。</li>
+<li><code>PASSDB_RESULT_NEXT</code> (-6)：跳过当前 passdb 验证（例如设置了 <code>noauthenticate</code>）。</li>
+</ul>
+<p>在 <code>src/auth/auth-request.c</code> 的 <code>auth_request_handle_passdb_callback</code>（<a href="#ref-dovecot-auth-request-passdb-callback">passdb 回调分派源码</a>）中，Dovecot 依据配置处理多 passdb 链条：</p>
+<p>首先是黑名单库（<code>deny = yes</code>）的处理。在到达此分派函数后，黑名单库保证：只有查询结果明确为 <code>PASSDB_RESULT_USER_UNKNOWN</code>（用户不在黑名单中）时才允许继续处理后续 passdb；若查到用户，则无条件置为 <code>PASSDB_RESULT_USER_DISABLED</code> 并终止；如果黑名单库自身发生内部故障（<code>INTERNAL_FAILURE</code>），则直接视作致命错误阻断认证，绝不静默放行。</p>
+<p>其次是普通 passdb 链条的失败处理。在 <code>src/auth/auth-settings.c</code>（<a href="#ref-dovecot-auth-settings-c">认证配置源码</a>）中，<code>result_internalfail</code> 的系统默认值是 <code>continue</code>。这意味着多认证后端并存且保持默认配置时，当前库若发生数据库脱机等内部故障，Dovecot 会尝试向后继续查询后续 passdb。如果后续库恰好包含该用户名，可能造成非预期的放行。因此，在单主账号目录场景下，工程配置通常应显式指定 <code>result_internalfail = return-fail</code>。</p>
+<p>需要特别注意的是，<code>result_internalfail = return-fail</code> 只约束链式分派，无法阻止此前的过期缓存回退。当显式启用了认证缓存时，若底层数据库出现 <code>INTERNAL_FAILURE</code>，<code>auth_request_verify_plain_callback</code> 会检查是否存在已过期的历史缓存记录；如果存在，Dovecot 会记录日志并回退（fallback）使用过期缓存完成当前认证。</p>
+<h3 id="userdb-调度与环境装配">userdb 调度与环境装配</h3>
+<p>userdb 的接口定义在 <code>src/auth/userdb.h</code>（<a href="#ref-dovecot-userdb-h">userdb 接口源码</a>），状态仅有 <code>USERDB_RESULT_OK</code>、<code>USERDB_RESULT_USER_UNKNOWN</code> 与 <code>USERDB_RESULT_INTERNAL_FAILURE</code>。</p>
+<p>主服务通过 <code>auth_request_lookup_user</code> 发起查询，根据配置走缓存、阻塞分流或直接调用 <code>iface.lookup</code>。在 <code>src/auth/auth-request.c</code> 的 <code>auth_request_userdb_callback</code>（<a href="#ref-dovecot-auth-request-userdb-callback">userdb 链与回调源码</a>）中，当配置要求继续查询下一项 userdb 时，成功查询留下的字段会保存快照，失败查询产生的字段会回滚，避免失败后端污染后续结果。若 userdb 数据库发生 <code>INTERNAL_FAILURE</code>，且启用了缓存，同样存在回退使用过期缓存记录的 fallback 逻辑。</p>
+<p>当查询成功后，存储服务层 <code>src/lib-storage/mail-storage-service.c</code> 中的 <code>user_reply_handle</code>（<a href="#ref-dovecot-mail-storage-service-reply">存储应答处理源码</a>）负责解析字段：</p>
+<ul>
+<li><code>uid</code> 与 <code>gid</code>：映射为存储进程运行时的 <code>mail_uid</code> 与 <code>mail_gid</code>。Dovecot 在代码中显式校验：若 <code>uid</code> 为 0（root），直接返回错误并拒绝初始化存储。</li>
+<li><code>home</code> 与 <code>mail</code>：分别设置用户家目录与邮件存储位置。需要特别注意，<code>home</code> 是用户的个人根目录（用于存放 Sieve 脚本等），不等于邮件文件的存放目录 <code>mail</code>。如果全局配置了统一的 <code>mail_location</code>，查询中无需强行返回 <code>mail</code> 字段。</li>
+</ul>
+<h2 id="auth-worker-进程模型与代理边界">auth-worker 进程模型与代理边界</h2>
+<p>高并发场景下，访问后端 SQL 或 LDAP 容易因网络延迟或慢查询导致卡顿。Dovecot 主 <code>auth</code> 进程基于单线程异步事件循环（<code>ioloop</code>），需要隔离外部数据库带来的阻塞调用。</p>
+<h3 id="auth-worker-的阻塞分流">auth-worker 的阻塞分流</h3>
+<p>Dovecot 采用多进程模型处理阻塞查询：</p>
+<ol>
+<li>模块通过标记 <code>blocking = yes</code> 或 SQL 驱动自带的 <code>SQL_DB_FLAG_BLOCKING</code> 声明需要分流。</li>
+<li>主 <code>auth</code> 进程通过本地 UNIX 域套接字向子进程池 <code>auth-worker</code> 派发请求。验证密码发送 <code>PASSV &#x3C;passdb_id> &#x3C;password> &#x3C;args...></code>，查询用户信息发送 <code>USER &#x3C;userdb_id> &#x3C;args...></code>。</li>
+<li><code>auth-worker</code> 进程内部执行同步数据库驱动调用（见 <code>src/auth/auth-worker-client.c</code>（<a href="#ref-dovecot-auth-worker-client-c">工作进程客户端源码</a>））。</li>
+<li>查询返回后，结果通过套接字送回主进程并触发回调。</li>
+</ol>
+<p>需要注意的是，<code>auth-worker</code> 是一个有限大小的进程池。将阻塞操作交由 worker 处理避免了主事件循环被单次慢 SQL 立即卡死，但如果大量请求同时发生数据库慢查询或死锁，worker 进程池被占满后，排队的后续认证请求依然会因等待超时而失败。它隔离的是主进程事件调度，不能替代数据库自身的高可用与查询优化。</p>
+<h3 id="代理边界认证决策与流量中继">代理边界：认证决策与流量中继</h3>
+<p>Dovecot 支持反向代理（proxy）机制。理解代理边界需要分清控制面与数据面：</p>
+<ul>
+<li><strong>路由参数提取</strong>：在 <code>src/auth/auth-request-handler.c</code> 的 <code>auth_request_handler_reply_success_finish</code>（<a href="#ref-dovecot-auth-request-handler-c">请求成功结束源码</a>）中，若 passdb 返回了 <code>proxy=y</code> 及 <code>host</code> 字段，认证主服务在密码验证成功后将这些额外字段返回给前端登录进程。</li>
+<li><strong>数据流量中继</strong>：<code>auth</code> 与 <code>auth-worker</code> 仅负责查出路由参数，不承担客户端与后端存储节点之间的 TCP 流量中继。真实的数据转发由 <code>imap-login</code> 或 <code>pop3-login</code> 进程接管。</li>
+<li><strong>userdb 旁路</strong>：当认证结果确定为远端代理节点时，本地网关无需在本地磁盘装配邮件环境，此时系统直接跳过本地 userdb 查询。</li>
+</ul>
+<h2 id="自研-sql-接入配置与字段契约">自研 SQL 接入配置与字段契约</h2>
+<p>自研账号系统与 Dovecot 对接时，通常利用 SQL 驱动模块。本节首先给出最小合法的配置段声明，再针对自研库列出字段契约。</p>
+<h3 id="1-最小-passdb-与-userdb-配置结构">1. 最小 passdb 与 userdb 配置结构</h3>
+<p>在 <code>dovecot.conf</code> 或 <code>conf.d/auth-sql.conf.ext</code> 中声明两段独立的数据库驱动，显式指定失败规则并关闭潜在的越权链条。本文先采用真实的独立 userdb，暂不启用 Prefetch 优化：</p>
+<pre class="astro-code astro-code-themes min-light night-owl" style="--shiki-light:#24292eff;--shiki-dark:#d6deeb;--shiki-light-bg:#ffffff;--shiki-dark-bg:#011627; overflow-x: auto;--file-name-offset: -0.75rem;" tabindex="0" data-language="text"><code><span class="line"><span>passdb {</span></span>
+<span class="line"><span>  driver = sql</span></span>
+<span class="line"><span>  args = /etc/dovecot/dovecot-sql.conf.ext</span></span>
+<span class="line"><span>  result_internalfail = return-fail</span></span>
+<span class="line"><span>  result_failure = return-fail</span></span>
+<span class="line"><span>}</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>userdb {</span></span>
+<span class="line"><span>  driver = sql</span></span>
+<span class="line"><span>  args = /etc/dovecot/dovecot-sql.conf.ext</span></span>
+<span class="line"><span>}</span></span></code></pre>
+<blockquote><p><strong>配置范围与部署限定</strong>：
+上述配置片段展示了安全阻断故障的核心规则。生产部署时，<code>args</code> 对应的文件中仍需配置具体的数据库驱动（如 <code>driver = pgsql</code>）、连接串（包含用户、密码、主机与端口）以及套接字访问权限。这些敏感凭据与文件权限必须在受控隔离环境中独立配置。</p></blockquote>
+<h3 id="2-passdb-字段契约-password_query">2. passdb 字段契约 (<code>password_query</code>)</h3>
+<p>根据配置范例 <code>doc/example-config/dovecot-sql.conf.ext</code>（<a href="#ref-dovecot-sql-conf">SQL 配置范例</a>），<code>password_query</code> 用于返回凭据及准入属性。各字段的具体约定如下：</p>
+<ul>
+<li><strong><code>password</code>（必须）</strong>：用户密码哈希。推荐带有密码存储方案前缀。若无前缀，回落至全局配置的 <code>default_pass_scheme</code>。
+<pre class="astro-code astro-code-themes min-light night-owl" style="--shiki-light:#24292eff;--shiki-dark:#d6deeb;--shiki-light-bg:#ffffff;--shiki-dark-bg:#011627; overflow-x: auto;--file-name-offset: -0.75rem;" tabindex="0" data-language="text"><code><span class="line"><span>{BLF-CRYPT}$2y$05$xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx</span></span></code></pre>
+</li>
+<li><strong><code>user</code>（可选）</strong>：规范化后的用户名全称。用于在数据库大小写不敏感匹配时校正客户端传入的大小写异构。
+<pre class="astro-code astro-code-themes min-light night-owl" style="--shiki-light:#24292eff;--shiki-dark:#d6deeb;--shiki-light-bg:#ffffff;--shiki-dark-bg:#011627; overflow-x: auto;--file-name-offset: -0.75rem;" tabindex="0" data-language="text"><code><span class="line"><span>alice@example.test</span></span></code></pre>
+</li>
+<li><strong><code>userdb_*</code>（预取可选）</strong>：例如 <code>userdb_home</code>、<code>userdb_uid</code> 等。只有在配置中启用了 <code>userdb { driver = prefetch }</code> 查询模块时，才可据此省掉后续独立的数据库查询；而在独立的本地投递（LMTP/LDA）链路上，仍需真实的独立 userdb 进行查找。
+<pre class="astro-code astro-code-themes min-light night-owl" style="--shiki-light:#24292eff;--shiki-dark:#d6deeb;--shiki-light-bg:#ffffff;--shiki-dark-bg:#011627; overflow-x: auto;--file-name-offset: -0.75rem;" tabindex="0" data-language="text"><code><span class="line"><span>/var/mail/vmail/example.test/alice</span></span></code></pre>
+</li>
+</ul>
+<p>在自研数据库中阻断已封禁账号时，推荐在 SQL 条件中增加状态判断（如 <code>status = 'ACTIVE'</code>）。当账号禁用时查询返回 0 行，驱动将其直接映射为 <code>PASSDB_RESULT_USER_UNKNOWN</code>。在配置了 <code>result_failure = return-fail</code> 的单库环境下即可安全阻断登录。</p>
+<p>PostgreSQL 查询配置示意：</p>
+<pre class="astro-code astro-code-themes min-light night-owl" style="--shiki-light:#24292eff;--shiki-dark:#d6deeb;--shiki-light-bg:#ffffff;--shiki-dark-bg:#011627; overflow-x: auto;--file-name-offset: -0.75rem;" tabindex="0" data-language="sql"><code><span class="line"><span style="--shiki-light:#24292EFF;--shiki-dark:#D6DEEB">password_query </span><span style="--shiki-light:#D32F2F;--shiki-dark:#C792EA">=</span><span style="--shiki-light:#24292EFF;--shiki-dark:#D6DEEB"> \</span></span>
+<span class="line"><span style="--shiki-light:#D32F2F;--shiki-dark:#C792EA">  SELECT</span><span style="--shiki-light:#24292EFF;--shiki-dark:#D6DEEB"> \</span></span>
+<span class="line"><span style="--shiki-light:#24292EFF;--shiki-dark:#D6DEEB">    password_hash </span><span style="--shiki-light:#D32F2F;--shiki-dark:#C792EA">AS</span><span style="--shiki-light:#D32F2F;--shiki-dark:#C792EA"> password</span><span style="--shiki-light:#24292EFF;--shiki-dark:#D6DEEB">, \</span></span>
+<span class="line"><span style="--shiki-light:#24292EFF;--shiki-dark:#D6DEEB">    (account_name </span><span style="--shiki-light:#D32F2F;--shiki-dark:#7FDBCA">||</span><span style="--shiki-light:#22863A;--shiki-dark:#D9F5DD"> '</span><span style="--shiki-light:#22863A;--shiki-dark:#ECC48D">@</span><span style="--shiki-light:#22863A;--shiki-dark:#D9F5DD">'</span><span style="--shiki-light:#D32F2F;--shiki-dark:#7FDBCA"> ||</span><span style="--shiki-light:#24292EFF;--shiki-dark:#D6DEEB"> domain_name) </span><span style="--shiki-light:#D32F2F;--shiki-dark:#C792EA">AS</span><span style="--shiki-light:#24292EFF;--shiki-dark:#D6DEEB"> user \</span></span>
+<span class="line"><span style="--shiki-light:#D32F2F;--shiki-dark:#C792EA">  FROM</span><span style="--shiki-light:#24292EFF;--shiki-dark:#D6DEEB"> accounts \</span></span>
+<span class="line"><span style="--shiki-light:#D32F2F;--shiki-dark:#C792EA">  WHERE</span><span style="--shiki-light:#24292EFF;--shiki-dark:#D6DEEB"> account_name </span><span style="--shiki-light:#D32F2F;--shiki-dark:#C792EA">=</span><span style="--shiki-light:#22863A;--shiki-dark:#D9F5DD"> '</span><span style="--shiki-light:#22863A;--shiki-dark:#ECC48D">%n</span><span style="--shiki-light:#22863A;--shiki-dark:#D9F5DD">'</span><span style="--shiki-light:#24292EFF;--shiki-dark:#D6DEEB"> \</span></span>
+<span class="line"><span style="--shiki-light:#D32F2F;--shiki-dark:#C792EA">    AND</span><span style="--shiki-light:#24292EFF;--shiki-dark:#D6DEEB"> domain_name </span><span style="--shiki-light:#D32F2F;--shiki-dark:#C792EA">=</span><span style="--shiki-light:#22863A;--shiki-dark:#D9F5DD"> '</span><span style="--shiki-light:#22863A;--shiki-dark:#ECC48D">%d</span><span style="--shiki-light:#22863A;--shiki-dark:#D9F5DD">'</span><span style="--shiki-light:#24292EFF;--shiki-dark:#D6DEEB"> \</span></span>
+<span class="line"><span style="--shiki-light:#D32F2F;--shiki-dark:#C792EA">    AND</span><span style="--shiki-light:#D32F2F;--shiki-dark:#C792EA"> status</span><span style="--shiki-light:#D32F2F;--shiki-dark:#C792EA"> =</span><span style="--shiki-light:#22863A;--shiki-dark:#D9F5DD"> '</span><span style="--shiki-light:#22863A;--shiki-dark:#ECC48D">ACTIVE</span><span style="--shiki-light:#22863A;--shiki-dark:#D9F5DD">'</span></span></code></pre>
+<h3 id="3-userdb-字段契约-user_query">3. userdb 字段契约 (<code>user_query</code>)</h3>
+<p>用于独立邮件投递（LMTP/LDA）或登录通过后的存储环境装配。各字段具体约定如下：</p>
+<ul>
+<li><strong><code>uid</code>（可选，须有来源）</strong>：访问邮件存储时 Dovecot 进程切换的目标操作系统用户 ID。若 SQL 不返回，必须在系统全局配置 <code>mail_uid</code>；代码中显式校验，<strong>严禁为 0（root）</strong>。
+<pre class="astro-code astro-code-themes min-light night-owl" style="--shiki-light:#24292eff;--shiki-dark:#d6deeb;--shiki-light-bg:#ffffff;--shiki-dark-bg:#011627; overflow-x: auto;--file-name-offset: -0.75rem;" tabindex="0" data-language="text"><code><span class="line"><span>5000</span></span></code></pre>
+</li>
+<li><strong><code>gid</code>（可选，须有来源）</strong>：访问邮件存储时切换的目标操作系统组 ID。若 SQL 不返回，必须在系统全局配置 <code>mail_gid</code>。
+<pre class="astro-code astro-code-themes min-light night-owl" style="--shiki-light:#24292eff;--shiki-dark:#d6deeb;--shiki-light-bg:#ffffff;--shiki-dark-bg:#011627; overflow-x: auto;--file-name-offset: -0.75rem;" tabindex="0" data-language="text"><code><span class="line"><span>5000</span></span></code></pre>
+</li>
+<li><strong><code>home</code>（可选，推荐）</strong>：用户的个人家目录。必须由可信服务派生生成，严禁直接拼接未经校验的客户端原始输入。
+<pre class="astro-code astro-code-themes min-light night-owl" style="--shiki-light:#24292eff;--shiki-dark:#d6deeb;--shiki-light-bg:#ffffff;--shiki-dark-bg:#011627; overflow-x: auto;--file-name-offset: -0.75rem;" tabindex="0" data-language="text"><code><span class="line"><span>/var/mail/vmail/example.test/alice</span></span></code></pre>
+</li>
+<li><strong><code>mail</code>（可选）</strong>：邮件数据的物理存储格式与位置。若缺省，使用系统全局配置的 <code>mail_location</code> 宏规则。
+<pre class="astro-code astro-code-themes min-light night-owl" style="--shiki-light:#24292eff;--shiki-dark:#d6deeb;--shiki-light-bg:#ffffff;--shiki-dark-bg:#011627; overflow-x: auto;--file-name-offset: -0.75rem;" tabindex="0" data-language="text"><code><span class="line"><span>maildir:/var/mail/vmail/example.test/alice/Maildir</span></span></code></pre>
+</li>
+</ul>
+<p>PostgreSQL 查询配置示意：</p>
+<pre class="astro-code astro-code-themes min-light night-owl" style="--shiki-light:#24292eff;--shiki-dark:#d6deeb;--shiki-light-bg:#ffffff;--shiki-dark-bg:#011627; overflow-x: auto;--file-name-offset: -0.75rem;" tabindex="0" data-language="sql"><code><span class="line"><span style="--shiki-light:#24292EFF;--shiki-dark:#D6DEEB">user_query </span><span style="--shiki-light:#D32F2F;--shiki-dark:#C792EA">=</span><span style="--shiki-light:#24292EFF;--shiki-dark:#D6DEEB"> \</span></span>
+<span class="line"><span style="--shiki-light:#D32F2F;--shiki-dark:#C792EA">  SELECT</span><span style="--shiki-light:#24292EFF;--shiki-dark:#D6DEEB"> \</span></span>
+<span class="line"><span style="--shiki-light:#24292EFF;--shiki-dark:#D6DEEB">    (</span><span style="--shiki-light:#22863A;--shiki-dark:#D9F5DD">'</span><span style="--shiki-light:#22863A;--shiki-dark:#ECC48D">/var/mail/vmail/</span><span style="--shiki-light:#22863A;--shiki-dark:#D9F5DD">'</span><span style="--shiki-light:#D32F2F;--shiki-dark:#7FDBCA"> ||</span><span style="--shiki-light:#24292EFF;--shiki-dark:#D6DEEB"> domain_name </span><span style="--shiki-light:#D32F2F;--shiki-dark:#7FDBCA">||</span><span style="--shiki-light:#22863A;--shiki-dark:#D9F5DD"> '</span><span style="--shiki-light:#22863A;--shiki-dark:#ECC48D">/</span><span style="--shiki-light:#22863A;--shiki-dark:#D9F5DD">'</span><span style="--shiki-light:#D32F2F;--shiki-dark:#7FDBCA"> ||</span><span style="--shiki-light:#24292EFF;--shiki-dark:#D6DEEB"> account_name) </span><span style="--shiki-light:#D32F2F;--shiki-dark:#C792EA">AS</span><span style="--shiki-light:#24292EFF;--shiki-dark:#D6DEEB"> home, \</span></span>
+<span class="line"><span style="--shiki-light:#1976D2;--shiki-dark:#F78C6C">    5000</span><span style="--shiki-light:#D32F2F;--shiki-dark:#C792EA"> AS</span><span style="--shiki-light:#D32F2F;--shiki-dark:#C792EA"> uid</span><span style="--shiki-light:#24292EFF;--shiki-dark:#D6DEEB">, \</span></span>
+<span class="line"><span style="--shiki-light:#1976D2;--shiki-dark:#F78C6C">    5000</span><span style="--shiki-light:#D32F2F;--shiki-dark:#C792EA"> AS</span><span style="--shiki-light:#24292EFF;--shiki-dark:#D6DEEB"> gid \</span></span>
+<span class="line"><span style="--shiki-light:#D32F2F;--shiki-dark:#C792EA">  FROM</span><span style="--shiki-light:#24292EFF;--shiki-dark:#D6DEEB"> accounts \</span></span>
+<span class="line"><span style="--shiki-light:#D32F2F;--shiki-dark:#C792EA">  WHERE</span><span style="--shiki-light:#24292EFF;--shiki-dark:#D6DEEB"> account_name </span><span style="--shiki-light:#D32F2F;--shiki-dark:#C792EA">=</span><span style="--shiki-light:#22863A;--shiki-dark:#D9F5DD"> '</span><span style="--shiki-light:#22863A;--shiki-dark:#ECC48D">%n</span><span style="--shiki-light:#22863A;--shiki-dark:#D9F5DD">'</span><span style="--shiki-light:#24292EFF;--shiki-dark:#D6DEEB"> \</span></span>
+<span class="line"><span style="--shiki-light:#D32F2F;--shiki-dark:#C792EA">    AND</span><span style="--shiki-light:#24292EFF;--shiki-dark:#D6DEEB"> domain_name </span><span style="--shiki-light:#D32F2F;--shiki-dark:#C792EA">=</span><span style="--shiki-light:#22863A;--shiki-dark:#D9F5DD"> '</span><span style="--shiki-light:#22863A;--shiki-dark:#ECC48D">%d</span><span style="--shiki-light:#22863A;--shiki-dark:#D9F5DD">'</span><span style="--shiki-light:#24292EFF;--shiki-dark:#D6DEEB"> \</span></span>
+<span class="line"><span style="--shiki-light:#D32F2F;--shiki-dark:#C792EA">    AND</span><span style="--shiki-light:#D32F2F;--shiki-dark:#C792EA"> status</span><span style="--shiki-light:#D32F2F;--shiki-dark:#C792EA"> =</span><span style="--shiki-light:#22863A;--shiki-dark:#D9F5DD"> '</span><span style="--shiki-light:#22863A;--shiki-dark:#ECC48D">ACTIVE</span><span style="--shiki-light:#22863A;--shiki-dark:#D9F5DD">'</span></span></code></pre>
+<blockquote><p><strong>业务授权与策略切分说明</strong>：
+上述 <code>password_query</code> 与 <code>user_query</code> 均带有 <code>status = 'ACTIVE'</code> 条件，代表业务选择在账号停用时<strong>同时阻断客户端登录与收件投递</strong>。如果业务要求“允许离职账号继续接收信件，仅禁止用户登录”，则应在 <code>user_query</code> 中放宽条件。</p><p>此外，passdb 登录成功与 userdb 路径解析仅完成身份验证与本地存储挂载，并不自动赋予发件人权限、邮件外发中继权限、共享邮件夹访问权或管理端控制权限。发件人校验由简单邮件传输协议（SMTP）阶段的身份认证与传输策略决定，邮件夹细粒度授权由访问控制列表（ACL）或业务控制面独立判定（authorization）。</p></blockquote>
+<h2 id="缓存机制凭据变更与失效处置">缓存机制、凭据变更与失效处置</h2>
+<p>Dovecot 的认证缓存（Auth Cache）由 <code>auth_cache_size</code> 控制。在 <code>src/auth/auth-settings.c</code> 中，其默认大小为 0（即默认关闭缓存）。当显式设置了大于 0 的缓存容量时，默认生存时间为 1 小时（<code>auth_cache_ttl = 3600</code>）。启用缓存后，必须配合严密的失效处置策略。</p>
+<h3 id="1-账号封禁与缓存失效时序">1. 账号封禁与缓存失效时序</h3>
+<p>当业务后台将账号置为禁用时，如果仅修改数据库字段：</p>
+<ol>
+<li><strong>新建连接风险</strong>：在 Dovecot 认证缓存尚未过期前，客户端仍可利用缓存成功发起新认证。</li>
+<li><strong>活跃长连接不受控</strong>：IMAP 协议具备持久连接特性。连接一旦建立，后续邮件操作直接在 <code>imap</code> 进程内进行，不会重复调用 passdb。</li>
+</ol>
+<p>因此，自研后台处置封禁账号时，应依次执行两个步骤：</p>
+<ul>
+<li><strong>步骤一（主动驱逐缓存）</strong>：调用 <code>doveadm auth cache flush</code>。其实现位于 <code>src/doveadm/doveadm-auth.c</code> 中的 <code>cmd_auth_cache_flush</code>（<a href="#ref-dovecot-doveadm-auth-c">缓存刷新源码</a>），通过向 <code>auth-master</code> 套接字发送命令清空全部或指定用户的认证缓存。</li>
+<li><strong>步骤二（终止活跃会话）</strong>：调用 <code>doveadm kick &#x3C;user></code>。其实现位于 <code>src/doveadm/doveadm-kick.c</code>（<a href="#ref-dovecot-doveadm-kick-c">踢出用户源码</a>），通过查找会话并向对应的客户端处理进程发送信号终止连接。</li>
+</ul>
+<h3 id="2-口令变更的多阶段推进">2. 口令变更的多阶段推进</h3>
+<p>当用户修改密码时，由于系统跨越了关系型数据库、消息总线与多个 Dovecot 网关节点，无法建立跨组件的强原子事务。工程上应采用可重试的分阶段推进流程：</p>
+<ol>
+<li><strong>数据库更新与版本递增</strong>：在数据库中持久化新的密码哈希，同时增加账号凭据版本号（<code>credential_version</code>）。该版本号主要供自研系统内部追踪审计，Dovecot 本身并无自动识别和比对外部凭据版本的约定。</li>
+<li><strong>多节点逐台确认失效与重试</strong>：业务系统驱动各邮件接入网关执行 <code>doveadm auth cache flush</code>，并要求每个网关节点返回执行确认。若个别节点通信超时，必须进行重试。工程上<strong>决不能仅仅依赖 TTL 自然耗尽</strong>，因为在后端数据库短时故障时，Dovecot 存在回退读取过期缓存记录的容灾逻辑，单凭等待时间无法绝对杜绝过期凭据被再次使用。</li>
+<li><strong>选择性切断既有连接</strong>：如果安全合规要求改密后所有旧设备必须下线，可联动执行 <code>doveadm kick</code>。</li>
+</ol>
+<h2 id="待执行集成验证方案">待执行集成验证方案</h2>
+<p>以下验证案例为设计推导与测试方案，用于指导开发环境下的集成验收与测试编写，未在真实编译环境中直接运行。测试前需建立前置状态：在测试环境维持一条真实的 IMAP 长会话（如维持 <code>IDLE</code> 状态），并在开启认证缓存的前提下完成初始凭据预热。</p>
+<h3 id="验证-1passdb-独立凭据检验正常错误与跨租户隔离">验证 1：passdb 独立凭据检验（正常、错误与跨租户隔离）</h3>
+<p>验证 SQL 语句提取与密码哈希匹配是否正常，重点核验多租户场景下同名账号的隔离性。</p>
+<ul>
+<li><strong>测试输入 1（有效凭据）</strong>：<code>doveadm auth test -x service=imap alice@example.test</code>（终端交互输入正确密码）。
+<ul>
+<li><strong>观察点</strong>：输出显示认证成功，提取出的 <code>user</code> 字段为规范化的全名 <code>alice@example.test</code>。</li>
+</ul>
+</li>
+<li><strong>测试输入 2（错误密码）</strong>：相同指令输入错误密码。
+<ul>
+<li><strong>观察点</strong>：输出显示认证失败，进程返回非零退出码。</li>
+</ul>
+</li>
+<li><strong>测试输入 3（跨租户同名账号验证）</strong>：分别测试 <code>alice@tenant-a.test</code> 与 <code>alice@tenant-b.test</code>。
+<ul>
+<li><strong>观察点</strong>：确认两者的认证记录在数据库中严格隔离，不能出现跨租户凭据混淆或默认截断域名匹配的情况。</li>
+</ul>
+</li>
+</ul>
+<h3 id="验证-2userdb-独立运行上下文查询">验证 2：userdb 独立运行上下文查询</h3>
+<p>验证在无登录密码时（模拟 LMTP 投递路径），userdb 能够正确解析存储参数。</p>
+<ul>
+<li><strong>测试输入</strong>：<code>doveadm user alice@example.test</code>。</li>
+<li><strong>观察点与判据</strong>：
+<ul>
+<li>输出中包含 <code>home</code>、<code>uid</code> 与 <code>gid</code> 字段。</li>
+<li>确认 <code>uid</code> 不为 0。</li>
+<li>确认解析出的 <code>home</code> 目录包含正确的租户与用户名路径结构（如 <code>/var/mail/vmail/example.test/alice</code>），杜绝路径跨租户越权。</li>
+</ul>
+</li>
+</ul>
+<h3 id="验证-3账号封禁缓存清理与会话切断时序">验证 3：账号封禁、缓存清理与会话切断时序</h3>
+<ul>
+<li><strong>前置条件</strong>：开启认证缓存，通过客户端登录成功一次以预热缓存；保持一个活动的 IMAP 交互会话。</li>
+<li><strong>步骤与操作</strong>：
+<ol>
+<li>在数据库中将 <code>alice@example.test</code> 状态置为 <code>DISABLED</code>。</li>
+<li>在未清理缓存时立即测试 <code>doveadm auth test -x service=imap alice@example.test</code>，验证命中内存未过期缓存仍返回成功。</li>
+<li>执行 <code>doveadm auth cache flush</code> 驱逐缓存。</li>
+<li>再次执行 <code>doveadm auth test</code>，此时查询穿透至数据库，因 0 行记录返回失败。</li>
+<li>检查此前保持的 IMAP 客户端，验证此时尚未断开；随后执行 <code>doveadm kick alice@example.test</code>，确认客户端连接被强行切断。</li>
+</ol>
+</li>
+</ul>
+<h3 id="验证-4口令变更的新旧凭据验证">验证 4：口令变更的新旧凭据验证</h3>
+<ul>
+<li><strong>前置条件</strong>：账号当前密码为 <code>PassA</code>，预热缓存并建立 IMAP 连接。</li>
+<li><strong>步骤与操作</strong>：
+<ol>
+<li>数据库更新密码哈希为 <code>PassB</code>。</li>
+<li>在网关节点逐台执行 <code>doveadm auth cache flush</code> 并确认成功。</li>
+<li>使用旧密码 <code>PassA</code> 执行 <code>doveadm auth test</code>，预期认证失败。</li>
+<li>使用新密码 <code>PassB</code> 执行 <code>doveadm auth test</code>，预期认证成功。</li>
+<li>执行 <code>doveadm kick alice@example.test</code>，迫使旧设备重新走新密码认证流程。</li>
+</ol>
+</li>
+</ul>
+<h3 id="验证-5后端数据库不可用时的降级与容灾行为">验证 5：后端数据库不可用时的降级与容灾行为</h3>
+<ul>
+<li><strong>测试场景 A（无缓存或缓存未启用）</strong>：
+<ul>
+<li>操作：停止数据库服务，执行 <code>doveadm auth test -x service=imap alice@example.test</code>。</li>
+<li>观察点：Dovecot 日志记录密码查询失败与内部错误；在显式配置了 <code>result_internalfail = return-fail</code> 时，认证立即返回失败中断，严禁绕行到其他数据源。</li>
+</ul>
+</li>
+<li><strong>测试场景 B（启用了缓存且存在刚过期的缓存项）</strong>：
+<ul>
+<li>操作：在缓存刚过期时断开数据库并尝试认证。</li>
+<li>观察点：检查日志是否输出 <code>Falling back to expired data from cache</code>，验证系统在数据库瞬时故障时的有限容灾保护机制。</li>
+</ul>
+</li>
+</ul>
+<h3 id="验证-6端到端登录与存储路径完整闭环待组合验收">验证 6：端到端登录与存储路径完整闭环（待组合验收）</h3>
+<p>需要指出的是，<code>doveadm auth test</code> 与 <code>doveadm user</code> 仅是独立的控制面查询工具，并不等同于完整协议交互与磁盘文件写入。完整的系统验收仍需组合下列待执行步骤：</p>
+<ol>
+<li><strong>真实协议登录</strong>：使用真实 IMAP 客户端连接 143/993 端口发起 <code>LOGIN</code> 命令，验证网络链路、TLS 握手及登录进程交接是否顺畅。</li>
+<li><strong>文件系统属主与读写闭环</strong>：登录成功后，验证系统在实际 <code>mail_location</code> 或 <code>mail</code> 解析出的内容目录及索引目录下能否正常建立文件，属主权限是否严格符合 userdb 给出的非 root UID/GID。</li>
+<li><strong>真实投递测试</strong>：通过本地 LMTP 端口投递一封测试邮件，验证进站信件能否根据 userdb 返回的路径正确写入磁盘。</li>
+</ol>
+<hr>
+<h2 id="参考文献">参考文献</h2>
+<ul>
+<li><a id="ref-dovecot-release-2-3-16" href="https://dovecot.org/list/dovecot-news/2021-August/000463.html" target="_blank" rel="noopener noreferrer">Dovecot 官方发布公告：v2.3.16 released (2021-08-06)</a></li>
+<li><a id="ref-dovecot-passdb-h" href="https://github.com/dovecot/core/blob/2.3.16/src/auth/passdb.h#L12-L23" target="_blank" rel="noopener noreferrer">Dovecot 2.3.16 源码：src/auth/passdb.h 接口定义</a></li>
+<li><a id="ref-dovecot-userdb-h" href="https://github.com/dovecot/core/blob/2.3.16/src/auth/userdb.h#L11-L16" target="_blank" rel="noopener noreferrer">Dovecot 2.3.16 源码：src/auth/userdb.h 接口定义</a></li>
+<li><a id="ref-dovecot-auth-request-passdb-callback" href="https://github.com/dovecot/core/blob/2.3.16/src/auth/auth-request.c#L701-L765" target="_blank" rel="noopener noreferrer">Dovecot 2.3.16 源码：src/auth/auth-request.c passdb 回调分派</a></li>
+<li><a id="ref-dovecot-auth-request-verify-callback" href="https://github.com/dovecot/core/blob/2.3.16/src/auth/auth-request.c#L890-L922" target="_blank" rel="noopener noreferrer">Dovecot 2.3.16 源码：src/auth/auth-request.c 验证回调与缓存回退</a></li>
+<li><a id="ref-dovecot-auth-request-userdb-callback" href="https://github.com/dovecot/core/blob/2.3.16/src/auth/auth-request.c#L1392-L1578" target="_blank" rel="noopener noreferrer">Dovecot 2.3.16 源码：src/auth/auth-request.c userdb 链与回调</a></li>
+<li><a id="ref-dovecot-auth-settings-c" href="https://github.com/dovecot/core/blob/2.3.16/src/auth/auth-settings.c#L132-L150" target="_blank" rel="noopener noreferrer">Dovecot 2.3.16 源码：src/auth/auth-settings.c 默认配置解析</a></li>
+<li><a id="ref-dovecot-passdb-blocking-c" href="https://github.com/dovecot/core/blob/2.3.16/src/auth/passdb-blocking.c#L90-L112" target="_blank" rel="noopener noreferrer">Dovecot 2.3.16 源码：src/auth/passdb-blocking.c 阻塞调用分流</a></li>
+<li><a id="ref-dovecot-auth-worker-client-c" href="https://github.com/dovecot/core/blob/2.3.16/src/auth/auth-worker-client.c#L255-L300" target="_blank" rel="noopener noreferrer">Dovecot 2.3.16 源码：src/auth/auth-worker-client.c 工作进程客户端处理</a></li>
+<li><a id="ref-dovecot-auth-request-handler-c" href="https://github.com/dovecot/core/blob/2.3.16/src/auth/auth-request-handler.c#L263-L296" target="_blank" rel="noopener noreferrer">Dovecot 2.3.16 源码：src/auth/auth-request-handler.c 成功应答构建</a></li>
+<li><a id="ref-dovecot-mail-storage-service-lookup" href="https://github.com/dovecot/core/blob/2.3.16/src/lib-storage/mail-storage-service.c#L319-L340" target="_blank" rel="noopener noreferrer">Dovecot 2.3.16 源码：src/lib-storage/mail-storage-service.c 存储服务用户查询</a></li>
+<li><a id="ref-dovecot-mail-storage-service-reply" href="https://github.com/dovecot/core/blob/2.3.16/src/lib-storage/mail-storage-service.c#L226-L248" target="_blank" rel="noopener noreferrer">Dovecot 2.3.16 源码：src/lib-storage/mail-storage-service.c 存储服务应答与 UID 校验</a></li>
+<li><a id="ref-dovecot-doveadm-auth-c" href="https://github.com/dovecot/core/blob/2.3.16/src/doveadm/doveadm-auth.c#L317-L345" target="_blank" rel="noopener noreferrer">Dovecot 2.3.16 源码：src/doveadm/doveadm-auth.c 缓存刷新实现</a></li>
+<li><a id="ref-dovecot-doveadm-kick-c" href="https://github.com/dovecot/core/blob/2.3.16/src/doveadm/doveadm-kick.c" target="_blank" rel="noopener noreferrer">Dovecot 2.3.16 源码：src/doveadm/doveadm-kick.c 会话终止实现</a></li>
+<li><a id="ref-dovecot-sql-conf" href="https://github.com/dovecot/core/blob/2.3.16/doc/example-config/dovecot-sql.conf.ext#L80-L144" target="_blank" rel="noopener noreferrer">Dovecot 2.3.16 配置范例：doc/example-config/dovecot-sql.conf.ext 字段说明</a></li>
+</ul>
+<!--/email_off--></article><hr class="my-8 border-dashed"><div id="btt-btn-container" class="fixed inset-e-4 bottom-8 z-50 md:sticky md:inset-e-auto md:float-end md:me-1 translate-y-14 opacity-0 transition duration-500"><button data-button="back-to-top" class="group bg-background relative px-2 py-1 size-14 rounded-full shadow-xl md:h-8 md:w-fit md:rounded-md md:shadow-none md:focus-visible:rounded-none md:bg-background/35 md:bg-clip-padding md:backdrop-blur-lg"><span id="progress-indicator" class="absolute inset-0 -z-10 block size-14 scale-110 rounded-full bg-transparent md:hidden md:h-8 md:rounded-md"></span><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="inline-block rotate-90 md:hidden" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M5 12h14M5 12l6 6M5 12l6-6" /></svg><span class="group-hover:text-accent sr-only text-sm md:not-sr-only"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="inline-block size-4" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M12 5v14M16 9l-4-4M8 9l4-4" /></svg> 回到顶部</span></button></div><script data-astro-rerun>
+  function backToTop() {
+    const rootElement = document.documentElement;
+    const btnContainer = document.querySelector("#btt-btn-container");
+    const backToTopBtn = document.querySelector("[data-button='back-to-top']");
+    const progressIndicator = document.querySelector("#progress-indicator");
+
+    if (!rootElement || !btnContainer || !backToTopBtn || !progressIndicator)
+      return;
+
+    backToTopBtn.addEventListener("click", () => {
+      document.body.scrollTop = 0;
+      document.documentElement.scrollTop = 0;
+    });
+
+    let lastVisible = null;
+    function handleScroll() {
+      const scrollTotal = rootElement.scrollHeight - rootElement.clientHeight;
+      const scrollTop = rootElement.scrollTop;
+      const scrollPercent = Math.floor((scrollTop / scrollTotal) * 100);
+
+      progressIndicator.style.setProperty(
+        "background-image",
+        `conic-gradient(var(--accent), var(--accent) ${scrollPercent}%, transparent ${scrollPercent}%)`
+      );
+
+      const isVisible = scrollTop / scrollTotal > 0.3;
+
+      if (isVisible !== lastVisible) {
+        btnContainer.classList.toggle("opacity-100", isVisible);
+        btnContainer.classList.toggle("translate-y-0", isVisible);
+        btnContainer.classList.toggle("opacity-0", !isVisible);
+        btnContainer.classList.toggle("translate-y-14", !isVisible);
+        lastVisible = isVisible;
+      }
+    }
+
+    let ticking = false;
+    document.addEventListener("scroll", () => {
+      if (!ticking) {
+        window.requestAnimationFrame(() => {
+          handleScroll();
+          ticking = false;
+        });
+        ticking = true;
+      }
+    });
+  }
+  backToTop();
+</script><ul class="mt-4 mb-8 flex flex-wrap gap-4 sm:my-8"><li><a data-astro-transition-scope="astro-bztu2lml-1" href="/tags/邮箱系统/" class="flex items-center gap-0.5 border-foreground border-b-2 border-dashed hover:border-accent hover:text-accent hover:-mt-0.5 focus-visible:text-accent focus-visible:border-none text-sm"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="opacity-80 size-4" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M5 9h14M5 15h14M11 4 7 20M17 4l-4 16" /></svg>邮箱系统</a></li><li><a data-astro-transition-scope="astro-bztu2lml-2" href="/tags/身份认证/" class="flex items-center gap-0.5 border-foreground border-b-2 border-dashed hover:border-accent hover:text-accent hover:-mt-0.5 focus-visible:text-accent focus-visible:border-none text-sm"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="opacity-80 size-4" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M5 9h14M5 15h14M11 4 7 20M17 4l-4 16" /></svg>身份认证</a></li><li><a data-astro-transition-scope="astro-bztu2lml-3" href="/tags/访问控制/" class="flex items-center gap-0.5 border-foreground border-b-2 border-dashed hover:border-accent hover:text-accent hover:-mt-0.5 focus-visible:text-accent focus-visible:border-none text-sm"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="opacity-80 size-4" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M5 9h14M5 15h14M11 4 7 20M17 4l-4 16" /></svg>访问控制</a></li></ul><hr class="my-8 border-dashed"><div data-pagefind-ignore class="my-8 grid grid-cols-1 gap-6 sm:grid-cols-2"><a href="/posts/mail-postfix-smtp-delivery/" class="flex w-full gap-1 hover:opacity-75"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="inline-block flex-none rtl:rotate-180" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M5 12h14M5 12l6 6M5 12l6-6" /></svg><div><span>上一篇</span><div class="text-accent/85 text-sm">Postfix SMTP 出站连接与并发控制</div></div></a><a href="/posts/mail-lmtp-local-delivery/" class="flex w-full justify-end gap-1 text-end hover:opacity-75 sm:col-start-2"><div><span>下一篇</span><div class="text-accent/85 text-sm">Dovecot 的 LMTP 本地投递</div></div><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="inline-block flex-none rtl:rotate-180" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M5 12h14M13 18l6-6M13 6l6 6" /></svg></a></div></main><footer class="app-layout mt-auto"><div class="border-border flex flex-col items-center justify-between border-t py-6 sm:flex-row-reverse sm:py-4"><div class="flex flex-wrap items-center gap-1"><a href="https://github.com/SaromChars" title="Sarom Chars 的 GitHub" class="group inline-flex items-center gap-1 hover:text-accent p-2 hover:rotate-6 sm:p-1"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="inline-block size-6 scale-125 fill-transparent stroke-current stroke-2 opacity-90 group-hover:fill-transparent sm:scale-110" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M9 19c-4.3 1.4-4.3-2.5-6-3m12 5v-3.5c0-1 .1-1.4-.5-2 2.8-.3 5.5-1.4 5.5-6a4.6 4.6 0 0 0-1.3-3.2 4.2 4.2 0 0 0-.1-3.2s-1.1-.3-3.5 1.3a12.3 12.3 0 0 0-6.2 0C6.5 2.8 5.4 3.1 5.4 3.1a4.2 4.2 0 0 0-.1 3.2A4.6 4.6 0 0 0 4 9.5c0 4.6 2.7 5.7 5.5 6-.6.6-.6 1.2-.5 2V21" /></svg><span class="sr-only">Sarom Chars 的 GitHub</span></a></div><div class="my-2 flex flex-col items-center whitespace-nowrap sm:flex-row"><span>版权 &#169; 2026</span><span class="hidden sm:inline">&nbsp;|&nbsp;</span><span>保留所有权利。</span></div></div></footer><script type="module">var e=`theme`,t=`light`,n=`dark`;function r(){return localStorage.getItem(e)||(window.matchMedia(`(prefers-color-scheme: dark)`).matches?n:t)}var i=window.__theme?.value??r();function a(){localStorage.setItem(e,i),o()}function o(){let e=document.firstElementChild;e?.setAttribute(`data-theme`,i),e?.classList.toggle(`dark`,i===n),document.querySelector(`#theme-btn`)?.setAttribute(`aria-label`,i);let t=window.getComputedStyle(document.body).backgroundColor;document.querySelector(`meta[name='theme-color']`)?.setAttribute(`content`,t)}function s(){o(),document.querySelector(`#theme-btn`)?.addEventListener(`click`,()=>{i=i===t?n:t,a()})}s(),document.addEventListener(`astro:after-swap`,s),document.addEventListener(`astro:before-swap`,e=>{let t=document.querySelector(`meta[name='theme-color']`)?.getAttribute(`content`);t&&e.newDocument.querySelector(`meta[name='theme-color']`)?.setAttribute(`content`,t)}),window.matchMedia(`(prefers-color-scheme: dark)`).addEventListener(`change`,({matches:e})=>{i=e?n:t,a()});</script></body></html><script type="module">var e=document.querySelector(`#article`);if(e?.querySelector(`a[href^="#ref-"]`)){let t=null,n=!1,r=document.createElement(`button`);r.type=`button`,r.className=`citation-return`,r.textContent=`返回阅读位置`,r.setAttribute(`data-pagefind-ignore`,``),e.addEventListener(`click`,n=>{if(n.button!==0||n.metaKey||n.ctrlKey||n.shiftKey||n.altKey)return;let i=n.target instanceof Element?n.target.closest(`a[href^="#ref-"]`):null;if(!i||!e.contains(i))return;let a=i.hash,o=document.getElementById(decodeURIComponent(a.slice(1)));o&&e.contains(o)&&(t={source:i,url:window.location.href,top:window.scrollY,left:window.scrollX,targetHash:a},o.insertAdjacentElement(`afterend`,r))}),r.addEventListener(`click`,()=>{if(!t||n)return;let e=t,i=i=>{r.remove(),window.requestAnimationFrame(()=>{window.requestAnimationFrame(()=>{e.source.focus({preventScroll:!0}),window.scrollTo({top:e.top,left:e.left,behavior:`instant`}),t=null,n=!1,i?.()})})};window.location.href===e.url?i():(n=!0,window.addEventListener(`popstate`,()=>{let e=window.history.scrollRestoration;window.history.scrollRestoration=`manual`,window.setTimeout(()=>{i(()=>{window.history.scrollRestoration=e})},0)},{once:!0}),window.history.back())}),window.addEventListener(`hashchange`,()=>{!n&&t&&window.location.hash!==t.targetHash&&(r.remove(),t=null)})}</script><script data-astro-rerun>
+  function createProgressBar() {
+    const progressContainer = document.createElement("div");
+    progressContainer.className =
+      "progress-container fixed top-0 z-10 h-1 w-full bg-background";
+
+    const progressBar = document.createElement("div");
+    progressBar.className = "progress-bar h-1 w-0 bg-accent";
+    progressBar.id = "myBar";
+
+    progressContainer.appendChild(progressBar);
+    document.body.appendChild(progressContainer);
+  }
+  createProgressBar();
+
+  function updateScrollProgress() {
+    document.addEventListener("scroll", () => {
+      const winScroll =
+        document.body.scrollTop || document.documentElement.scrollTop;
+      const height =
+        document.documentElement.scrollHeight -
+        document.documentElement.clientHeight;
+      const scrolled = (winScroll / height) * 100;
+      if (document) {
+        const myBar = document.getElementById("myBar");
+        if (myBar) {
+          myBar.style.width = scrolled + "%";
+        }
+      }
+    });
+  }
+  updateScrollProgress();
+
+  function addHeadingLinks() {
+    const headings = Array.from(
+      document.querySelectorAll("h2, h3, h4, h5, h6")
+    );
+    for (const heading of headings) {
+      heading.classList.add("group");
+      const link = document.createElement("a");
+      link.className =
+        "heading-link ms-2 no-underline opacity-75 md:opacity-0 md:group-hover:opacity-100 md:focus:opacity-100";
+      link.href = "#" + heading.id;
+
+      const span = document.createElement("span");
+      span.ariaHidden = "true";
+      span.innerText = "#";
+      link.appendChild(span);
+      heading.appendChild(link);
+    }
+  }
+  addHeadingLinks();
+
+  function attachCopyButtons() {
+    const copyButtonLabel = "Copy";
+    const codeBlocks = Array.from(document.querySelectorAll("pre"));
+
+    for (const codeBlock of codeBlocks) {
+      const wrapper = document.createElement("div");
+      wrapper.style.position = "relative";
+
+      const computedStyle = getComputedStyle(codeBlock);
+      const hasFileNameOffset =
+        computedStyle.getPropertyValue("--file-name-offset").trim() !== "";
+
+      const topClass = hasFileNameOffset
+        ? "top-(--file-name-offset)"
+        : "-top-3";
+
+      const copyButton = document.createElement("button");
+      copyButton.className = `copy-code absolute end-3 ${topClass} rounded bg-muted border border-muted px-2 py-1 text-xs leading-4 text-foreground font-medium`;
+      copyButton.innerHTML = copyButtonLabel;
+      codeBlock.setAttribute("tabindex", "0");
+      codeBlock.appendChild(copyButton);
+
+      codeBlock?.parentNode?.insertBefore(wrapper, codeBlock);
+      wrapper.appendChild(codeBlock);
+
+      copyButton.addEventListener("click", async () => {
+        await copyCode(codeBlock, copyButton);
+      });
+    }
+
+    async function copyCode(block, button) {
+      const code = block.querySelector("code");
+      const text = code?.innerText;
+
+      await navigator.clipboard.writeText(text ?? "");
+
+      button.innerText = "Copied";
+
+      setTimeout(() => {
+        button.innerText = copyButtonLabel;
+      }, 700);
+    }
+  }
+  attachCopyButtons();
+
+  /** Accessible image lightbox for article images. */
+  function initLightbox() {
+    const article = document.getElementById("article");
+    if (!article) return;
+
+    const prefersReducedMotion = () =>
+      window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+    let overlay = null;
+    let lastFocused = null;
+    let removeDragListeners = null;
+
+    // Defer attribute mutations so they don't push the LCP timestamp.
+    // Event listeners below use delegation and don't need the attributes to exist yet.
+    requestAnimationFrame(() => {
+      const images = Array.from(article.querySelectorAll("img"));
+      for (const image of images) {
+        if (image.closest("a")) continue;
+        image.setAttribute("role", "button");
+        image.setAttribute("tabindex", "0");
+        image.setAttribute("aria-haspopup", "dialog");
+        image.setAttribute(
+          "aria-label",
+          image.alt ? `Zoom image: ${image.alt}` : "Zoom image"
+        );
+      }
+    });
+
+    function open(src, alt, trigger) {
+      if (overlay) return;
+      lastFocused = trigger ?? document.activeElement;
+
+      overlay = document.createElement("div");
+      overlay.setAttribute("role", "dialog");
+      overlay.setAttribute("aria-modal", "true");
+      overlay.setAttribute(
+        "aria-label",
+        alt ? `Image preview: ${alt}` : "Image preview"
+      );
+      overlay.className =
+        "fixed inset-0 z-50 flex cursor-zoom-out items-center justify-center bg-black/70 backdrop-blur-sm opacity-0 transition-opacity duration-200 motion-reduce:transition-none";
+
+      const closeButton = document.createElement("button");
+      closeButton.type = "button";
+      closeButton.setAttribute("aria-label", "Close image preview");
+      closeButton.className =
+        "absolute end-4 top-4 z-1 flex size-11 items-center justify-center rounded bg-black/50 text-3xl leading-none text-white";
+      closeButton.innerHTML = "&#10005;";
+      closeButton.addEventListener("click", close);
+
+      const image = document.createElement("img");
+      image.src = src;
+      image.alt = "";
+      image.className =
+        "max-h-[90dvh] max-w-[90dvw] cursor-default object-contain transition-transform duration-100 ease-out motion-reduce:transition-none data-[zoom=drag]:cursor-grabbing data-[zoom=drag]:transition-none data-[zoom=in]:cursor-grab";
+
+      overlay.append(closeButton, image);
+      overlay.addEventListener("click", e => {
+        if (e.target === overlay && currentScale <= 1) close();
+      });
+
+      let currentScale = 1;
+      let translateX = 0;
+      let translateY = 0;
+      let initialDist = 0;
+      let initialScale = 1;
+      let panStartX = 0;
+      let panStartY = 0;
+      let panStartTranslateX = 0;
+      let panStartTranslateY = 0;
+      let lastTapTime = 0;
+
+      function applyTransform() {
+        image.style.transform = `scale(${currentScale}) translate(${translateX}px, ${translateY}px)`;
+        // A backdrop click only closes at fit size, so drop the zoom-out cursor while zoomed.
+        overlay?.classList.toggle("cursor-zoom-out", currentScale <= 1);
+      }
+
+      function resetTransform() {
+        currentScale = 1;
+        translateX = 0;
+        translateY = 0;
+        image.style.transform = "";
+        image.removeAttribute("data-zoom");
+        overlay?.classList.add("cursor-zoom-out");
+      }
+
+      // Keep the zoomed image from being panned past its edges.
+      function clampTranslate() {
+        if (!overlay) return;
+        const maxX = Math.max(
+          0,
+          (image.clientWidth - overlay.clientWidth / currentScale) / 2
+        );
+        const maxY = Math.max(
+          0,
+          (image.clientHeight - overlay.clientHeight / currentScale) / 2
+        );
+        translateX = Math.min(maxX, Math.max(-maxX, translateX));
+        translateY = Math.min(maxY, Math.max(-maxY, translateY));
+      }
+
+      overlay.addEventListener(
+        "touchstart",
+        e => {
+          const t = e.touches;
+          if (t.length === 2) {
+            image.setAttribute("data-zoom", "drag");
+            initialDist = Math.hypot(
+              t[1].clientX - t[0].clientX,
+              t[1].clientY - t[0].clientY
+            );
+            initialScale = currentScale;
+          } else if (t.length === 1) {
+            const now = Date.now();
+            if (now - lastTapTime < 300) {
+              e.preventDefault();
+              if (currentScale > 1) {
+                resetTransform();
+              } else {
+                currentScale = 2;
+                translateX = 0;
+                translateY = 0;
+                applyTransform();
+                image.setAttribute("data-zoom", "in");
+              }
+              lastTapTime = 0;
+              panStartX = t[0].clientX;
+              panStartY = t[0].clientY;
+              panStartTranslateX = translateX;
+              panStartTranslateY = translateY;
+            } else {
+              lastTapTime = now;
+              if (currentScale > 1) {
+                image.setAttribute("data-zoom", "drag");
+                panStartX = t[0].clientX;
+                panStartY = t[0].clientY;
+                panStartTranslateX = translateX;
+                panStartTranslateY = translateY;
+              }
+            }
+          }
+        },
+        { passive: false }
+      );
+
+      overlay.addEventListener(
+        "touchmove",
+        e => {
+          const t = e.touches;
+          if (t.length === 2) {
+            e.preventDefault();
+            const dist = Math.hypot(
+              t[1].clientX - t[0].clientX,
+              t[1].clientY - t[0].clientY
+            );
+            const oldScale = currentScale;
+            currentScale = Math.min(
+              4,
+              Math.max(1, initialScale * (dist / initialDist))
+            );
+
+            // Zoom to the geometric center of the two fingers
+            const midX = (t[0].clientX + t[1].clientX) / 2;
+            const midY = (t[0].clientY + t[1].clientY) / 2;
+            const ox = overlay.clientWidth / 2;
+            const oy = overlay.clientHeight / 2;
+            translateX =
+              (midX - ox) * (1 / currentScale - 1 / oldScale) + translateX;
+            translateY =
+              (midY - oy) * (1 / currentScale - 1 / oldScale) + translateY;
+            clampTranslate();
+            applyTransform();
+          } else if (t.length === 1) {
+            if (currentScale > 1) {
+              e.preventDefault();
+              image.setAttribute("data-zoom", "drag");
+              translateX =
+                panStartTranslateX + (t[0].clientX - panStartX) / currentScale;
+              translateY =
+                panStartTranslateY + (t[0].clientY - panStartY) / currentScale;
+              clampTranslate();
+              applyTransform();
+            } else {
+              e.preventDefault();
+            }
+          }
+        },
+        { passive: false }
+      );
+
+      overlay.addEventListener("touchend", e => {
+        if (e.touches.length === 0) {
+          if (currentScale > 1) {
+            image.setAttribute("data-zoom", "in");
+          } else {
+            image.removeAttribute("data-zoom");
+          }
+          if (currentScale <= 1.05) resetTransform();
+        }
+      });
+
+      overlay.addEventListener("touchcancel", e => {
+        if (e.touches.length === 0) {
+          if (currentScale > 1) {
+            image.setAttribute("data-zoom", "in");
+          } else {
+            image.removeAttribute("data-zoom");
+          }
+          if (currentScale <= 1.05) resetTransform();
+        }
+      });
+
+      overlay.addEventListener(
+        "wheel",
+        e => {
+          e.preventDefault();
+          const oldScale = currentScale;
+          const delta = -e.deltaY * 0.001;
+          currentScale = Math.min(4, Math.max(1, currentScale * (1 + delta)));
+
+          if (currentScale <= 1.05) {
+            resetTransform();
+          } else {
+            image.setAttribute("data-zoom", "in");
+            // Zoom to cursor: adjust translate so the point under cursor stays fixed
+            const ox = overlay.clientWidth / 2;
+            const oy = overlay.clientHeight / 2;
+            translateX =
+              (e.clientX - ox) * (1 / currentScale - 1 / oldScale) + translateX;
+            translateY =
+              (e.clientY - oy) * (1 / currentScale - 1 / oldScale) + translateY;
+            clampTranslate();
+            applyTransform();
+          }
+        },
+        { passive: false }
+      );
+
+      let isMouseDown = false;
+      let mouseStartX = 0;
+      let mouseStartY = 0;
+
+      overlay.addEventListener("mousedown", e => {
+        if (e.button !== 0 || currentScale <= 1) return;
+        if (e.target.closest("button")) return;
+        isMouseDown = true;
+        mouseStartX = e.clientX;
+        mouseStartY = e.clientY;
+        panStartTranslateX = translateX;
+        panStartTranslateY = translateY;
+        image.setAttribute("data-zoom", "drag");
+        e.preventDefault();
+      });
+
+      function onMouseMove(e) {
+        if (!isMouseDown || !overlay) return;
+        translateX =
+          panStartTranslateX + (e.clientX - mouseStartX) / currentScale;
+        translateY =
+          panStartTranslateY + (e.clientY - mouseStartY) / currentScale;
+        clampTranslate();
+        applyTransform();
+      }
+
+      function onMouseUp() {
+        if (!isMouseDown) return;
+        isMouseDown = false;
+        if (currentScale > 1) {
+          image.setAttribute("data-zoom", "in");
+        } else {
+          image.removeAttribute("data-zoom");
+        }
+      }
+
+      document.addEventListener("mousemove", onMouseMove);
+      document.addEventListener("mouseup", onMouseUp);
+      removeDragListeners = () => {
+        document.removeEventListener("mousemove", onMouseMove);
+        document.removeEventListener("mouseup", onMouseUp);
+      };
+
+      document.body.appendChild(overlay);
+      document.documentElement.style.overflow = "hidden";
+      document.addEventListener("keydown", onKeyDown);
+      window.__closeLightbox = close;
+
+      requestAnimationFrame(() => overlay?.classList.add("opacity-100"));
+      closeButton.focus();
+    }
+
+    function close() {
+      if (!overlay) return;
+      const el = overlay;
+      overlay = null;
+      el.classList.add("pointer-events-none");
+      window.__closeLightbox = null;
+
+      document.removeEventListener("keydown", onKeyDown);
+      removeDragListeners?.();
+      removeDragListeners = null;
+      document.documentElement.style.overflow = "";
+      lastFocused?.focus();
+      lastFocused = null;
+
+      if (prefersReducedMotion()) {
+        el.remove();
+        return;
+      }
+      const remove = () => el.remove();
+      el.addEventListener("transitionend", remove, { once: true });
+      setTimeout(remove, 250); // fallback in case transitionend never fires
+      el.classList.remove("opacity-100");
+    }
+
+    function onKeyDown(e) {
+      if (e.key === "Escape") {
+        close();
+      } else if (e.key === "Tab") {
+        trapFocus(e);
+      }
+    }
+
+    // Keep keyboard focus inside the open dialog.
+    function trapFocus(e) {
+      if (!overlay) return;
+      const focusables = overlay.querySelectorAll(
+        'a[href], button, [tabindex]:not([tabindex="-1"])'
+      );
+      if (focusables.length === 0) return;
+      const first = focusables[0];
+      const last = focusables[focusables.length - 1];
+      if (e.shiftKey && document.activeElement === first) {
+        e.preventDefault();
+        last.focus();
+      } else if (!e.shiftKey && document.activeElement === last) {
+        e.preventDefault();
+        first.focus();
+      }
+    }
+
+    function triggerFromEvent(e) {
+      const image = e.target.closest("img");
+      if (!image || !article.contains(image) || image.closest("a")) return null;
+      return image;
+    }
+
+    function activate(image) {
+      open(image.currentSrc || image.src, image.alt, image);
+    }
+
+    article.addEventListener("click", e => {
+      const image = triggerFromEvent(e);
+      if (!image) return;
+      e.preventDefault();
+      activate(image);
+    });
+
+    article.addEventListener("keydown", e => {
+      if (e.key !== "Enter" && e.key !== " " && e.key !== "Spacebar") return;
+      const image = triggerFromEvent(e);
+      if (!image) return;
+      e.preventDefault();
+      activate(image);
+    });
+  }
+  initLightbox();
+
+  if (!window.__lightboxSwapBound) {
+    window.__lightboxSwapBound = true;
+    document.addEventListener("astro:before-swap", () =>
+      window.__closeLightbox?.()
+    );
+  }
+
+  document.addEventListener("astro:after-swap", () =>
+    window.scrollTo({ left: 0, top: 0, behavior: "instant" })
+  );
+</script>

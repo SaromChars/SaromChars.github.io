@@ -1,0 +1,856 @@
+<!DOCTYPE html><html dir="ltr" lang="zh-CN" class="overflow-y-scroll scroll-smooth"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1"><link rel="icon" type="image/png" href="/images/favicon-32x32-next.png"><link rel="icon" href="/favicon.ico"><link rel="canonical" href="https://www.saromchars.tech/posts/mail-postfix-qmgr-scheduling/"><meta name="generator" content="Astro v7.4.5"><!-- Primary meta --><title>Postfix qmgr 的队列调度 | Sarom&#39;s Blog</title><meta name="title" content="Postfix qmgr 的队列调度 | Sarom's Blog"><meta name="description" content="深入分析 Postfix 3.6.2 队列管理器 qmgr 的内存分层模型、队列生命周期、并发退避调度、逐收件人落盘标记机制与故障排查路径。"><meta name="author" content="Sarom Chars"><link rel="sitemap" href="/sitemap-index.xml"><!-- Open Graph --><meta property="og:type" content="article"><meta property="og:site_name" content="Sarom's Blog"><meta property="og:title" content="Postfix qmgr 的队列调度 | Sarom's Blog"><meta property="og:description" content="深入分析 Postfix 3.6.2 队列管理器 qmgr 的内存分层模型、队列生命周期、并发退避调度、逐收件人落盘标记机制与故障排查路径。"><meta property="og:url" content="https://www.saromchars.tech/posts/mail-postfix-qmgr-scheduling/"><meta property="og:image" content="https://www.saromchars.tech/og.png"><!-- Twitter / X --><meta property="twitter:card" content="summary_large_image"><meta property="twitter:url" content="https://www.saromchars.tech/posts/mail-postfix-qmgr-scheduling/"><meta property="twitter:title" content="Postfix qmgr 的队列调度 | Sarom's Blog"><meta property="twitter:description" content="深入分析 Postfix 3.6.2 队列管理器 qmgr 的内存分层模型、队列生命周期、并发退避调度、逐收件人落盘标记机制与故障排查路径。"><meta property="twitter:image" content="https://www.saromchars.tech/og.png"><!-- RSS autodiscovery --><link rel="alternate" type="application/rss+xml" title="Sarom's Blog" href="https://www.saromchars.tech/rss.xml"><!-- Filled at runtime by theme.ts to match the current background colour --><meta name="theme-color" content=""><!-- Extra head content injected by child layouts (e.g. JSON-LD, article meta) --><meta property="article:published_time" content="2021-11-07T02:00:00.000Z"><script type="application/ld+json">{"@context":"https://schema.org","@type":"BlogPosting","headline":"Postfix qmgr 的队列调度","mainEntityOfPage":"https://www.saromchars.tech/posts/mail-postfix-qmgr-scheduling/","datePublished":"2021-11-07T02:00:00.000Z","author":[{"@type":"Person","name":"Sarom Chars","url":"https://github.com/SaromChars"}]}</script><!--
+      Inline FOUC-prevention script: sets data-theme on <html> before
+      the browser paints. Runs synchronously, no defer/async.
+    --><script>
+      (function () {
+        const stored = localStorage.getItem("theme");
+        const prefersDark = window.matchMedia(
+          "(prefers-color-scheme: dark)"
+        ).matches;
+        const theme = stored ?? (prefersDark ? "dark" : "light");
+        const root = document.firstElementChild;
+        root?.setAttribute("data-theme", theme);
+        root?.classList.toggle("dark", theme === "dark");
+        // Expose value so theme.ts can skip re-detection.
+        window.__theme = { value: theme };
+      })();
+    </script><meta name="robots" content="index, follow"><script async src="https://www.googletagmanager.com/gtag/js?id=G-WJJJTJ4FWX"></script><script>(function(){const measurementId = "G-WJJJTJ4FWX";
+
+    window.dataLayer = window.dataLayer || [];
+    function gtag(){ window.dataLayer.push(arguments); }
+    gtag('js', new Date());
+    gtag('config', measurementId);
+  })();</script><style>@keyframes astroFadeInOut{0%{opacity:1}to{opacity:0}}@keyframes astroFadeIn{0%{opacity:0;mix-blend-mode:plus-lighter}to{opacity:1;mix-blend-mode:plus-lighter}}@keyframes astroFadeOut{0%{opacity:1;mix-blend-mode:plus-lighter}to{opacity:0;mix-blend-mode:plus-lighter}}@keyframes astroSlideFromRight{0%{transform:translate(100%)}}@keyframes astroSlideFromLeft{0%{transform:translate(-100%)}}@keyframes astroSlideToRight{to{transform:translate(100%)}}@keyframes astroSlideToLeft{to{transform:translate(-100%)}}@media (prefers-reduced-motion){::view-transition-group(*),::view-transition-old(*),::view-transition-new(*),[data-astro-transition-scope]{animation:none!important}}
+</style><link rel="stylesheet" href="/_astro/Footer.wlxowfqU.css"><style>[data-astro-transition-scope="astro-bztu2lml-1"] { view-transition-name: \90AE\7BB1\7CFB\7EDF; }@layer astro { ::view-transition-old(\90AE\7BB1\7CFB\7EDF) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }::view-transition-new(\90AE\7BB1\7CFB\7EDF) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }[data-astro-transition=back]::view-transition-old(\90AE\7BB1\7CFB\7EDF) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition=back]::view-transition-new(\90AE\7BB1\7CFB\7EDF) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; } }[data-astro-transition-fallback="old"] [data-astro-transition-scope="astro-bztu2lml-1"],
+			[data-astro-transition-fallback="old"][data-astro-transition-scope="astro-bztu2lml-1"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition-fallback="new"] [data-astro-transition-scope="astro-bztu2lml-1"],
+			[data-astro-transition-fallback="new"][data-astro-transition-scope="astro-bztu2lml-1"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }[data-astro-transition=back][data-astro-transition-fallback="old"] [data-astro-transition-scope="astro-bztu2lml-1"],
+			[data-astro-transition=back][data-astro-transition-fallback="old"][data-astro-transition-scope="astro-bztu2lml-1"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition=back][data-astro-transition-fallback="new"] [data-astro-transition-scope="astro-bztu2lml-1"],
+			[data-astro-transition=back][data-astro-transition-fallback="new"][data-astro-transition-scope="astro-bztu2lml-1"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }</style><style>[data-astro-transition-scope="astro-bztu2lml-2"] { view-transition-name: \6D88\606F\961F\5217; }@layer astro { ::view-transition-old(\6D88\606F\961F\5217) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }::view-transition-new(\6D88\606F\961F\5217) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }[data-astro-transition=back]::view-transition-old(\6D88\606F\961F\5217) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition=back]::view-transition-new(\6D88\606F\961F\5217) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; } }[data-astro-transition-fallback="old"] [data-astro-transition-scope="astro-bztu2lml-2"],
+			[data-astro-transition-fallback="old"][data-astro-transition-scope="astro-bztu2lml-2"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition-fallback="new"] [data-astro-transition-scope="astro-bztu2lml-2"],
+			[data-astro-transition-fallback="new"][data-astro-transition-scope="astro-bztu2lml-2"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }[data-astro-transition=back][data-astro-transition-fallback="old"] [data-astro-transition-scope="astro-bztu2lml-2"],
+			[data-astro-transition=back][data-astro-transition-fallback="old"][data-astro-transition-scope="astro-bztu2lml-2"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition=back][data-astro-transition-fallback="new"] [data-astro-transition-scope="astro-bztu2lml-2"],
+			[data-astro-transition=back][data-astro-transition-fallback="new"][data-astro-transition-scope="astro-bztu2lml-2"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }</style><style>[data-astro-transition-scope="astro-bztu2lml-3"] { view-transition-name: smtp; }@layer astro { ::view-transition-old(smtp) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }::view-transition-new(smtp) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }[data-astro-transition=back]::view-transition-old(smtp) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition=back]::view-transition-new(smtp) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; } }[data-astro-transition-fallback="old"] [data-astro-transition-scope="astro-bztu2lml-3"],
+			[data-astro-transition-fallback="old"][data-astro-transition-scope="astro-bztu2lml-3"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition-fallback="new"] [data-astro-transition-scope="astro-bztu2lml-3"],
+			[data-astro-transition-fallback="new"][data-astro-transition-scope="astro-bztu2lml-3"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }[data-astro-transition=back][data-astro-transition-fallback="old"] [data-astro-transition-scope="astro-bztu2lml-3"],
+			[data-astro-transition=back][data-astro-transition-fallback="old"][data-astro-transition-scope="astro-bztu2lml-3"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition=back][data-astro-transition-fallback="new"] [data-astro-transition-scope="astro-bztu2lml-3"],
+			[data-astro-transition=back][data-astro-transition-fallback="new"][data-astro-transition-scope="astro-bztu2lml-3"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }</style></head><body class="bg-background font-app text-foreground selection:bg-accent/75 selection:text-accent-foreground flex min-h-svh flex-col"><a id="skip-to-content" href="#main-content" class="bg-background text-accent absolute inset-s-16 -top-full z-50 px-3 py-2 backdrop-blur-lg transition-all focus:top-4">跳到正文</a><header class="app-layout flex flex-col items-center justify-between sm:flex-row"><div class="border-border bg-background relative flex w-full items-baseline justify-between border-b py-4 sm:items-center sm:py-6"><a href="/" class="absolute py-1 text-xl leading-8 font-semibold whitespace-nowrap sm:static sm:my-auto sm:text-2xl sm:leading-none">Sarom&#39;s Blog</a><nav id="nav-menu" class="flex w-full flex-col items-center sm:ms-2 sm:flex-row sm:justify-end sm:space-x-4 sm:py-0"><button id="menu-btn" class="focus-outline self-end p-2 sm:hidden" aria-label="展开菜单" aria-expanded="false" aria-controls="menu-items" data-label-open="展开菜单" data-label-close="收起菜单"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="hidden" viewBox="0 0 24 24" id="close-icon"><path stroke="none" d="M0 0h24v24H0z" /><path d="M18 6 6 18M6 6l12 12" /></svg><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="icon icon-tabler icons-tabler-outline icon-tabler-menu-deep" viewBox="0 0 24 24" id="menu-icon"><path stroke="none" d="M0 0h24v24H0z" /><path d="M4 6h16M7 12h13M10 18h10" /></svg></button><ul id="menu-items" class="[&amp;&gt;li&gt;a]:hover:text-accent mt-4 hidden w-44 grid-cols-2 place-content-center gap-2 sm:mt-0 sm:flex sm:w-auto sm:gap-x-5 sm:gap-y-0 sm:[&amp;&gt;li]:h-8 [&amp;&gt;li&gt;a]:block [&amp;&gt;li&gt;a]:px-4 [&amp;&gt;li&gt;a]:py-3 [&amp;&gt;li&gt;a]:text-center [&amp;&gt;li&gt;a]:font-medium sm:[&amp;&gt;li&gt;a]:px-2 sm:[&amp;&gt;li&gt;a]:py-1"><li class="col-span-2"><a href="/posts/" class="active-nav">文章</a></li><li class="col-span-2"><a href="/tags/">标签</a></li><li class="col-span-2"><a href="/about/">关于</a></li><li class="col-span-2"><a href="/archives/" title="归档" aria-label="归档" class="group inline-flex items-center gap-1 hover:text-accent focus-outline flex size-full justify-center p-3 sm:relative sm:size-8 sm:p-0"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="hidden sm:absolute sm:top-1/2 sm:left-1/2 sm:block sm:size-6 sm:-translate-x-1/2 sm:-translate-y-1/2" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M3 6a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2 2 2 0 0 1-2 2H5a2 2 0 0 1-2-2M5 8v10a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8M10 12h4" /></svg><span class="sm:sr-only">归档</span></a></li><li class="col-span-1 flex items-center justify-center"><a href="/search/" title="搜索" aria-label="搜索" class="group inline-flex items-center gap-1 hover:text-accent focus-outline relative size-8"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="absolute top-1/2 left-1/2 size-6 -translate-x-1/2 -translate-y-1/2" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M3 10a7 7 0 1 0 14 0 7 7 0 1 0-14 0M21 21l-6-6" /></svg><span class="sr-only">搜索</span></a></li><li class="col-span-1 flex items-center justify-center"><button id="theme-btn" class="focus-outline hover:[&amp;&gt;svg]:stroke-accent relative size-12 p-4 sm:size-8" title="切换主题" aria-label="auto" aria-live="polite"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="absolute top-[50%] left-[50%] translate-[-50%] scale-100 rotate-0 transition-all dark:scale-0 dark:-rotate-90" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M12 3h.393a7.5 7.5 0 0 0 7.92 12.446A9 9 0 1 1 12 2.992z" /></svg><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="absolute top-[50%] left-[50%] translate-[-50%] scale-0 rotate-90 transition-all dark:scale-100 dark:rotate-0" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M14.828 14.828a4 4 0 1 0-5.656-5.656 4 4 0 0 0 5.656 5.656M6.343 17.657l-1.414 1.414M6.343 6.343 4.929 4.929M17.657 6.343l1.414-1.414M17.657 17.657l1.414 1.414M4 12H2M12 4V2M20 12h2M12 20v2" /></svg></button></li></ul></nav></div></header><script type="module">function e(){let e=document.querySelector(`#menu-btn`),t=document.querySelector(`#menu-items`),n=document.querySelector(`#menu-icon`),r=document.querySelector(`#close-icon`);if(!e||!t||!n||!r)return;let i=e.dataset.labelOpen??`Open menu`,a=e.dataset.labelClose??`Close menu`;e.addEventListener(`click`,()=>{let o=e.getAttribute(`aria-expanded`)===`true`;e.setAttribute(`aria-expanded`,o?`false`:`true`),e.setAttribute(`aria-label`,o?i:a),t.classList.toggle(`hidden`),t.classList.toggle(`grid`),n.classList.toggle(`hidden`),r.classList.toggle(`hidden`)})}function t(){let e=document.getElementById(`skip-to-content`);e&&e.addEventListener(`click`,e=>{if(e.defaultPrevented||e.metaKey||e.ctrlKey||e.shiftKey||e.button!==0)return;e.preventDefault();let t=document.getElementById(`main-content`);t&&(t.setAttribute(`tabindex`,`-1`),t.addEventListener(`blur`,()=>t.removeAttribute(`tabindex`),{once:!0}),t.focus(),t.scrollIntoView({behavior:`smooth`}))})}e(),document.addEventListener(`astro:after-swap`,e),t(),document.addEventListener(`astro:after-swap`,t);</script><div class="app-layout flex items-center justify-start"><a id="back-button" href="/" class="group inline-flex items-center gap-1 hover:text-accent focus-outline hover:text-foreground/75 -ms-2 mt-8 mb-2"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="inline-block size-6 rtl:rotate-180" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="m15 6-6 6 6 6" /></svg><span>返回</span></a></div><script type="module">function e(){let e=document.querySelector(`#back-button`),t=sessionStorage.getItem(`backUrl`);t&&e&&(e.href=t)}document.addEventListener(`astro:page-load`,e),e();</script><main id="main-content" class="app-layout" data-pagefind-body><h1 style="view-transition-name:mail-postfix-qmgr-scheduling" class="text-accent inline-block text-2xl font-bold sm:text-3xl">Postfix qmgr 的队列调度</h1><div class="my-2 flex items-center gap-2"><div class="text-muted-foreground flex flex-wrap items-center gap-x-2 gap-y-1"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="inline-block size-6 min-w-5.5" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M4 7a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2zM16 3v4M8 3v4M4 11h16M7 14h.013M10.01 14h.005M13.01 14h.005M16.015 14h.005M13.015 17h.005M7.01 17h.005M10.01 17h.005" /></svg><time class="text-sm sm:text-base" datetime="2021-11-07T02:00:00.000Z">2021年11月7日</time></div><span aria-hidden="true" class="text-muted-foreground max-sm:hidden hidden">|</span></div><article id="article" class="mt-8 w-full app-prose max-w-app prose-pre:bg-(--shiki-light-bg) dark:prose-pre:bg-(--shiki-dark-bg)"><!--email_off-->
+<p>在基于简单邮件传输协议（Simple Mail Transfer Protocol，SMTP）的邮件系统开发中，系统接收客户端提交的邮件并返回成功应答之后，邮件可能会因为网络对端状态、目的地限流或队列堆积而延迟送达；而在包含多个收件人的邮件中，也可能出现部分收件人送达而另一部分进入暂缓重试的混合结果。</p>
+<p>在邮件传输代理（Mail Transfer Agent，MTA）Postfix 3.6.2 的体系中，负责这一调度逻辑的核心是队列管理器（Queue Manager，即 <code>qmgr</code> 守护进程）。理解 <code>qmgr</code> 的内部调度数据结构、队列文件流转与逐收件人状态维护，是定位邮件投递延迟与队列堆积的关键基础，也为自研高可靠邮件投递引擎提供了成熟的工程参考。</p>
+<hr>
+<h2 id="一调度器与投递代理的权责划分">一、调度器与投递代理的权责划分</h2>
+<p>在 Postfix 的模块化体系中，<code>qmgr</code> 与投递代理（Delivery Agent，例如负责远程 SMTP 投递的 <code>smtp</code>、负责本地投递的 <code>local</code> 或管道投递的 <code>pipe</code>）职责边界明确：<strong><code>qmgr</code> 负责消息队列文件的状态迁移、内存批次规划与并发调度，不执行远端 SMTP 对话，也不负责目标邮箱的具体存储写入</strong>。网络连接的建立、协议交互及具体收件人邮箱的写盘，全部由对应的投递代理进程完成。</p>
+<h3 id="11-核心内存数据结构">1.1 核心内存数据结构</h3>
+<p>在 <code>src/qmgr/qmgr.h</code> 中，<code>qmgr</code> 使用了四层核心内存结构来组织待投递任务：</p>
+<div class="table-wrapper" tabindex="0">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<table><thead><tr><th align="left">内存结构名称</th><th align="left">组织维度与核心职责</th></tr></thead><tbody><tr><td align="left"><code>QMGR_MESSAGE</code></td><td align="left">对应处于活动队列（<code>active</code>）中的一封邮件文件。持有队列标识（<code>queue_id</code>）、文件内正文数据偏移量（<code>data_offset</code>）、未处理收件人计数（<code>rcpt_unread</code>）及关联任务列表 <a href="#ref-code">源码</a>。</td></tr><tr><td align="left"><code>QMGR_JOB</code></td><td align="left">消息与传输通道（Transport）层面的聚合单元。若同一封邮件包含多个不同传输通道（如外域 <code>smtp</code> 与本地域 <code>local</code>），会为不同通道分别分配 <code>QMGR_JOB</code>。</td></tr><tr><td align="left"><code>QMGR_PEER</code></td><td align="left">关联特定传输通道与目标队列（<code>QMGR_QUEUE</code>，对应下一跳目的地）的调度节点，衔接上层 Job 与底层待投递条目。</td></tr><tr><td align="left"><code>QMGR_ENTRY</code></td><td align="left">一次具体的进程间通信（Inter-Process Communication，IPC）投递单元。持有收件人批次列表 <code>rcpt_list</code>，挂载在对应队列的就绪链表（<code>todo</code>）或投递中链表（<code>busy</code>）上 <a href="#ref-code">源码</a>。</td></tr></tbody></table></div>
+<h3 id="12-投递批次的分组与目的地概念">1.2 投递批次的分组与目的地概念</h3>
+<p>当 <code>qmgr</code> 在 <code>src/qmgr/qmgr_message.c</code> 中执行 <code>qmgr_message_assign()</code> 时，会将邮件内的有效收件人打包分配进 <code>QMGR_ENTRY</code>。为降低网络交互开销，解析至相同传输通道与相同目的地的收件人会合并在同一个 <code>QMGR_ENTRY</code> 中发送给投递代理 <a href="#ref-code">源码</a>。</p>
+<p>但合并受传输通道的收件人限制（<code>recipient_limit</code>）约束。一旦当前条目的收件人数量达到限制，或者启用了单收件人投递（<code>single_rcpt</code>），<code>qmgr</code> 就会调用 <code>qmgr_entry_create()</code> 创建新的 <code>QMGR_ENTRY</code>。</p>
+<p>需要特别说明的是目的地（Destination）的定义：在 <code>src/qmgr/qmgr_message.c</code>（第 1245–1301 行）中，目的地队列名称 <code>queue_name</code> 默认取自解析出的下一跳主机 <code>nexthop</code>；但对非 <code>error</code> 与 <code>retry</code> 通道，当投递代理的 <code>recipient_limit</code> 为 1 时，代码可按去除地址扩展后的 <code>localpart</code> 与 <code>nexthop</code> 建立队列（即 <code>localpart@nexthop</code>）<a href="#ref-code">源码</a>。因此，Postfix 中的目的地并不绝对等同于目标域名或 MX 主机，而是由传输通道与下一跳配置共同决定的调度隔离单元。</p>
+<blockquote><p><strong>工程推导提醒</strong>：<br>
+一次 IPC 投递尝试（即一个 <code>QMGR_ENTRY</code>）只是运行时的临时内存结构，并不等同于持久化的投递任务记录。在自研分布式邮件系统时，通常会在数据库中建立“消息记录（Message ID）”、“收件人记录（Recipient ID）”与“投递尝试记录（Attempt ID）”三张关系表；这是工程设计的规范化抽象，Postfix 内部并没有这三张独立的关系表，其持久化状态是以紧凑格式记录在单个队列文件中的。</p></blockquote>
+<hr>
+<h2 id="二队列生命周期与执行主链">二、队列生命周期与执行主链</h2>
+<p>Postfix 的队列目录结构明确，文件在磁盘上的状态迁移由 <code>qmgr</code>、<code>cleanup</code> 与投递代理协同完成。</p>
+<h3 id="21-队列目录状态流转">2.1 队列目录状态流转</h3>
+<ol>
+<li><strong><code>incoming</code> 队列</strong>：由 <code>cleanup</code> 守护进程在此目录创建并写入队列文件。当邮件接收完成、地址规范化处理完毕并满足权限与完整性检查后，文件在 <code>incoming</code> 目录等待调度。</li>
+<li><strong><code>active</code> 队列</strong>：受内存预算控制的活动水位池。只有通过检查并移入 <code>active</code> 目录的文件，<code>qmgr</code> 才会为其在内存中分配 <code>QMGR_MESSAGE</code> 及下属数据结构 <a href="#ref-code">源码</a>。</li>
+<li><strong><code>deferred</code> 队列</strong>：当投递过程中遇到暂时性故障（如对端返回 4xx 状态码或网络连接超时），邮件从 <code>active</code> 被重命名移入 <code>deferred</code> 目录，并设置未来的修改时间戳进行退避等待。</li>
+</ol>
+<h3 id="22-源码级调用主链">2.2 源码级调用主链</h3>
+<p>在主事件循环 <code>qmgr_loop()</code>（<code>src/qmgr/qmgr.c</code>）中，<code>qmgr</code> 按照以下异步调用链驱动调度：</p>
+<ol>
+<li><strong>排空活跃队列（<code>qmgr_active_drain</code>）</strong>：调用 <code>qmgr_transport_select()</code> 挑选有待发邮件的传输通道，并通过 <code>qmgr_transport_alloc()</code> 异步申请对应的投递代理进程 <a href="#ref-code">源码</a>。</li>
+<li><strong>读入新邮件（<code>qmgr_active_feed</code>）</strong>：当当前内存中的消息计数未达限制（<code>qmgr_message_count &#x3C; var_qmgr_active_limit</code>）时，扫描器提取待处理文件，通过 <code>mail_open_ok()</code> 检查权限与完整性，随后通过 <code>mail_queue_rename()</code> 将文件原子重命名移入 <code>active</code> 目录 <a href="#ref-code">源码</a>。</li>
+<li><strong>消息解析与分配（<code>qmgr_message_alloc</code> / <code>qmgr_message_assign</code>）</strong>：调用 <code>qmgr_message_alloc()</code> 读取信封数据与有效收件人，再通过 <code>qmgr_message_assign()</code> 将收件人切分挂载至各 <code>QMGR_ENTRY</code>。</li>
+<li><strong>派发投递请求（<code>qmgr_deliver_send_request</code>）</strong>：在 <code>src/qmgr/qmgr_deliver.c</code> 中，<code>qmgr</code> 通过 UNIX 域套接字向投递代理发送请求属性列表，包含队列目录、队列标识（<code>queue_id</code>）、正文偏移量（<code>MAIL_ATTR_OFFSET</code>）及收件人列表 <a href="#ref-code">源码</a>。<strong>投递请求不会在 IPC 中拷贝整封邮件的正文</strong>。投递代理端在 <code>src/global/deliver_request.c</code>（第 351 行）通过 <code>mail_queue_open()</code> 以读写模式（<code>O_RDWR</code>）打开该队列文件并获取共享锁，随后依据偏移量读取邮件正文并具备回写完成记录的能力 <a href="#ref-code">源码</a>。</li>
+<li><strong>异步状态更新（<code>qmgr_deliver_update</code>）</strong>：投递代理完成尝试后通过 IPC 回传状态（如成功、暂缓或代理崩溃）。<code>qmgr</code> 取消看门狗定时器，执行 <code>qmgr_entry_done()</code> 释放当前条目占用的内存 <a href="#ref-code">源码</a>。</li>
+<li><strong>收尾与迁移（<code>qmgr_active_done_3_generic</code>）</strong>：当一封邮件的所有投递条目均处理完毕，若仍有未送达且需重试的收件人，计算退避延迟并赋予文件未来的修改时间戳，随后重命名移入 <code>deferred</code> 目录；若所有收件人均已处理完毕（成功送达或彻底退信），则调用 <code>mail_queue_remove()</code> 从磁盘删除该队列文件 <a href="#ref-code">源码</a>。</li>
+</ol>
+<hr>
+<h2 id="三持久性机制崩溃恢复与投递语义">三、持久性机制、崩溃恢复与投递语义</h2>
+<p>邮件系统在确认接收邮件与执行投递时，必须依赖严谨的文件系统交互来保障数据完整性。</p>
+<h3 id="31-入队确认与写屏障">3.1 入队确认与写屏障</h3>
+<p>负责接收邮件并建立初始队列文件的是 <code>cleanup</code> 服务，而不是 <code>qmgr</code>。在 <code>src/cleanup/cleanup_api.c</code> 与 <code>src/global/mail_stream.c</code> 中，邮件在向客户端返回接收成功应答前，必须通过 <code>mail_stream_finish_file()</code> 完成落盘检查 <a href="#ref-code">源码</a>。</p>
+<p>代码在刷新用户空间缓冲区 <code>vstream_fflush()</code> 之后，会在编译时定义 <code>HAS_FSYNC</code> 的平台上调用 <code>fsync()</code>，并检查文件关闭（<code>close</code>）的返回状态。只有在这一系列操作均未报告错误的情况下，接收阶段才会返回成功。<code>qmgr</code> 并不负责 SMTP 接收阶段的确认逻辑；它在从 <code>incoming</code> 扫描文件时，依然会调用 <code>mail_open_ok()</code> 校验文件属主、权限与常规文件属性，而不是盲目信任目录内容。而在缺少物理写屏障支持或硬件遭遇不可恢复故障的边界下，依然存在数据损坏的物理风险。</p>
+<h3 id="32-逐收件人标记deliver_completed">3.2 逐收件人标记：<code>deliver_completed</code></h3>
+<p>当一封邮件包含多个收件人时，若投递代理成功将邮件送达给其中某一个收件人，系统会通过逐收件人标记避免后续重复投递。</p>
+<p>在 <code>src/global/deliver_completed.c</code> 中，投递代理获取到该收件人在队列文件中的记录偏移量 <code>offset</code>，执行记录覆盖 <a href="#ref-code">源码</a>：</p>
+<pre class="astro-code astro-code-themes min-light night-owl" style="--shiki-light:#24292eff;--shiki-dark:#d6deeb;--shiki-light-bg:#ffffff;--shiki-dark-bg:#011627; overflow-x: auto;--file-name-offset: -0.75rem;" tabindex="0" data-language="c"><code><span class="line"><span style="--shiki-light:#C2C3C5;--shiki-light-font-style:inherit;--shiki-dark:#637777;--shiki-dark-font-style:italic">/* src/global/deliver_completed.c */</span></span>
+<span class="line"><span style="--shiki-light:#D32F2F;--shiki-dark:#C792EA">void</span><span style="--shiki-light:#6F42C1;--shiki-light-font-style:inherit;--shiki-dark:#82AAFF;--shiki-dark-font-style:italic"> deliver_completed</span><span style="--shiki-light:#24292EFF;--shiki-dark:#D6DEEB">(VSTREAM </span><span style="--shiki-light:#D32F2F;--shiki-dark:#7FDBCA">*</span><span style="--shiki-light:#24292EFF;--shiki-dark:#D7DBE0">stream</span><span style="--shiki-light:#212121;--shiki-dark:#D6DEEB">,</span><span style="--shiki-light:#D32F2F;--shiki-dark:#C792EA"> long</span><span style="--shiki-light:#24292EFF;--shiki-dark:#D7DBE0"> offset</span><span style="--shiki-light:#24292EFF;--shiki-dark:#D6DEEB">)</span></span>
+<span class="line"><span style="--shiki-light:#24292EFF;--shiki-dark:#D6DEEB">{</span></span>
+<span class="line"><span style="--shiki-light:#D32F2F;--shiki-light-font-style:inherit;--shiki-dark:#C792EA;--shiki-dark-font-style:italic">    if</span><span style="--shiki-light:#24292EFF;--shiki-dark:#D6DEEB"> (offset </span><span style="--shiki-light:#D32F2F;--shiki-dark:#C792EA">==</span><span style="--shiki-light:#D32F2F;--shiki-dark:#7FDBCA"> -</span><span style="--shiki-light:#1976D2;--shiki-dark:#F78C6C">1</span><span style="--shiki-light:#24292EFF;--shiki-dark:#D6DEEB">)</span></span>
+<span class="line"><span style="--shiki-light:#D32F2F;--shiki-light-font-style:inherit;--shiki-dark:#C792EA;--shiki-dark-font-style:italic">        return</span><span style="--shiki-light:#24292EFF;--shiki-dark:#D6DEEB">;</span></span>
+<span class="line"><span style="--shiki-light:#D32F2F;--shiki-light-font-style:inherit;--shiki-dark:#C792EA;--shiki-dark-font-style:italic">    if</span><span style="--shiki-light:#24292EFF;--shiki-dark:#D6DEEB"> (offset </span><span style="--shiki-light:#D32F2F;--shiki-dark:#C792EA">&#x3C;=</span><span style="--shiki-light:#1976D2;--shiki-dark:#F78C6C"> 0</span><span style="--shiki-light:#24292EFF;--shiki-dark:#D6DEEB">)</span></span>
+<span class="line"><span style="--shiki-light:#6F42C1;--shiki-light-font-style:inherit;--shiki-dark:#82AAFF;--shiki-dark-font-style:italic">        msg_panic</span><span style="--shiki-light:#6F42C1;--shiki-dark:#82AAFF">(</span><span style="--shiki-light:#22863A;--shiki-dark:#D9F5DD">"</span><span style="--shiki-light:#1976D2;--shiki-dark:#82AAFF">%s</span><span style="--shiki-light:#22863A;--shiki-dark:#ECC48D">: bad offset </span><span style="--shiki-light:#1976D2;--shiki-dark:#82AAFF">%ld</span><span style="--shiki-light:#22863A;--shiki-dark:#D9F5DD">"</span><span style="--shiki-light:#212121;--shiki-dark:#82AAFF">,</span><span style="--shiki-light:#6F42C1;--shiki-dark:#82AAFF"> myname</span><span style="--shiki-light:#212121;--shiki-dark:#82AAFF">,</span><span style="--shiki-light:#6F42C1;--shiki-dark:#82AAFF"> offset)</span><span style="--shiki-light:#24292EFF;--shiki-dark:#D6DEEB">;</span></span>
+<span class="line"><span style="--shiki-light:#D32F2F;--shiki-light-font-style:inherit;--shiki-dark:#C792EA;--shiki-dark-font-style:italic">    if</span><span style="--shiki-light:#24292EFF;--shiki-dark:#D6DEEB"> (</span><span style="--shiki-light:#6F42C1;--shiki-light-font-style:inherit;--shiki-dark:#82AAFF;--shiki-dark-font-style:italic">rec_put_type</span><span style="--shiki-light:#6F42C1;--shiki-dark:#82AAFF">(stream</span><span style="--shiki-light:#212121;--shiki-dark:#82AAFF">,</span><span style="--shiki-light:#6F42C1;--shiki-dark:#82AAFF"> REC_TYPE_DONE</span><span style="--shiki-light:#212121;--shiki-dark:#82AAFF">,</span><span style="--shiki-light:#6F42C1;--shiki-dark:#82AAFF"> offset)</span><span style="--shiki-light:#D32F2F;--shiki-dark:#C792EA"> &#x3C;</span><span style="--shiki-light:#1976D2;--shiki-dark:#F78C6C"> 0</span></span>
+<span class="line"><span style="--shiki-light:#D32F2F;--shiki-dark:#C792EA">        ||</span><span style="--shiki-light:#6F42C1;--shiki-light-font-style:inherit;--shiki-dark:#82AAFF;--shiki-dark-font-style:italic"> vstream_fflush</span><span style="--shiki-light:#6F42C1;--shiki-dark:#82AAFF">(stream)</span><span style="--shiki-light:#24292EFF;--shiki-dark:#D6DEEB">)</span></span>
+<span class="line"><span style="--shiki-light:#6F42C1;--shiki-light-font-style:inherit;--shiki-dark:#82AAFF;--shiki-dark-font-style:italic">        msg_fatal</span><span style="--shiki-light:#6F42C1;--shiki-dark:#82AAFF">(</span><span style="--shiki-light:#22863A;--shiki-dark:#D9F5DD">"</span><span style="--shiki-light:#22863A;--shiki-dark:#ECC48D">update queue file </span><span style="--shiki-light:#1976D2;--shiki-dark:#82AAFF">%s</span><span style="--shiki-light:#22863A;--shiki-dark:#ECC48D">: </span><span style="--shiki-light:#22863A;--shiki-dark:#FFFFFF">%</span><span style="--shiki-light:#22863A;--shiki-dark:#ECC48D">m</span><span style="--shiki-light:#22863A;--shiki-dark:#D9F5DD">"</span><span style="--shiki-light:#212121;--shiki-dark:#82AAFF">,</span><span style="--shiki-light:#6F42C1;--shiki-light-font-style:inherit;--shiki-dark:#82AAFF;--shiki-dark-font-style:italic"> VSTREAM_PATH</span><span style="--shiki-light:#6F42C1;--shiki-dark:#82AAFF">(stream))</span><span style="--shiki-light:#24292EFF;--shiki-dark:#D6DEEB">;</span></span>
+<span class="line"><span style="--shiki-light:#24292EFF;--shiki-dark:#D6DEEB">}</span></span></code></pre>
+<p>投递代理通过原地覆盖的方式，将该偏移量处的记录类型直接改写为 <code>REC_TYPE_DONE</code>，并调用 <code>vstream_fflush()</code> 刷新流缓冲区。</p>
+<blockquote><p><strong>核心细节辨析</strong>：<br>
+此处调用的是用户态缓冲区冲刷函数 <code>vstream_fflush()</code>，而不是强行执行内核写屏障的 <code>fsync()</code> 系统调用。这意味着修改已离开投递代理的进程缓冲区并写入操作系统内核页缓存，但若此时主机突然掉电，仍可能丢失尚未刷入磁盘介质的更新。</p></blockquote>
+<p>当 <code>qmgr</code> 后续重新加载该队列文件时，<code>src/qmgr/qmgr_message.c</code> 在读取信封记录时若识别到记录类型为 <code>REC_TYPE_DONE</code>，会递减 <code>message->rcpt_unread</code> 并跳过该收件人 <a href="#ref-code">源码</a>。若该完成记录已可靠保存且读取有效，重新调度时便不会为该收件人再次生成投递条目。</p>
+<h3 id="33-崩溃恢复与投递语义边界">3.3 崩溃恢复与投递语义边界</h3>
+<p>若远端 SMTP 服务端已经接受邮件，但本地投递代理在调用 <code>deliver_completed()</code> 成功写盘之前发生系统崩溃或网络断开：</p>
+<ul>
+<li><strong>冷启动与未决邮件处理</strong>：在 <code>qmgr_post_init()</code>（<code>src/qmgr/qmgr.c</code>）中，Postfix 重新启动时会将所有残留在 <code>active</code> 目录中的文件移回 <code>incoming</code> 目录并设置当前时间戳，等待重新扫描；而原本已处于 <code>deferred</code> 队列的文件则继续保留在 <code>deferred</code> 目录中等待周期扫描，并不会被移入 <code>incoming</code> <a href="#ref-code">源码</a>。</li>
+<li><strong>并发锁保护</strong>：当 <code>qmgr</code> 再次通过 <code>qmgr_active_feed()</code> 处理该文件时，若原有的投递代理进程尚未完全退出且仍持有文件锁，<code>qmgr_message_alloc()</code> 会返回 <code>QMGR_MESSAGE_LOCKED</code>。<code>qmgr</code> 不会强制接管，而是将其推回 <code>incoming</code> 延迟 60 秒后再试 <a href="#ref-code">源码</a>。</li>
+<li><strong>投递语义边界</strong>：只要远端已成功接收邮件，而本地将收件人标记为 <code>REC_TYPE_DONE</code> 的操作未可靠落盘，系统在重启重试时就可能再次安排该收件人的投递，从而产生重复邮件。恢复机制容许重复投递，不能承诺端到端恰好一次，也不保证每封邮件最终送达。</li>
+</ul>
+<hr>
+<h2 id="四流量调度并发控制退避与饥饿预防">四、流量调度：并发控制、退避与饥饿预防</h2>
+<p>在高并发邮件外发场景中，若缺乏合理的流量控制，偶发的对端故障可能引发资源耗尽。<code>qmgr</code> 内部实现了一套细粒度的流控机制。</p>
+<h3 id="41-内存预算与输入控制">4.1 内存预算与输入控制</h3>
+<p><code>qmgr</code> 通过配置参数对内存使用进行保护：</p>
+<ul>
+<li><code>var_qmgr_active_limit</code>：限制处于 <code>active</code> 内存中的最大邮件文件数量。</li>
+<li><code>var_qmgr_rcpt_limit</code>：限制处于内存中的最大收件人总数。</li>
+</ul>
+<p>在事件循环中，<code>qmgr_loop()</code> 每次仅从待处理队列导入一封邮件进入 <code>active</code>（“We import one message per interrupt”），以平滑系统调用开销与内存分配压力 <a href="#ref-code">源码</a>。</p>
+<h3 id="42-目的地并发慢启动与限流挂起">4.2 目的地并发、慢启动与限流挂起</h3>
+<p>在 <code>QMGR_QUEUE</code> 结构中维护了并发控制窗口 <code>window</code> <a href="#ref-code">源码</a>：</p>
+<ul>
+<li><strong>慢启动与增窗</strong>：对某一目的地持续成功投递时，累加 <code>success</code> 反馈，逐步增大并发窗口 <code>window</code>，直至达到该通道配置的最大目的地并发限制。</li>
+<li><strong>限流挂起（Throttle）</strong>：当投递代理报告目的地故障且反馈统计达到阈值时，<code>qmgr_deliver_update()</code> 会调用 <code>qmgr_queue_throttle()</code> 将目标队列挂起，并启动退避定时器，暂停调度该目的地的新任务；而当投递代理自身发生异常崩溃（<code>DELIVER_STAT_CRASH</code>）时，则触发对整个传输通道的挂起操作（<code>qmgr_transport_throttle</code>）<a href="#ref-code">源码</a>。</li>
+</ul>
+<p>目的地级故障由投递代理状态报告与 <code>qmgr</code> 反馈规则决定，不可只看一个 4xx 便断言整域不可用。例如收件人邮箱暂时已满，属于单个收件人的暂缓，并不会直接触发整个目的地的退避挂起。</p>
+<h3 id="43-轮询公平性与指数退避">4.3 轮询公平性与指数退避</h3>
+<p>在扫描待处理邮件时，<code>qmgr_loop()</code> 在 <code>incoming</code> 与 <code>deferred</code> 队列之间进行交替轮询（Round-robin）<a href="#ref-code">源码</a>。这一策略减少了因 <code>deferred</code> 队列大量积压而导致新进邮件长时间无法调度的风险。</p>
+<p>对于进入 <code>deferred</code> 队列的文件，<code>src/qmgr/qmgr_active.c</code> 中的 <code>qmgr_active_done_3_generic()</code> 会计算重试延迟时间 <a href="#ref-code">源码</a>：</p>
+<pre class="astro-code astro-code-themes min-light night-owl" style="--shiki-light:#24292eff;--shiki-dark:#d6deeb;--shiki-light-bg:#ffffff;--shiki-dark-bg:#011627; overflow-x: auto;--file-name-offset: -0.75rem;" tabindex="0" data-language="c"><code><span class="line"><span style="--shiki-light:#C2C3C5;--shiki-light-font-style:inherit;--shiki-dark:#637777;--shiki-dark-font-style:italic">/* src/qmgr/qmgr_active.c */</span></span>
+<span class="line"><span style="--shiki-light:#D32F2F;--shiki-light-font-style:inherit;--shiki-dark:#C792EA;--shiki-dark-font-style:italic">if</span><span style="--shiki-light:#24292EFF;--shiki-dark:#D6DEEB"> (message</span><span style="--shiki-light:#D32F2F;--shiki-dark:#7FDBCA">-</span><span style="--shiki-light:#D32F2F;--shiki-dark:#C792EA">></span><span style="--shiki-light:#24292EFF;--shiki-dark:#D6DEEB">create_time </span><span style="--shiki-light:#D32F2F;--shiki-dark:#C792EA">></span><span style="--shiki-light:#1976D2;--shiki-dark:#F78C6C"> 0</span><span style="--shiki-light:#24292EFF;--shiki-dark:#D6DEEB">) {</span></span>
+<span class="line"><span style="--shiki-light:#24292EFF;--shiki-dark:#D6DEEB">    delay </span><span style="--shiki-light:#D32F2F;--shiki-dark:#C792EA">=</span><span style="--shiki-light:#6F42C1;--shiki-light-font-style:inherit;--shiki-dark:#82AAFF;--shiki-dark-font-style:italic"> event_time</span><span style="--shiki-light:#6F42C1;--shiki-dark:#82AAFF">()</span><span style="--shiki-light:#D32F2F;--shiki-dark:#7FDBCA"> -</span><span style="--shiki-light:#1976D2;--shiki-dark:#C5E478"> message</span><span style="--shiki-light:#212121;--shiki-dark:#D6DEEB">-></span><span style="--shiki-light:#24292EFF;--shiki-dark:#C5E478">create_time</span><span style="--shiki-light:#24292EFF;--shiki-dark:#D6DEEB">;</span></span>
+<span class="line"><span style="--shiki-light:#D32F2F;--shiki-light-font-style:inherit;--shiki-dark:#C792EA;--shiki-dark-font-style:italic">    if</span><span style="--shiki-light:#24292EFF;--shiki-dark:#D6DEEB"> (delay </span><span style="--shiki-light:#D32F2F;--shiki-dark:#C792EA">></span><span style="--shiki-light:#24292EFF;--shiki-dark:#D6DEEB"> var_max_backoff_time)</span></span>
+<span class="line"><span style="--shiki-light:#24292EFF;--shiki-dark:#D6DEEB">        delay </span><span style="--shiki-light:#D32F2F;--shiki-dark:#C792EA">=</span><span style="--shiki-light:#24292EFF;--shiki-dark:#D6DEEB"> var_max_backoff_time;</span></span>
+<span class="line"><span style="--shiki-light:#D32F2F;--shiki-light-font-style:inherit;--shiki-dark:#C792EA;--shiki-dark-font-style:italic">    if</span><span style="--shiki-light:#24292EFF;--shiki-dark:#D6DEEB"> (delay </span><span style="--shiki-light:#D32F2F;--shiki-dark:#C792EA">&#x3C;</span><span style="--shiki-light:#24292EFF;--shiki-dark:#D6DEEB"> var_min_backoff_time)</span></span>
+<span class="line"><span style="--shiki-light:#24292EFF;--shiki-dark:#D6DEEB">        delay </span><span style="--shiki-light:#D32F2F;--shiki-dark:#C792EA">=</span><span style="--shiki-light:#24292EFF;--shiki-dark:#D6DEEB"> var_min_backoff_time;</span></span>
+<span class="line"><span style="--shiki-light:#24292EFF;--shiki-dark:#D6DEEB">} </span><span style="--shiki-light:#D32F2F;--shiki-light-font-style:inherit;--shiki-dark:#C792EA;--shiki-dark-font-style:italic">else</span><span style="--shiki-light:#24292EFF;--shiki-dark:#D6DEEB"> {</span></span>
+<span class="line"><span style="--shiki-light:#24292EFF;--shiki-dark:#D6DEEB">    delay </span><span style="--shiki-light:#D32F2F;--shiki-dark:#C792EA">=</span><span style="--shiki-light:#24292EFF;--shiki-dark:#D6DEEB"> var_min_backoff_time;</span></span>
+<span class="line"><span style="--shiki-light:#24292EFF;--shiki-dark:#D6DEEB">}</span></span>
+<span class="line"><span style="--shiki-light:#6F42C1;--shiki-light-font-style:inherit;--shiki-dark:#82AAFF;--shiki-dark-font-style:italic">qmgr_active_defer</span><span style="--shiki-light:#24292EFF;--shiki-dark:#D6DEEB">(message</span><span style="--shiki-light:#D32F2F;--shiki-dark:#7FDBCA">-</span><span style="--shiki-light:#D32F2F;--shiki-dark:#C792EA">></span><span style="--shiki-light:#24292EFF;--shiki-dark:#D7DBE0">queue_name</span><span style="--shiki-light:#212121;--shiki-dark:#D6DEEB">,</span><span style="--shiki-light:#24292EFF;--shiki-dark:#D6DEEB"> message</span><span style="--shiki-light:#D32F2F;--shiki-dark:#7FDBCA">-</span><span style="--shiki-light:#D32F2F;--shiki-dark:#C792EA">></span><span style="--shiki-light:#24292EFF;--shiki-dark:#D7DBE0">queue_id</span><span style="--shiki-light:#212121;--shiki-dark:#D6DEEB">,</span></span>
+<span class="line"><span style="--shiki-light:#24292EFF;--shiki-dark:#D6DEEB">                  MAIL_QUEUE_DEFERRED</span><span style="--shiki-light:#212121;--shiki-dark:#D6DEEB">,</span><span style="--shiki-light:#24292EFF;--shiki-dark:#D6DEEB"> delay);</span></span></code></pre>
+<p>延迟时间取决于当前时间与邮件创建时间 <code>create_time</code> 的差值，并被限制在 <code>var_min_backoff_time</code> 与 <code>var_max_backoff_time</code> 之间。随后通过 <code>utime()</code> 将文件的修改时间 <code>st_mtime</code> 设置为当前时间加上 <code>delay</code>。</p>
+<p>需要指出的是，<strong>周期扫描机制不保证在到期的那一秒立即触发</strong>。<code>deferred</code> 队列的扫描由定时器驱动，若未到达扫描周期，即便某个文件的 <code>st_mtime</code> 已经过期，它也会等待下一次扫描器运行时才会被读入。</p>
+<hr>
+<h2 id="五教学场景分析与尚未执行的验证方案">五、教学场景分析与尚未执行的验证方案</h2>
+<h3 id="51-教学场景三收件人双目的地投递">5.1 教学场景：三收件人双目的地投递</h3>
+<p>假设系统接收了一封通过 <code>smtp</code> 传输通道投递的邮件，包含三个收件人：</p>
+<ol>
+<li><code>alice@domain-a.example</code></li>
+<li><code>bob@domain-a.example</code></li>
+<li><code>charlie@domain-b.example</code></li>
+</ol>
+<p>在调度执行时：</p>
+<ol>
+<li><strong>任务切分</strong>：<code>qmgr_message_assign()</code> 为这封邮件创建同一个 <code>smtp</code> Job，但下设两个 Peer：一个关联 <code>domain-a.example</code> 队列，另一个关联 <code>domain-b.example</code> 队列。若传输通道收件人上限至少为 2，<code>alice</code> 与 <code>bob</code> 被合并打包在同一个 <code>QMGR_ENTRY</code> 中；<code>charlie</code> 挂载在独立的 <code>QMGR_ENTRY</code> 中。</li>
+<li><strong>SMTP 交互与部分完成</strong>：
+<ul>
+<li>投递代理连接 <code>domain-a.example</code>，在 SMTP 会话中按序发送 <code>RCPT TO</code> 命令：对端服务器接受了 <code>alice</code>（返回 250），但拒绝了 <code>bob</code>（返回 <code>452 4.2.2 Mailbox full</code> 临时错误）。随后投递代理发送 <code>DATA</code> 内容，并在邮件正文传输完毕且对端返回最终 250 应答后，才判定 <code>alice</code> 成功。此时投递代理调用 <code>deliver_completed()</code> 将 <code>alice</code> 在队列文件中的记录原地更新为 <code>REC_TYPE_DONE</code> 并执行 <code>fflush</code>。</li>
+<li>投递代理连接 <code>domain-b.example</code> 时网络不通，TCP 连接超时，整个条目失败。</li>
+</ul>
+</li>
+<li><strong>状态汇总与暂缓</strong>：<code>qmgr</code> 收到反馈后，<code>alice</code> 标记完成，<code>bob</code> 与 <code>charlie</code> 均需重试。该邮件文件不会被删除，而是被重命名移入 <code>deferred</code> 目录，并更新未来的修改时间戳。</li>
+<li><strong>系统重启后的状态</strong>：若此时邮件服务重启，处于 <code>deferred</code> 目录的该文件继续由 <code>deferred</code> 扫描器负责；当退避时间到达且扫描器读入该文件时，解析代码检测到 <code>alice</code> 的记录已为 <code>REC_TYPE_DONE</code> 并直接跳过，仅为 <code>bob</code> 与 <code>charlie</code> 分配调度条目重新尝试。</li>
+</ol>
+<h3 id="52-尚未执行的验证方案">5.2 尚未执行的验证方案</h3>
+<p>为在隔离测试环境中验证上述机制，设计以下验证方案（本方案在当前写作环境中尚未执行运行）：</p>
+<ul>
+<li><strong>测试输入</strong>：构造包含上述三个收件人的标准 MIME 邮件，通过本地提交接口注入邮件系统。</li>
+<li><strong>故障注入手段</strong>：
+<ul>
+<li>在受控网络环境中，将 <code>domain-a.example</code> 指向本地模拟的 SMTP 接收器，配置其对 <code>alice</code> 接受、对 <code>bob</code> 的 <code>RCPT TO</code> 返回 452 并在 DATA 结束后返回 250；</li>
+<li>对发往 <code>domain-b.example</code> 的连接进行受控丢弃，并核实客户端记录的具体超时原因；</li>
+<li>借助测试断点或测试钩子控制实例：在投递代理向 <code>alice</code> 执行完毕 <code>deliver_completed()</code> 且 <code>domain-b.example</code> 报错后，通过隔离测试管理器停止并重启整个测试实例；</li>
+<li>类似地，通过测试钩子精确命中“远端 DATA 确认后但在本地执行 <code>deliver_completed()</code> 之前”的极短故障注入窗口。</li>
+</ul>
+</li>
+<li><strong>预期证据与观测点</strong>：
+<ol>
+<li>重启前，使用 <code>postqueue -p</code> 观察到队列文件中仍记录有该 <code>queue_id</code>，且状态标记为延迟；</li>
+<li>使用分析工具检查队列文件内部记录，确认 <code>alice</code> 对应的记录类型已变更为 <code>REC_TYPE_DONE</code>；</li>
+<li>服务重启后检查投递代理日志与模拟接收器的事务记录，确认仅针对 <code>bob@domain-a.example</code> 与 <code>charlie@domain-b.example</code> 发起了新的连接与投递交互，未向 <code>alice</code> 重复发送连接与投递；</li>
+<li>若在第二种精确钩子注入窗口下中止测试实例，重启后日志与模拟端应观察到针对 <code>alice</code> 的重复投递尝试，用以证实非端到端恰好一次的理论边界。</li>
+</ol>
+</li>
+</ul>
+<h3 id="53-队列堆积定位建议">5.3 队列堆积定位建议</h3>
+<p>当遇到邮件已接收但未送达的情况时，应结合日志与队列状态有序排查：</p>
+<ul>
+<li><strong>检查日志生命周期</strong>：根据客户端收到的 <code>queue_id</code> 在系统日志中检索。若包含 <code>status=deferred</code>，记录具体的对端返回码与原因；若仅有接收记录而无 <code>qmgr</code> 调度日志，需检查 <code>active</code> 队列水位与调度器状态。</li>
+<li><strong>检查物理队列位置与等待状态</strong>：通过队列工具检查文件位于 <code>incoming</code>、<code>active</code> 还是 <code>deferred</code>。若文件已在 <code>active</code> 中却未送出，需核查该目的地的并发窗口是否降为 0、对应 transport 的可用性以及是否达到进程并发上限（<code>maxproc</code>）；若停留在 <code>deferred</code>，可查看文件的修改时间是否处于未来的退避窗口中。此外，应结合具体的写失败日志核查 spool 目录所在磁盘容量、inode 是否耗尽以及目录权限；仅凭目录或队列计数不能直接认定系统故障。</li>
+<li><strong>理性对待队列重试</strong>：切勿将全量强制重试（<code>postqueue -f</code>）作为日常运维手段。全量强制冲刷只是请求尽早重试队列，但新进入调度的批次仍受 <code>active</code> 容量与传输通道并发预算约束；在对端网络或服务故障尚未恢复时，强制冲刷不仅不能消除根本问题，反而会加剧本地与网络负载。</li>
+</ul>
+<hr>
+<h2 id="六自研邮件投递系统的设计借鉴">六、自研邮件投递系统的设计借鉴</h2>
+<p>Postfix 3.6.2 的调度设计为自研邮件投递与消息推送系统提供了重要的架构参考：</p>
+<ol>
+<li><strong>多级实体建模</strong>：在数据建模时，建议将全局消息实体、单个收件人投递单元与具体的网络尝试批次进行解耦拆分，使得单个收件人的成败状态能够独立流转，避免因部分收件人失败导致整批任务重复投递。</li>
+<li><strong>明确落盘屏障</strong>：在向上游客户端返回成功应答前，必须完成必要的文件刷盘与存储持久化校验，不能在易失性缓存中暂存即返回。自建系统的队列 spool 容量、底层存储可靠性以及意外崩溃后的恢复与备份流程，均需要部署与设计团队自行实施严格的工程验证与测试。</li>
+<li><strong>基于目的地的并发与退避</strong>：调度系统应按下一跳目的地维度聚合并发控制与退避状态，当某一目标域由于网络超时或频控而发生故障时，仅对该目的地实施熔断与降频，避免影响其他正常目的地的投递进度。</li>
+</ol>
+<hr>
+<h2 id="参考文献与源码索引">参考文献与源码索引</h2>
+<ul>
+<li><strong>Postfix 3.6.2 官方源码包</strong>（发布日期：2021-07-24，SHA256: <code>507323d20d7b3f705f49cf8c07d437c6d8090bed07e15a3c0ec405edad54a7d4</code>）：
+<ul>
+<li>源码下载源：<a id="ref-code" href="https://archive.mgm51.com/mirrors/postfix-source/official/postfix-3.6.2.tar.gz" target="_blank" rel="noopener noreferrer">postfix-3.6.2.tar.gz</a></li>
+<li>核心数据结构与定义：<code>src/qmgr/qmgr.h</code>（<code>QMGR_MESSAGE</code>, <code>QMGR_QUEUE</code>, <code>QMGR_ENTRY</code>, <code>QMGR_JOB</code>, <code>QMGR_PEER</code>）</li>
+<li>队列调度事件主循环：<code>src/qmgr/qmgr.c</code>（<code>qmgr_loop</code>, <code>qmgr_active_drain</code>, <code>qmgr_post_init</code>）</li>
+<li>收件人批次分组与目的地队列命名：<code>src/qmgr/qmgr_message.c</code>（<code>qmgr_message_assign</code>, <code>rec_type == REC_TYPE_DONE</code>, 第 1245–1301 行单收件人队列命名）</li>
+<li>激活队列装载与退避重命名：<code>src/qmgr/qmgr_active.c</code>（<code>qmgr_active_feed</code>, <code>qmgr_active_defer</code>, <code>qmgr_active_done_3_generic</code>）</li>
+<li>异步投递协调与限流：<code>src/qmgr/qmgr_deliver.c</code>（<code>qmgr_deliver_send_request</code>, <code>qmgr_deliver_update</code>, <code>qmgr_queue_throttle</code>）</li>
+<li>投递代理请求接收与队列文件读写锁：<code>src/global/deliver_request.c</code>（<code>deliver_request_get</code> 第 351 行以 <code>O_RDWR</code> 打开并加共享锁）</li>
+<li>逐收件人完成标记与缓冲区刷新：<code>src/global/deliver_completed.c</code>（<code>deliver_completed</code>, <code>rec_put_type</code>, <code>vstream_fflush</code>）</li>
+<li>入队写屏障与落盘校验：<code>src/cleanup/cleanup_api.c</code> 与 <code>src/global/mail_stream.c</code>（<code>mail_stream_finish_file</code>, <code>vstream_fflush</code>, <code>fsync</code>）</li>
+</ul>
+</li>
+<li>官方发布公告：<a href="http://www.postfix.org/announcements/postfix-3.6.2.html" target="_blank" rel="noopener noreferrer">Postfix stable release 3.6.2</a></li>
+</ul>
+<!--/email_off--></article><hr class="my-8 border-dashed"><div id="btt-btn-container" class="fixed inset-e-4 bottom-8 z-50 md:sticky md:inset-e-auto md:float-end md:me-1 translate-y-14 opacity-0 transition duration-500"><button data-button="back-to-top" class="group bg-background relative px-2 py-1 size-14 rounded-full shadow-xl md:h-8 md:w-fit md:rounded-md md:shadow-none md:focus-visible:rounded-none md:bg-background/35 md:bg-clip-padding md:backdrop-blur-lg"><span id="progress-indicator" class="absolute inset-0 -z-10 block size-14 scale-110 rounded-full bg-transparent md:hidden md:h-8 md:rounded-md"></span><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="inline-block rotate-90 md:hidden" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M5 12h14M5 12l6 6M5 12l6-6" /></svg><span class="group-hover:text-accent sr-only text-sm md:not-sr-only"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="inline-block size-4" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M12 5v14M16 9l-4-4M8 9l4-4" /></svg> 回到顶部</span></button></div><script data-astro-rerun>
+  function backToTop() {
+    const rootElement = document.documentElement;
+    const btnContainer = document.querySelector("#btt-btn-container");
+    const backToTopBtn = document.querySelector("[data-button='back-to-top']");
+    const progressIndicator = document.querySelector("#progress-indicator");
+
+    if (!rootElement || !btnContainer || !backToTopBtn || !progressIndicator)
+      return;
+
+    backToTopBtn.addEventListener("click", () => {
+      document.body.scrollTop = 0;
+      document.documentElement.scrollTop = 0;
+    });
+
+    let lastVisible = null;
+    function handleScroll() {
+      const scrollTotal = rootElement.scrollHeight - rootElement.clientHeight;
+      const scrollTop = rootElement.scrollTop;
+      const scrollPercent = Math.floor((scrollTop / scrollTotal) * 100);
+
+      progressIndicator.style.setProperty(
+        "background-image",
+        `conic-gradient(var(--accent), var(--accent) ${scrollPercent}%, transparent ${scrollPercent}%)`
+      );
+
+      const isVisible = scrollTop / scrollTotal > 0.3;
+
+      if (isVisible !== lastVisible) {
+        btnContainer.classList.toggle("opacity-100", isVisible);
+        btnContainer.classList.toggle("translate-y-0", isVisible);
+        btnContainer.classList.toggle("opacity-0", !isVisible);
+        btnContainer.classList.toggle("translate-y-14", !isVisible);
+        lastVisible = isVisible;
+      }
+    }
+
+    let ticking = false;
+    document.addEventListener("scroll", () => {
+      if (!ticking) {
+        window.requestAnimationFrame(() => {
+          handleScroll();
+          ticking = false;
+        });
+        ticking = true;
+      }
+    });
+  }
+  backToTop();
+</script><ul class="mt-4 mb-8 flex flex-wrap gap-4 sm:my-8"><li><a data-astro-transition-scope="astro-bztu2lml-1" href="/tags/邮箱系统/" class="flex items-center gap-0.5 border-foreground border-b-2 border-dashed hover:border-accent hover:text-accent hover:-mt-0.5 focus-visible:text-accent focus-visible:border-none text-sm"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="opacity-80 size-4" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M5 9h14M5 15h14M11 4 7 20M17 4l-4 16" /></svg>邮箱系统</a></li><li><a data-astro-transition-scope="astro-bztu2lml-2" href="/tags/消息队列/" class="flex items-center gap-0.5 border-foreground border-b-2 border-dashed hover:border-accent hover:text-accent hover:-mt-0.5 focus-visible:text-accent focus-visible:border-none text-sm"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="opacity-80 size-4" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M5 9h14M5 15h14M11 4 7 20M17 4l-4 16" /></svg>消息队列</a></li><li><a data-astro-transition-scope="astro-bztu2lml-3" href="/tags/smtp/" class="flex items-center gap-0.5 border-foreground border-b-2 border-dashed hover:border-accent hover:text-accent hover:-mt-0.5 focus-visible:text-accent focus-visible:border-none text-sm"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="opacity-80 size-4" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M5 9h14M5 15h14M11 4 7 20M17 4l-4 16" /></svg>SMTP</a></li></ul><hr class="my-8 border-dashed"><div data-pagefind-ignore class="my-8 grid grid-cols-1 gap-6 sm:grid-cols-2"><a href="/posts/mail-postfix-cleanup-enqueue/" class="flex w-full gap-1 hover:opacity-75"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="inline-block flex-none rtl:rotate-180" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M5 12h14M5 12l6 6M5 12l6-6" /></svg><div><span>上一篇</span><div class="text-accent/85 text-sm">Postfix 的 cleanup 处理与消息入队边界</div></div></a><a href="/posts/mail-postfix-smtp-delivery/" class="flex w-full justify-end gap-1 text-end hover:opacity-75 sm:col-start-2"><div><span>下一篇</span><div class="text-accent/85 text-sm">Postfix SMTP 出站连接与并发控制</div></div><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="inline-block flex-none rtl:rotate-180" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M5 12h14M13 18l6-6M13 6l6 6" /></svg></a></div></main><footer class="app-layout mt-auto"><div class="border-border flex flex-col items-center justify-between border-t py-6 sm:flex-row-reverse sm:py-4"><div class="flex flex-wrap items-center gap-1"><a href="https://github.com/SaromChars" title="Sarom Chars 的 GitHub" class="group inline-flex items-center gap-1 hover:text-accent p-2 hover:rotate-6 sm:p-1"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="inline-block size-6 scale-125 fill-transparent stroke-current stroke-2 opacity-90 group-hover:fill-transparent sm:scale-110" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M9 19c-4.3 1.4-4.3-2.5-6-3m12 5v-3.5c0-1 .1-1.4-.5-2 2.8-.3 5.5-1.4 5.5-6a4.6 4.6 0 0 0-1.3-3.2 4.2 4.2 0 0 0-.1-3.2s-1.1-.3-3.5 1.3a12.3 12.3 0 0 0-6.2 0C6.5 2.8 5.4 3.1 5.4 3.1a4.2 4.2 0 0 0-.1 3.2A4.6 4.6 0 0 0 4 9.5c0 4.6 2.7 5.7 5.5 6-.6.6-.6 1.2-.5 2V21" /></svg><span class="sr-only">Sarom Chars 的 GitHub</span></a></div><div class="my-2 flex flex-col items-center whitespace-nowrap sm:flex-row"><span>版权 &#169; 2026</span><span class="hidden sm:inline">&nbsp;|&nbsp;</span><span>保留所有权利。</span></div></div></footer><script type="module">var e=`theme`,t=`light`,n=`dark`;function r(){return localStorage.getItem(e)||(window.matchMedia(`(prefers-color-scheme: dark)`).matches?n:t)}var i=window.__theme?.value??r();function a(){localStorage.setItem(e,i),o()}function o(){let e=document.firstElementChild;e?.setAttribute(`data-theme`,i),e?.classList.toggle(`dark`,i===n),document.querySelector(`#theme-btn`)?.setAttribute(`aria-label`,i);let t=window.getComputedStyle(document.body).backgroundColor;document.querySelector(`meta[name='theme-color']`)?.setAttribute(`content`,t)}function s(){o(),document.querySelector(`#theme-btn`)?.addEventListener(`click`,()=>{i=i===t?n:t,a()})}s(),document.addEventListener(`astro:after-swap`,s),document.addEventListener(`astro:before-swap`,e=>{let t=document.querySelector(`meta[name='theme-color']`)?.getAttribute(`content`);t&&e.newDocument.querySelector(`meta[name='theme-color']`)?.setAttribute(`content`,t)}),window.matchMedia(`(prefers-color-scheme: dark)`).addEventListener(`change`,({matches:e})=>{i=e?n:t,a()});</script></body></html><script type="module">var e=document.querySelector(`#article`);if(e?.querySelector(`a[href^="#ref-"]`)){let t=null,n=!1,r=document.createElement(`button`);r.type=`button`,r.className=`citation-return`,r.textContent=`返回阅读位置`,r.setAttribute(`data-pagefind-ignore`,``),e.addEventListener(`click`,n=>{if(n.button!==0||n.metaKey||n.ctrlKey||n.shiftKey||n.altKey)return;let i=n.target instanceof Element?n.target.closest(`a[href^="#ref-"]`):null;if(!i||!e.contains(i))return;let a=i.hash,o=document.getElementById(decodeURIComponent(a.slice(1)));o&&e.contains(o)&&(t={source:i,url:window.location.href,top:window.scrollY,left:window.scrollX,targetHash:a},o.insertAdjacentElement(`afterend`,r))}),r.addEventListener(`click`,()=>{if(!t||n)return;let e=t,i=i=>{r.remove(),window.requestAnimationFrame(()=>{window.requestAnimationFrame(()=>{e.source.focus({preventScroll:!0}),window.scrollTo({top:e.top,left:e.left,behavior:`instant`}),t=null,n=!1,i?.()})})};window.location.href===e.url?i():(n=!0,window.addEventListener(`popstate`,()=>{let e=window.history.scrollRestoration;window.history.scrollRestoration=`manual`,window.setTimeout(()=>{i(()=>{window.history.scrollRestoration=e})},0)},{once:!0}),window.history.back())}),window.addEventListener(`hashchange`,()=>{!n&&t&&window.location.hash!==t.targetHash&&(r.remove(),t=null)})}</script><script data-astro-rerun>
+  function createProgressBar() {
+    const progressContainer = document.createElement("div");
+    progressContainer.className =
+      "progress-container fixed top-0 z-10 h-1 w-full bg-background";
+
+    const progressBar = document.createElement("div");
+    progressBar.className = "progress-bar h-1 w-0 bg-accent";
+    progressBar.id = "myBar";
+
+    progressContainer.appendChild(progressBar);
+    document.body.appendChild(progressContainer);
+  }
+  createProgressBar();
+
+  function updateScrollProgress() {
+    document.addEventListener("scroll", () => {
+      const winScroll =
+        document.body.scrollTop || document.documentElement.scrollTop;
+      const height =
+        document.documentElement.scrollHeight -
+        document.documentElement.clientHeight;
+      const scrolled = (winScroll / height) * 100;
+      if (document) {
+        const myBar = document.getElementById("myBar");
+        if (myBar) {
+          myBar.style.width = scrolled + "%";
+        }
+      }
+    });
+  }
+  updateScrollProgress();
+
+  function addHeadingLinks() {
+    const headings = Array.from(
+      document.querySelectorAll("h2, h3, h4, h5, h6")
+    );
+    for (const heading of headings) {
+      heading.classList.add("group");
+      const link = document.createElement("a");
+      link.className =
+        "heading-link ms-2 no-underline opacity-75 md:opacity-0 md:group-hover:opacity-100 md:focus:opacity-100";
+      link.href = "#" + heading.id;
+
+      const span = document.createElement("span");
+      span.ariaHidden = "true";
+      span.innerText = "#";
+      link.appendChild(span);
+      heading.appendChild(link);
+    }
+  }
+  addHeadingLinks();
+
+  function attachCopyButtons() {
+    const copyButtonLabel = "Copy";
+    const codeBlocks = Array.from(document.querySelectorAll("pre"));
+
+    for (const codeBlock of codeBlocks) {
+      const wrapper = document.createElement("div");
+      wrapper.style.position = "relative";
+
+      const computedStyle = getComputedStyle(codeBlock);
+      const hasFileNameOffset =
+        computedStyle.getPropertyValue("--file-name-offset").trim() !== "";
+
+      const topClass = hasFileNameOffset
+        ? "top-(--file-name-offset)"
+        : "-top-3";
+
+      const copyButton = document.createElement("button");
+      copyButton.className = `copy-code absolute end-3 ${topClass} rounded bg-muted border border-muted px-2 py-1 text-xs leading-4 text-foreground font-medium`;
+      copyButton.innerHTML = copyButtonLabel;
+      codeBlock.setAttribute("tabindex", "0");
+      codeBlock.appendChild(copyButton);
+
+      codeBlock?.parentNode?.insertBefore(wrapper, codeBlock);
+      wrapper.appendChild(codeBlock);
+
+      copyButton.addEventListener("click", async () => {
+        await copyCode(codeBlock, copyButton);
+      });
+    }
+
+    async function copyCode(block, button) {
+      const code = block.querySelector("code");
+      const text = code?.innerText;
+
+      await navigator.clipboard.writeText(text ?? "");
+
+      button.innerText = "Copied";
+
+      setTimeout(() => {
+        button.innerText = copyButtonLabel;
+      }, 700);
+    }
+  }
+  attachCopyButtons();
+
+  /** Accessible image lightbox for article images. */
+  function initLightbox() {
+    const article = document.getElementById("article");
+    if (!article) return;
+
+    const prefersReducedMotion = () =>
+      window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+    let overlay = null;
+    let lastFocused = null;
+    let removeDragListeners = null;
+
+    // Defer attribute mutations so they don't push the LCP timestamp.
+    // Event listeners below use delegation and don't need the attributes to exist yet.
+    requestAnimationFrame(() => {
+      const images = Array.from(article.querySelectorAll("img"));
+      for (const image of images) {
+        if (image.closest("a")) continue;
+        image.setAttribute("role", "button");
+        image.setAttribute("tabindex", "0");
+        image.setAttribute("aria-haspopup", "dialog");
+        image.setAttribute(
+          "aria-label",
+          image.alt ? `Zoom image: ${image.alt}` : "Zoom image"
+        );
+      }
+    });
+
+    function open(src, alt, trigger) {
+      if (overlay) return;
+      lastFocused = trigger ?? document.activeElement;
+
+      overlay = document.createElement("div");
+      overlay.setAttribute("role", "dialog");
+      overlay.setAttribute("aria-modal", "true");
+      overlay.setAttribute(
+        "aria-label",
+        alt ? `Image preview: ${alt}` : "Image preview"
+      );
+      overlay.className =
+        "fixed inset-0 z-50 flex cursor-zoom-out items-center justify-center bg-black/70 backdrop-blur-sm opacity-0 transition-opacity duration-200 motion-reduce:transition-none";
+
+      const closeButton = document.createElement("button");
+      closeButton.type = "button";
+      closeButton.setAttribute("aria-label", "Close image preview");
+      closeButton.className =
+        "absolute end-4 top-4 z-1 flex size-11 items-center justify-center rounded bg-black/50 text-3xl leading-none text-white";
+      closeButton.innerHTML = "&#10005;";
+      closeButton.addEventListener("click", close);
+
+      const image = document.createElement("img");
+      image.src = src;
+      image.alt = "";
+      image.className =
+        "max-h-[90dvh] max-w-[90dvw] cursor-default object-contain transition-transform duration-100 ease-out motion-reduce:transition-none data-[zoom=drag]:cursor-grabbing data-[zoom=drag]:transition-none data-[zoom=in]:cursor-grab";
+
+      overlay.append(closeButton, image);
+      overlay.addEventListener("click", e => {
+        if (e.target === overlay && currentScale <= 1) close();
+      });
+
+      let currentScale = 1;
+      let translateX = 0;
+      let translateY = 0;
+      let initialDist = 0;
+      let initialScale = 1;
+      let panStartX = 0;
+      let panStartY = 0;
+      let panStartTranslateX = 0;
+      let panStartTranslateY = 0;
+      let lastTapTime = 0;
+
+      function applyTransform() {
+        image.style.transform = `scale(${currentScale}) translate(${translateX}px, ${translateY}px)`;
+        // A backdrop click only closes at fit size, so drop the zoom-out cursor while zoomed.
+        overlay?.classList.toggle("cursor-zoom-out", currentScale <= 1);
+      }
+
+      function resetTransform() {
+        currentScale = 1;
+        translateX = 0;
+        translateY = 0;
+        image.style.transform = "";
+        image.removeAttribute("data-zoom");
+        overlay?.classList.add("cursor-zoom-out");
+      }
+
+      // Keep the zoomed image from being panned past its edges.
+      function clampTranslate() {
+        if (!overlay) return;
+        const maxX = Math.max(
+          0,
+          (image.clientWidth - overlay.clientWidth / currentScale) / 2
+        );
+        const maxY = Math.max(
+          0,
+          (image.clientHeight - overlay.clientHeight / currentScale) / 2
+        );
+        translateX = Math.min(maxX, Math.max(-maxX, translateX));
+        translateY = Math.min(maxY, Math.max(-maxY, translateY));
+      }
+
+      overlay.addEventListener(
+        "touchstart",
+        e => {
+          const t = e.touches;
+          if (t.length === 2) {
+            image.setAttribute("data-zoom", "drag");
+            initialDist = Math.hypot(
+              t[1].clientX - t[0].clientX,
+              t[1].clientY - t[0].clientY
+            );
+            initialScale = currentScale;
+          } else if (t.length === 1) {
+            const now = Date.now();
+            if (now - lastTapTime < 300) {
+              e.preventDefault();
+              if (currentScale > 1) {
+                resetTransform();
+              } else {
+                currentScale = 2;
+                translateX = 0;
+                translateY = 0;
+                applyTransform();
+                image.setAttribute("data-zoom", "in");
+              }
+              lastTapTime = 0;
+              panStartX = t[0].clientX;
+              panStartY = t[0].clientY;
+              panStartTranslateX = translateX;
+              panStartTranslateY = translateY;
+            } else {
+              lastTapTime = now;
+              if (currentScale > 1) {
+                image.setAttribute("data-zoom", "drag");
+                panStartX = t[0].clientX;
+                panStartY = t[0].clientY;
+                panStartTranslateX = translateX;
+                panStartTranslateY = translateY;
+              }
+            }
+          }
+        },
+        { passive: false }
+      );
+
+      overlay.addEventListener(
+        "touchmove",
+        e => {
+          const t = e.touches;
+          if (t.length === 2) {
+            e.preventDefault();
+            const dist = Math.hypot(
+              t[1].clientX - t[0].clientX,
+              t[1].clientY - t[0].clientY
+            );
+            const oldScale = currentScale;
+            currentScale = Math.min(
+              4,
+              Math.max(1, initialScale * (dist / initialDist))
+            );
+
+            // Zoom to the geometric center of the two fingers
+            const midX = (t[0].clientX + t[1].clientX) / 2;
+            const midY = (t[0].clientY + t[1].clientY) / 2;
+            const ox = overlay.clientWidth / 2;
+            const oy = overlay.clientHeight / 2;
+            translateX =
+              (midX - ox) * (1 / currentScale - 1 / oldScale) + translateX;
+            translateY =
+              (midY - oy) * (1 / currentScale - 1 / oldScale) + translateY;
+            clampTranslate();
+            applyTransform();
+          } else if (t.length === 1) {
+            if (currentScale > 1) {
+              e.preventDefault();
+              image.setAttribute("data-zoom", "drag");
+              translateX =
+                panStartTranslateX + (t[0].clientX - panStartX) / currentScale;
+              translateY =
+                panStartTranslateY + (t[0].clientY - panStartY) / currentScale;
+              clampTranslate();
+              applyTransform();
+            } else {
+              e.preventDefault();
+            }
+          }
+        },
+        { passive: false }
+      );
+
+      overlay.addEventListener("touchend", e => {
+        if (e.touches.length === 0) {
+          if (currentScale > 1) {
+            image.setAttribute("data-zoom", "in");
+          } else {
+            image.removeAttribute("data-zoom");
+          }
+          if (currentScale <= 1.05) resetTransform();
+        }
+      });
+
+      overlay.addEventListener("touchcancel", e => {
+        if (e.touches.length === 0) {
+          if (currentScale > 1) {
+            image.setAttribute("data-zoom", "in");
+          } else {
+            image.removeAttribute("data-zoom");
+          }
+          if (currentScale <= 1.05) resetTransform();
+        }
+      });
+
+      overlay.addEventListener(
+        "wheel",
+        e => {
+          e.preventDefault();
+          const oldScale = currentScale;
+          const delta = -e.deltaY * 0.001;
+          currentScale = Math.min(4, Math.max(1, currentScale * (1 + delta)));
+
+          if (currentScale <= 1.05) {
+            resetTransform();
+          } else {
+            image.setAttribute("data-zoom", "in");
+            // Zoom to cursor: adjust translate so the point under cursor stays fixed
+            const ox = overlay.clientWidth / 2;
+            const oy = overlay.clientHeight / 2;
+            translateX =
+              (e.clientX - ox) * (1 / currentScale - 1 / oldScale) + translateX;
+            translateY =
+              (e.clientY - oy) * (1 / currentScale - 1 / oldScale) + translateY;
+            clampTranslate();
+            applyTransform();
+          }
+        },
+        { passive: false }
+      );
+
+      let isMouseDown = false;
+      let mouseStartX = 0;
+      let mouseStartY = 0;
+
+      overlay.addEventListener("mousedown", e => {
+        if (e.button !== 0 || currentScale <= 1) return;
+        if (e.target.closest("button")) return;
+        isMouseDown = true;
+        mouseStartX = e.clientX;
+        mouseStartY = e.clientY;
+        panStartTranslateX = translateX;
+        panStartTranslateY = translateY;
+        image.setAttribute("data-zoom", "drag");
+        e.preventDefault();
+      });
+
+      function onMouseMove(e) {
+        if (!isMouseDown || !overlay) return;
+        translateX =
+          panStartTranslateX + (e.clientX - mouseStartX) / currentScale;
+        translateY =
+          panStartTranslateY + (e.clientY - mouseStartY) / currentScale;
+        clampTranslate();
+        applyTransform();
+      }
+
+      function onMouseUp() {
+        if (!isMouseDown) return;
+        isMouseDown = false;
+        if (currentScale > 1) {
+          image.setAttribute("data-zoom", "in");
+        } else {
+          image.removeAttribute("data-zoom");
+        }
+      }
+
+      document.addEventListener("mousemove", onMouseMove);
+      document.addEventListener("mouseup", onMouseUp);
+      removeDragListeners = () => {
+        document.removeEventListener("mousemove", onMouseMove);
+        document.removeEventListener("mouseup", onMouseUp);
+      };
+
+      document.body.appendChild(overlay);
+      document.documentElement.style.overflow = "hidden";
+      document.addEventListener("keydown", onKeyDown);
+      window.__closeLightbox = close;
+
+      requestAnimationFrame(() => overlay?.classList.add("opacity-100"));
+      closeButton.focus();
+    }
+
+    function close() {
+      if (!overlay) return;
+      const el = overlay;
+      overlay = null;
+      el.classList.add("pointer-events-none");
+      window.__closeLightbox = null;
+
+      document.removeEventListener("keydown", onKeyDown);
+      removeDragListeners?.();
+      removeDragListeners = null;
+      document.documentElement.style.overflow = "";
+      lastFocused?.focus();
+      lastFocused = null;
+
+      if (prefersReducedMotion()) {
+        el.remove();
+        return;
+      }
+      const remove = () => el.remove();
+      el.addEventListener("transitionend", remove, { once: true });
+      setTimeout(remove, 250); // fallback in case transitionend never fires
+      el.classList.remove("opacity-100");
+    }
+
+    function onKeyDown(e) {
+      if (e.key === "Escape") {
+        close();
+      } else if (e.key === "Tab") {
+        trapFocus(e);
+      }
+    }
+
+    // Keep keyboard focus inside the open dialog.
+    function trapFocus(e) {
+      if (!overlay) return;
+      const focusables = overlay.querySelectorAll(
+        'a[href], button, [tabindex]:not([tabindex="-1"])'
+      );
+      if (focusables.length === 0) return;
+      const first = focusables[0];
+      const last = focusables[focusables.length - 1];
+      if (e.shiftKey && document.activeElement === first) {
+        e.preventDefault();
+        last.focus();
+      } else if (!e.shiftKey && document.activeElement === last) {
+        e.preventDefault();
+        first.focus();
+      }
+    }
+
+    function triggerFromEvent(e) {
+      const image = e.target.closest("img");
+      if (!image || !article.contains(image) || image.closest("a")) return null;
+      return image;
+    }
+
+    function activate(image) {
+      open(image.currentSrc || image.src, image.alt, image);
+    }
+
+    article.addEventListener("click", e => {
+      const image = triggerFromEvent(e);
+      if (!image) return;
+      e.preventDefault();
+      activate(image);
+    });
+
+    article.addEventListener("keydown", e => {
+      if (e.key !== "Enter" && e.key !== " " && e.key !== "Spacebar") return;
+      const image = triggerFromEvent(e);
+      if (!image) return;
+      e.preventDefault();
+      activate(image);
+    });
+  }
+  initLightbox();
+
+  if (!window.__lightboxSwapBound) {
+    window.__lightboxSwapBound = true;
+    document.addEventListener("astro:before-swap", () =>
+      window.__closeLightbox?.()
+    );
+  }
+
+  document.addEventListener("astro:after-swap", () =>
+    window.scrollTo({ left: 0, top: 0, behavior: "instant" })
+  );
+</script>

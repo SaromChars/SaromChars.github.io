@@ -1,0 +1,773 @@
+<!DOCTYPE html><html dir="ltr" lang="zh-CN" class="overflow-y-scroll scroll-smooth"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1"><link rel="icon" type="image/png" href="/images/favicon-32x32-next.png"><link rel="icon" href="/favicon.ico"><link rel="canonical" href="https://www.saromchars.tech/posts/mail-gateway-greylist-ratelimit/"><meta name="generator" content="Astro v7.4.5"><!-- Primary meta --><title>邮件网关中的灰名单、速率限制与入口过载 | Sarom&#39;s Blog</title><meta name="title" content="邮件网关中的灰名单、速率限制与入口过载 | Sarom's Blog"><meta name="description" content="分析邮件网关在入站连接激增时的状态模型，说明 Postscreen、Rspamd 灰名单与漏桶速率限制的实现逻辑、降级路径与系统取舍。"><meta name="author" content="Sarom Chars"><link rel="sitemap" href="/sitemap-index.xml"><!-- Open Graph --><meta property="og:type" content="article"><meta property="og:site_name" content="Sarom's Blog"><meta property="og:title" content="邮件网关中的灰名单、速率限制与入口过载 | Sarom's Blog"><meta property="og:description" content="分析邮件网关在入站连接激增时的状态模型，说明 Postscreen、Rspamd 灰名单与漏桶速率限制的实现逻辑、降级路径与系统取舍。"><meta property="og:url" content="https://www.saromchars.tech/posts/mail-gateway-greylist-ratelimit/"><meta property="og:image" content="https://www.saromchars.tech/og.png"><!-- Twitter / X --><meta property="twitter:card" content="summary_large_image"><meta property="twitter:url" content="https://www.saromchars.tech/posts/mail-gateway-greylist-ratelimit/"><meta property="twitter:title" content="邮件网关中的灰名单、速率限制与入口过载 | Sarom's Blog"><meta property="twitter:description" content="分析邮件网关在入站连接激增时的状态模型，说明 Postscreen、Rspamd 灰名单与漏桶速率限制的实现逻辑、降级路径与系统取舍。"><meta property="twitter:image" content="https://www.saromchars.tech/og.png"><!-- RSS autodiscovery --><link rel="alternate" type="application/rss+xml" title="Sarom's Blog" href="https://www.saromchars.tech/rss.xml"><!-- Filled at runtime by theme.ts to match the current background colour --><meta name="theme-color" content=""><!-- Extra head content injected by child layouts (e.g. JSON-LD, article meta) --><meta property="article:published_time" content="2022-01-12T02:00:00.000Z"><script type="application/ld+json">{"@context":"https://schema.org","@type":"BlogPosting","headline":"邮件网关中的灰名单、速率限制与入口过载","mainEntityOfPage":"https://www.saromchars.tech/posts/mail-gateway-greylist-ratelimit/","datePublished":"2022-01-12T02:00:00.000Z","author":[{"@type":"Person","name":"Sarom Chars","url":"https://github.com/SaromChars"}]}</script><!--
+      Inline FOUC-prevention script: sets data-theme on <html> before
+      the browser paints. Runs synchronously, no defer/async.
+    --><script>
+      (function () {
+        const stored = localStorage.getItem("theme");
+        const prefersDark = window.matchMedia(
+          "(prefers-color-scheme: dark)"
+        ).matches;
+        const theme = stored ?? (prefersDark ? "dark" : "light");
+        const root = document.firstElementChild;
+        root?.setAttribute("data-theme", theme);
+        root?.classList.toggle("dark", theme === "dark");
+        // Expose value so theme.ts can skip re-detection.
+        window.__theme = { value: theme };
+      })();
+    </script><meta name="robots" content="index, follow"><script async src="https://www.googletagmanager.com/gtag/js?id=G-WJJJTJ4FWX"></script><script>(function(){const measurementId = "G-WJJJTJ4FWX";
+
+    window.dataLayer = window.dataLayer || [];
+    function gtag(){ window.dataLayer.push(arguments); }
+    gtag('js', new Date());
+    gtag('config', measurementId);
+  })();</script><style>@keyframes astroFadeInOut{0%{opacity:1}to{opacity:0}}@keyframes astroFadeIn{0%{opacity:0;mix-blend-mode:plus-lighter}to{opacity:1;mix-blend-mode:plus-lighter}}@keyframes astroFadeOut{0%{opacity:1;mix-blend-mode:plus-lighter}to{opacity:0;mix-blend-mode:plus-lighter}}@keyframes astroSlideFromRight{0%{transform:translate(100%)}}@keyframes astroSlideFromLeft{0%{transform:translate(-100%)}}@keyframes astroSlideToRight{to{transform:translate(100%)}}@keyframes astroSlideToLeft{to{transform:translate(-100%)}}@media (prefers-reduced-motion){::view-transition-group(*),::view-transition-old(*),::view-transition-new(*),[data-astro-transition-scope]{animation:none!important}}
+</style><link rel="stylesheet" href="/_astro/Footer.wlxowfqU.css"><style>[data-astro-transition-scope="astro-bztu2lml-1"] { view-transition-name: smtp; }@layer astro { ::view-transition-old(smtp) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }::view-transition-new(smtp) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }[data-astro-transition=back]::view-transition-old(smtp) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition=back]::view-transition-new(smtp) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; } }[data-astro-transition-fallback="old"] [data-astro-transition-scope="astro-bztu2lml-1"],
+			[data-astro-transition-fallback="old"][data-astro-transition-scope="astro-bztu2lml-1"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition-fallback="new"] [data-astro-transition-scope="astro-bztu2lml-1"],
+			[data-astro-transition-fallback="new"][data-astro-transition-scope="astro-bztu2lml-1"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }[data-astro-transition=back][data-astro-transition-fallback="old"] [data-astro-transition-scope="astro-bztu2lml-1"],
+			[data-astro-transition=back][data-astro-transition-fallback="old"][data-astro-transition-scope="astro-bztu2lml-1"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition=back][data-astro-transition-fallback="new"] [data-astro-transition-scope="astro-bztu2lml-1"],
+			[data-astro-transition=back][data-astro-transition-fallback="new"][data-astro-transition-scope="astro-bztu2lml-1"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }</style><style>[data-astro-transition-scope="astro-bztu2lml-2"] { view-transition-name: \53CD\5783\573E\90AE\4EF6; }@layer astro { ::view-transition-old(\53CD\5783\573E\90AE\4EF6) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }::view-transition-new(\53CD\5783\573E\90AE\4EF6) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }[data-astro-transition=back]::view-transition-old(\53CD\5783\573E\90AE\4EF6) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition=back]::view-transition-new(\53CD\5783\573E\90AE\4EF6) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; } }[data-astro-transition-fallback="old"] [data-astro-transition-scope="astro-bztu2lml-2"],
+			[data-astro-transition-fallback="old"][data-astro-transition-scope="astro-bztu2lml-2"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition-fallback="new"] [data-astro-transition-scope="astro-bztu2lml-2"],
+			[data-astro-transition-fallback="new"][data-astro-transition-scope="astro-bztu2lml-2"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }[data-astro-transition=back][data-astro-transition-fallback="old"] [data-astro-transition-scope="astro-bztu2lml-2"],
+			[data-astro-transition=back][data-astro-transition-fallback="old"][data-astro-transition-scope="astro-bztu2lml-2"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition=back][data-astro-transition-fallback="new"] [data-astro-transition-scope="astro-bztu2lml-2"],
+			[data-astro-transition=back][data-astro-transition-fallback="new"][data-astro-transition-scope="astro-bztu2lml-2"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }</style><style>[data-astro-transition-scope="astro-bztu2lml-3"] { view-transition-name: \90AE\7BB1\7CFB\7EDF; }@layer astro { ::view-transition-old(\90AE\7BB1\7CFB\7EDF) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }::view-transition-new(\90AE\7BB1\7CFB\7EDF) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }[data-astro-transition=back]::view-transition-old(\90AE\7BB1\7CFB\7EDF) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition=back]::view-transition-new(\90AE\7BB1\7CFB\7EDF) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; } }[data-astro-transition-fallback="old"] [data-astro-transition-scope="astro-bztu2lml-3"],
+			[data-astro-transition-fallback="old"][data-astro-transition-scope="astro-bztu2lml-3"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition-fallback="new"] [data-astro-transition-scope="astro-bztu2lml-3"],
+			[data-astro-transition-fallback="new"][data-astro-transition-scope="astro-bztu2lml-3"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }[data-astro-transition=back][data-astro-transition-fallback="old"] [data-astro-transition-scope="astro-bztu2lml-3"],
+			[data-astro-transition=back][data-astro-transition-fallback="old"][data-astro-transition-scope="astro-bztu2lml-3"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition=back][data-astro-transition-fallback="new"] [data-astro-transition-scope="astro-bztu2lml-3"],
+			[data-astro-transition=back][data-astro-transition-fallback="new"][data-astro-transition-scope="astro-bztu2lml-3"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }</style></head><body class="bg-background font-app text-foreground selection:bg-accent/75 selection:text-accent-foreground flex min-h-svh flex-col"><a id="skip-to-content" href="#main-content" class="bg-background text-accent absolute inset-s-16 -top-full z-50 px-3 py-2 backdrop-blur-lg transition-all focus:top-4">跳到正文</a><header class="app-layout flex flex-col items-center justify-between sm:flex-row"><div class="border-border bg-background relative flex w-full items-baseline justify-between border-b py-4 sm:items-center sm:py-6"><a href="/" class="absolute py-1 text-xl leading-8 font-semibold whitespace-nowrap sm:static sm:my-auto sm:text-2xl sm:leading-none">Sarom&#39;s Blog</a><nav id="nav-menu" class="flex w-full flex-col items-center sm:ms-2 sm:flex-row sm:justify-end sm:space-x-4 sm:py-0"><button id="menu-btn" class="focus-outline self-end p-2 sm:hidden" aria-label="展开菜单" aria-expanded="false" aria-controls="menu-items" data-label-open="展开菜单" data-label-close="收起菜单"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="hidden" viewBox="0 0 24 24" id="close-icon"><path stroke="none" d="M0 0h24v24H0z" /><path d="M18 6 6 18M6 6l12 12" /></svg><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="icon icon-tabler icons-tabler-outline icon-tabler-menu-deep" viewBox="0 0 24 24" id="menu-icon"><path stroke="none" d="M0 0h24v24H0z" /><path d="M4 6h16M7 12h13M10 18h10" /></svg></button><ul id="menu-items" class="[&amp;&gt;li&gt;a]:hover:text-accent mt-4 hidden w-44 grid-cols-2 place-content-center gap-2 sm:mt-0 sm:flex sm:w-auto sm:gap-x-5 sm:gap-y-0 sm:[&amp;&gt;li]:h-8 [&amp;&gt;li&gt;a]:block [&amp;&gt;li&gt;a]:px-4 [&amp;&gt;li&gt;a]:py-3 [&amp;&gt;li&gt;a]:text-center [&amp;&gt;li&gt;a]:font-medium sm:[&amp;&gt;li&gt;a]:px-2 sm:[&amp;&gt;li&gt;a]:py-1"><li class="col-span-2"><a href="/posts/" class="active-nav">文章</a></li><li class="col-span-2"><a href="/tags/">标签</a></li><li class="col-span-2"><a href="/about/">关于</a></li><li class="col-span-2"><a href="/archives/" title="归档" aria-label="归档" class="group inline-flex items-center gap-1 hover:text-accent focus-outline flex size-full justify-center p-3 sm:relative sm:size-8 sm:p-0"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="hidden sm:absolute sm:top-1/2 sm:left-1/2 sm:block sm:size-6 sm:-translate-x-1/2 sm:-translate-y-1/2" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M3 6a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2 2 2 0 0 1-2 2H5a2 2 0 0 1-2-2M5 8v10a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8M10 12h4" /></svg><span class="sm:sr-only">归档</span></a></li><li class="col-span-1 flex items-center justify-center"><a href="/search/" title="搜索" aria-label="搜索" class="group inline-flex items-center gap-1 hover:text-accent focus-outline relative size-8"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="absolute top-1/2 left-1/2 size-6 -translate-x-1/2 -translate-y-1/2" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M3 10a7 7 0 1 0 14 0 7 7 0 1 0-14 0M21 21l-6-6" /></svg><span class="sr-only">搜索</span></a></li><li class="col-span-1 flex items-center justify-center"><button id="theme-btn" class="focus-outline hover:[&amp;&gt;svg]:stroke-accent relative size-12 p-4 sm:size-8" title="切换主题" aria-label="auto" aria-live="polite"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="absolute top-[50%] left-[50%] translate-[-50%] scale-100 rotate-0 transition-all dark:scale-0 dark:-rotate-90" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M12 3h.393a7.5 7.5 0 0 0 7.92 12.446A9 9 0 1 1 12 2.992z" /></svg><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="absolute top-[50%] left-[50%] translate-[-50%] scale-0 rotate-90 transition-all dark:scale-100 dark:rotate-0" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M14.828 14.828a4 4 0 1 0-5.656-5.656 4 4 0 0 0 5.656 5.656M6.343 17.657l-1.414 1.414M6.343 6.343 4.929 4.929M17.657 6.343l1.414-1.414M17.657 17.657l1.414 1.414M4 12H2M12 4V2M20 12h2M12 20v2" /></svg></button></li></ul></nav></div></header><script type="module">function e(){let e=document.querySelector(`#menu-btn`),t=document.querySelector(`#menu-items`),n=document.querySelector(`#menu-icon`),r=document.querySelector(`#close-icon`);if(!e||!t||!n||!r)return;let i=e.dataset.labelOpen??`Open menu`,a=e.dataset.labelClose??`Close menu`;e.addEventListener(`click`,()=>{let o=e.getAttribute(`aria-expanded`)===`true`;e.setAttribute(`aria-expanded`,o?`false`:`true`),e.setAttribute(`aria-label`,o?i:a),t.classList.toggle(`hidden`),t.classList.toggle(`grid`),n.classList.toggle(`hidden`),r.classList.toggle(`hidden`)})}function t(){let e=document.getElementById(`skip-to-content`);e&&e.addEventListener(`click`,e=>{if(e.defaultPrevented||e.metaKey||e.ctrlKey||e.shiftKey||e.button!==0)return;e.preventDefault();let t=document.getElementById(`main-content`);t&&(t.setAttribute(`tabindex`,`-1`),t.addEventListener(`blur`,()=>t.removeAttribute(`tabindex`),{once:!0}),t.focus(),t.scrollIntoView({behavior:`smooth`}))})}e(),document.addEventListener(`astro:after-swap`,e),t(),document.addEventListener(`astro:after-swap`,t);</script><div class="app-layout flex items-center justify-start"><a id="back-button" href="/" class="group inline-flex items-center gap-1 hover:text-accent focus-outline hover:text-foreground/75 -ms-2 mt-8 mb-2"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="inline-block size-6 rtl:rotate-180" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="m15 6-6 6 6 6" /></svg><span>返回</span></a></div><script type="module">function e(){let e=document.querySelector(`#back-button`),t=sessionStorage.getItem(`backUrl`);t&&e&&(e.href=t)}document.addEventListener(`astro:page-load`,e),e();</script><main id="main-content" class="app-layout" data-pagefind-body><h1 style="view-transition-name:mail-gateway-greylist-ratelimit" class="text-accent inline-block text-2xl font-bold sm:text-3xl">邮件网关中的灰名单、速率限制与入口过载</h1><div class="my-2 flex items-center gap-2"><div class="text-muted-foreground flex flex-wrap items-center gap-x-2 gap-y-1"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="inline-block size-6 min-w-5.5" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M4 7a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2zM16 3v4M8 3v4M4 11h16M7 14h.013M10.01 14h.005M13.01 14h.005M16.015 14h.005M13.015 17h.005M7.01 17h.005M10.01 17h.005" /></svg><time class="text-sm sm:text-base" datetime="2022-01-12T02:00:00.000Z">2022年1月12日</time></div><span aria-hidden="true" class="text-muted-foreground max-sm:hidden hidden">|</span></div><article id="article" class="mt-8 w-full app-prose max-w-app prose-pre:bg-(--shiki-light-bg) dark:prose-pre:bg-(--shiki-dark-bg)"><!--email_off-->
+<p>在公网邮件入口处，常见的问题是连接尚未接收邮件正文，后端邮件传输代理（Mail Transfer Agent，MTA）的工作进程或连接槽就已被占满。简单邮件传输协议（Simple Mail Transfer Protocol，SMTP）是一种面向连接的文本协议。当大量恶意主机或僵尸网络发起慢速挂起连接、并发扫描或高频垃圾邮件试探时，若直接为每个入站连接分配重量级的解析和过滤资源，系统会面临资源耗尽与投递排队。</p>
+<p>为了在协议早期拦截无效连接并保护核心系统，网关常组合使用连接前置筛查、灰名单（greylisting）以及基于漏桶算法的速率限制（rate limiting）。以下基于 Postfix 3.6.2 与 Rspamd 2.7 的源码实现与随版本提供的配置样例，分析它们在协议各阶段的状态流转、数据结构及失效降级路径。</p>
+<h2 id="连接前置控制postfix-postscreen-的机制与边界">连接前置控制：Postfix postscreen 的机制与边界</h2>
+<p>在 Postfix 架构中，postscreen 作为单进程事件驱动的独立接入层，运行在网络连接进入实际 <code>smtpd</code> 进程之前，用于早期过滤协议异常的非标客户端（源码见 <a href="#ref-postfix-postscreen">Postfix postscreen 源码</a>）。</p>
+<h3 id="1-连接状态检查与响应码划分">1. 连接状态检查与响应码划分</h3>
+<p>客户端完成 TCP 握手并进入 postscreen 端点回调函数（<code>psc_endpt_lookup_done</code>）后，系统会在早期执行连接与队列检查，而非等待连接移交时才临时判断：</p>
+<ul>
+<li><strong>单 IP 并发连接数限制</strong>：postscreen 在内存哈希表（<code>psc_client_concurrency</code>）中为每个来源 IP 维护一个 <code>client_info</code> 结构。当某个 IP 当前的活跃连接数超过配置参数 <code>postscreen_client_connection_count_limit</code> 时，连接会被立即切断，并返回：
+<code>421 4.7.0 Error: too many connections</code>
+这是单个 postscreen 进程在本地内存记录的局部计数，不是跨主机的全局计数。</li>
+<li><strong>连接交接队列上限</strong>：端点回调早期还会检查等待移交的连接计数 <code>psc_post_queue_length</code>。如果该计数达到配置的 <code>postscreen_post_queue_limit</code>，表明连接交接队列已达到上限，系统会直接返回：
+<code>421 4.3.2 All server ports are busy</code>
+这里表示的是交接队列已满，并不等同于后端系统总体吞吐容量的绝对枯竭。</li>
+<li><strong>前置筛查连接差值上限</strong>：正在由 postscreen 进行筛查测试的连接差值为 <code>psc_check_queue_length - psc_post_queue_length</code>。如果该差值达到 <code>postscreen_pre_queue_limit</code>，说明前置筛查队列已满，新连接会被拒绝：
+<code>421 4.3.2 All screening ports are busy</code></li>
+</ul>
+<p>上述 <code>pre_queue</code> 与 <code>post_queue</code> 均为 postscreen 内存中维护的活跃网络套接字连接队列，并非磁盘上的邮件排队队列（如 <code>incoming</code> 或 <code>deferred</code> 磁盘队列）。</p>
+<h3 id="2-本地缓存与过期淘汰">2. 本地缓存与过期淘汰</h3>
+<p>通过连接数检查后，postscreen 会按客户端来源 IP 查找本地缓存（默认使用 Berkeley DB，即 <code>btree:$data_directory/postscreen_cache</code>）。这与灰名单使用发件人、收件人和 IP 网段构造信封键存在明显区别。</p>
+<p>在缓存判定逻辑中，postscreen 解析该客户端各项测试的时间戳（源码见 <a href="#ref-postfix-postscreen-tests">postscreen 状态与测试逻辑</a> 中的 <code>psc_parse_tests</code>）。只有当所有启用的测试结果仍处于有效时限内且客户端并发数为 1 时，才会直接标记为通过（<code>PASS OLD</code>）并允许进入移交逻辑。通过筛查只说明满足已启用的测试，不证明客户端身份或邮件安全。</p>
+<p>常见配置中的 7 天保留时间（<code>postscreen_cache_retention_time = 7d</code>）是整条记录在所有测试过期后继续保留以防日志震荡的物理清理周期，并非各项具体行为测试的统一有效窗口。默认的本地 btree 缓存为各前置节点独立持有，并不跨网关节点自动共享。</p>
+<h3 id="3-stress-压力模式的行为特征">3. stress 压力模式的行为特征</h3>
+<p>当入站并发增大时，postscreen 根据当前连接总数触发压力控制。源码中将 <code>psc_check_queue_length</code>（包含前置与待移交连接）与从 <code>postscreen_pre_queue_limit</code> 派生出的高低水位阈值进行比较：</p>
+<p>当连接数达到高水位（约 90%）时进入 stress 模式；当连接数降至低水位（源码为 <code>&#x3C;=</code>, 约 70%）时退出。进入 stress 模式后，系统仅将支持 stress 的部分超时参数（主要是问候等待时间 <code>greet_wait</code> 和命令超时 <code>command_time_limit</code>）切换至对应较短的预设值，从而缩短等待占用，并按命令超时终止超时会话。stress 机制不执行动态进程扩容，也不会额外拉起新的 worker。</p>
+<h2 id="rspamd-灰名单双键模型与状态流转">Rspamd 灰名单：双键模型与状态流转</h2>
+<p>灰名单机制的基本原理在于利用合规邮件服务器会按规范延后重试的特点，暂缓首次投递（参见 <a href="#ref-rfc6647">RFC 6647</a> 适用性声明）。在 Rspamd 2.7 插件实现中（参见 <a href="#ref-rspamd-greylist">Rspamd 灰名单插件源码</a>），系统通过 Redis 维护状态，采用正文与元数据的双键模型。RFC 6647 第 6 节建议重试范围应可配置、鼓励边界 MTA 共享数据库与策略，并建议排除已认证的提交连接；而在具体实现中，Rspamd 选择将等待超时默认设为 300 秒、生存时间设为 1 天，并使用独特的双键派生方案。</p>
+<h3 id="1-键构造方式">1. 键构造方式</h3>
+<p>Rspamd 灰名单不维护原始的明文三元组，而是构造两个专用的 Redis 键：</p>
+<ul>
+<li><strong>正文哈希键（data_key）</strong>：截取邮件原始正文（<code>task:get_rawbody()</code>）的前 10240 字节计算哈希，截取其 base32 编码的前 20 位，拼装前缀形成 <code>rgb&#x3C;hash></code>。此处使用的是原始正文切片，不包含邮件头部字段。</li>
+<li><strong>元数据哈希键（envelope_key）</strong>：提取 SMTP 信封中的发件人地址（<code>MAIL FROM</code>，空反弹记为 <code>&#x3C;></code>）、排序后的全部收件人地址（<code>RCPT TO</code>），以及经过掩码计算的客户端 IP（IPv4 默认使用 <code>/19</code>，IPv6 默认使用 <code>/64</code>）。对上述字段拼接哈希后生成 <code>rgm&#x3C;hash></code>。</li>
+</ul>
+<p>元数据键将一封邮件的所有收件人排序后统一计算哈希，因而它是整封邮件信封级别的记录，而非针对每个收件人独立拆分。默认情况下，本地网络来源（<code>check_local = false</code>）与已通过认证的登录用户（<code>check_authed = false</code>）会直接跳过灰名单处理。</p>
+<h3 id="2-检查阶段与匹配优先级">2. 检查阶段与匹配优先级</h3>
+<p>在检查阶段（<code>greylist_check</code>），插件通过 Redis 的 <code>MGET</code> 命令同时读取正文键与元数据键记录的创建时间戳 <code>t</code>。判断函数计算当前时间与记录时间的差值 <code>now - t</code> 是否达到等待期（默认 <code>timeout = 300</code> 秒）：未达到则标记为过早重试，达到则标记为记录成熟。</p>
+<p>键匹配存在严格的先后判定顺序：</p>
+<ol>
+<li>首先检查正文键：如果正文键存在且已经成熟（<code>now - t >= 300</code>），系统直接记录正文白名单放行，此时不再继续检查元数据键。</li>
+<li>若正文键不存在，但元数据键存在且成熟，系统记录元数据白名单放行。</li>
+<li>若正文键存在但尚未成熟，即使元数据键存在且已成熟，后续判断分支依然会判定为正文尚未成熟，进而注入暂缓响应（<code>soft reject</code>）。</li>
+<li>只有当正文键与元数据键在 Redis 中均无记录时，系统才标记该邮件为全新记录。</li>
+</ol>
+<p>这里存在明确的分支边界：如果邮件正文发生变动，且新正文对应的键此前已被其他投递记录占用且尚未成熟，即使旧信封键已经成熟，依然会被拦截暂缓；但若新正文键在 Redis 中完全不存在，而旧信封键成熟，则可以顺利走元数据成熟分支放行。</p>
+<h3 id="3-设置阶段与生效条件">3. 设置阶段与生效条件</h3>
+<p>在后续的设置阶段（<code>greylist_set</code>）：</p>
+<ul>
+<li>如果在检查阶段或其他前置插件中已经生成了任何预设结果（<code>has_pre_result()</code>），或者当前动作属于拒绝（<code>reject</code>）、或者综合评分未达到灰名单阈值，设置阶段会直接跳过。这意味着过早重试的请求由于在检查阶段已经设定了 <code>soft reject</code>，并不会在设置阶段再次执行 Redis 写入。</li>
+<li>只有当该请求需要新建灰名单记录，且经过动作与阈值判断符合灰名单触发条件时，插件才注入 <code>soft reject</code>（默认提示 <code>Try again later</code>），并使用 <code>SETEX</code> 命令将当前时间戳写入正文键与元数据键，生存时间（time to live，TTL）默认设为 86400 秒（1 天）。</li>
+<li>当邮件成熟并放行时，插件会通过 <code>EXPIRE</code> 命令将两键的 TTL 重新刷新为 86400 秒。</li>
+</ul>
+<p>需要指出，灰名单并不是身份认证机制。合规邮件客户端会按规范退避重试，具备重试逻辑的攻击脚本同样可以完成重试，因此通过灰名单不能保证邮件没有垃圾或威胁属性。此外，写入两个键的 <code>SETEX</code> 命令是分步发出的，不是跨键的原子事务。</p>
+<h2 id="rspamd-速率限制漏桶状态机与并发边界">Rspamd 速率限制：漏桶状态机与并发边界</h2>
+<p>Rspamd 的速率限制插件（参见 <a href="#ref-rspamd-ratelimit">Rspamd 速率限制插件源码</a>）用于防止单位时间内特定主体的高频投递。在默认配置样例中，限制规则（<code>rates</code>）处于注释状态，网关必须根据业务拓扑显式定义规则，系统开箱并不对所有流量自动限流。</p>
+<h3 id="1-限流键与身份来源">1. 限流键与身份来源</h3>
+<p>限流键通过 <code>gen_rate_key</code> 组合生成。其关键词包括 IP、信封发件人（<code>from</code>，取自 <code>task:get_from(0)</code> 并转为小写，非邮件头中的 <code>From:</code>）、认证用户（<code>user</code>）以及收件人（<code>to</code>）。</p>
+<p>在入站网关中，未经身份核验的公网来源 IP 与信封发件人不能等同于可信身份。对于 <code>user</code> 维度，其取值来自上游可信 MTA 传递的会话元数据（如简单认证与安全层 Simple Authentication and Security Layer，SASL 产生的用户标识，上游也可能采用其他认证方式）。如果当前请求中缺失上游提供的认证元数据，插件在生成带 <code>user</code> 的限流键时会返回空，从而跳过对应规则的检查，而不是整个插件规则无法装载。</p>
+<h3 id="2-redis-漏桶脚本的状态转移">2. Redis 漏桶脚本的状态转移</h3>
+<p>限流状态存储在 Redis 的 Hash 结构中，由 Lua 脚本（<code>bucket_check_script</code>）维护四个字段：上次更新的毫秒时间戳 <code>l</code>、当前累积的水位 <code>b</code>、动态漏出速率乘数 <code>dr</code> 以及动态突发容量乘数 <code>db</code>。</p>
+<p>在执行检查时，调用检查脚本前，将配置的每秒速率除以 1000 换算为每毫秒速率；脚本再结合动态乘数计算上次检查到当前时刻漏出的消息量。扣除漏出量后，如果剩余累积水位加上当前请求的增量超过了配置的突发容量乘以动态容量因子，脚本返回超额标记。</p>
+<p>默认情况下，每次检查传入的水位增量为当前会话中的收件人总数，仅在配置了 <code>skip_recipients</code> 时才按固定值 1 计算。键在 Redis 中的默认生存时间为 172800 秒（2 天）。新桶创建时设置过期时间，后续更新阶段通过 <code>EXPIRE</code> 刷新；不是每次检查都刷新。记录过期后整个桶将重新开始计数，这并非固定的 48 小时滚动统计窗口。</p>
+<h3 id="3-检查与更新阶段的并发特征">3. 检查与更新阶段的并发特征</h3>
+<p>Rspamd 将限流拆分为两个异步阶段：</p>
+<ol>
+<li><strong>检查阶段（<code>ratelimit_cb</code>）</strong>：执行 <code>bucket_check_script</code>。若超出阈值，依据配置设置软拒收或仅插入警告符号（<code>settings.symbol</code>）。</li>
+<li><strong>更新阶段（<code>ratelimit_update_cb</code>）</strong>：在内容过滤结束时执行 <code>bucket_update_script</code>，真正累加消耗的水位并根据邮件信誉调整乘数。如果前序逻辑已设定了任何处理结果（<code>has_pre_result()</code>），更新阶段直接退出。</li>
+</ol>
+<p>由于检查与更新不在同一个原子事务中，并发请求在检查阶段读取到的可能均为未包含自身增量的历史水位。因此该设计属于行为管控工具，高并发突发下可能观察到放行总量超出突发阈值，不能作为强一致性的硬配额系统使用。</p>
+<h2 id="典型场景与工程权衡">典型场景与工程权衡</h2>
+<h3 id="场景一重试时序拓扑漂移与跨节点孤岛">场景一：重试时序、拓扑漂移与跨节点孤岛</h3>
+<p>当一封合法邮件在时刻 t0 首次到达时，若命中灰名单规则，网关记录时间戳并返回暂缓响应（如 <code>451</code>）。</p>
+<ul>
+<li><strong>重试时序</strong>：若发送方在 t0 + 2分钟 发起重试，由于时间差 120秒 &#x3C; 300秒，请求命中过早重试分支并维持暂缓。过早重试不会更新 Redis 中记录的初始时间戳 t0。若在 t0 + 6分钟 重试，由于 360秒 >= 300秒，记录已满足等待期，邮件放行并刷新 TTL。依据 <a href="#ref-rfc5321">RFC 5321</a> §4.5.4.1 的要求，发送方在遇到临时错误时需延后重试，但标准并未规定统一的重试间隔算法，无法确保对端恰好在第 5 分钟发起尝试。</li>
+<li><strong>拓扑漂移</strong>：发信方常使用多出口与集群分发。若重试时客户端公网 IP 从 <code>198.51.100.1</code> 变更为 <code>203.0.113.1</code>，其超出 <code>/19</code> 掩码范围会导致元数据键改变；正文微调（如添加动态追踪标识）则会改变正文键。只有当两者同时改变时，双键才会同时失配。</li>
+<li><strong>跨节点同步</strong>：若多台前置网关各自维护独立的本地 postscreen 缓存，重试命中不同节点将导致 postscreen 重复执行前置测试；若 Rspamd 节点未接入相同的逻辑 Redis 实例或分片不一致，也会导致对端面临二次灰名单等待。</li>
+</ul>
+<h3 id="场景二共享出口与多租户隔离">场景二：共享出口与多租户隔离</h3>
+<p>网络地址转换（Network Address Translation，NAT）网关与第三方发信平台通常由多用户共享公网出口：</p>
+<ul>
+<li><strong>掩码聚合的影响</strong>：Rspamd 默认采用 IPv4 <code>/19</code> 掩码。由于元数据键同时包含发件人与排序后的收件人，单台主机的泛洪不会直接导致整个 <code>/19</code> 网段的所有邮件被灰名单封禁；但较宽的掩码使同信封组合跨主机共享等待状态，虽能减少重试抖动，却削弱了对不同客户端的区分度。</li>
+<li><strong>维度分离</strong>：对于共享出口，基于 IP 的限流可能误伤同出口的其他合法发送者；而基于认证身份的限流应针对上游验证后的 <code>user</code> 维度独立配置。白名单配置应当审慎，将公共 IP 列入白名单仅会跳过特定的限流或灰名单检查，无法替代对邮件内容的综合安全审查。</li>
+</ul>
+<h3 id="场景三状态异常与暂缓响应的责任边界">场景三：状态异常与暂缓响应的责任边界</h3>
+<p>当底层持久化服务发生异常时，防御机制可能引发连锁反应：</p>
+<ul>
+<li><strong>故障降级差异</strong>：若 Redis 读取发生错误，灰名单插件仅记录错误日志并退出，最终动作交由后续规则决定，不等于全系统自动放行；而在首次判定需要灰名单后，若 <code>SETEX</code> 写入失败，对端后续重试将因为缺少历史时间戳而反复触发冷启动。限流插件在遇到 Redis 错误时同样仅记日志，系统最终动作取决于 MTA 的全局错误处理策略。</li>
+<li><strong>责任边界与队列堆积</strong>：根据 <a href="#ref-rfc5321">RFC 5321</a> §4.2，4xx 响应属于临时失败。在接收方返回最终的 <code>250 OK</code> 之前，邮件的暂存与投递责任完全留在发送方队列中。当网关大量返回 4xx 时，上游发送方会将邮件保留在本地队列并持续重试，导致网关面临重试流量与新流量叠加的冲击。</li>
+<li><strong>容量估算与资源预算</strong>：在架构规划时需预留缓存预算。假设系统持续接入新发信组合的平均速率为每秒 50 次，双键保留 86400 秒，单条键值及底层开销假设约 250 字节（此数值为教学示意，生产中必须结合键前缀长度、编码及 Redis 内部分配机制实际测量）：
+<code>50 * 2 * 86400 * 250 字节 ≈ 2.16 GB</code>
+在实际场景中，正文键的复用可能降低总键数，而成熟后的 <code>EXPIRE</code> 刷新则可能延长键的实际占用时间，因此理论估算不能当作硬性上限。更重要的是，在入口处收紧连接并发并不等于内容过滤层具备了充足的资源，网关架构仍需为正常邮件与管理通路预留专门的计算预算，并严格约束扫描并发、排队等待长度与超时阈值。</li>
+</ul>
+<h2 id="隔离验证与工程设计推导">隔离验证与工程设计推导</h2>
+<h3 id="1-状态流转推导方案未实际运行的验证计划">1. 状态流转推导方案（未实际运行的验证计划）</h3>
+<p>在不发起真实网络请求的前提下，可通过设定确定性的输入参数推导状态机行为。验证过程中需重点记录各键名称、记录时间、键 TTL、组件判定动作、MTA 实际返回响应、扫描队列深度以及正常邮件的端到端时延：</p>
+<ul>
+<li><strong>固定键与时钟推导</strong>：注入固定的元数据键与正文键，设定基准时间 t=0。预期首次投递触发写入并返回暂缓响应；在 t=120秒 注入相同键，预期命中过早重试分支并维持暂缓；在 t=360秒 注入，预期状态标记放行并刷新键的 TTL。</li>
+<li><strong>出口与节点漂移推导</strong>：保持正文键不变，修改来源 IP 使其超出 <code>/19</code> 掩码范围。预期元数据键生成新键，但检查逻辑首先读取到原正文键已成熟，整体依然判定通过；若同时修改正文前 10KB 内容，预期两键均失配并触发重新记录。</li>
+<li><strong>存储异常降级推导</strong>：模拟 Redis 连接中断或清空状态。预期读取阶段记录错误日志并回退；写入阶段若无法保存时间戳，后续请求将无法完成成熟判定，预期导致多次暂缓。</li>
+<li><strong>并发限流推导</strong>：以高于突发上限的并发频率同时注入请求。预期由于检查与更新分步执行，并发请求在检查阶段均读取到较低的历史水位，可能观察到超出配置上限的放行数量，体现其非严格配额的行为特征。</li>
+</ul>
+<h3 id="2-严格配额方案的教学设计推导">2. 严格配额方案的教学设计推导</h3>
+<p>如果业务场景要求绝对不能超出发信配额，则不能直接依赖 Rspamd 的两阶段限流脚本。在工程设计上可推导如下机制：</p>
+<ul>
+<li><strong>原子预留</strong>：客户端请求到达时，服务端生成该消息事务的唯一请求标识符（<code>request_id</code>），通过单个 Lua 脚本在 Redis 中原子性校验水位并预扣减配额，同时写入带有较短超时的租约（Lease）。</li>
+<li><strong>两阶段确认</strong>：若确认处理失败且未移交后端接收，则释放；已接收或结果未知则保持消耗或未决状态并进入对账流程。</li>
+<li><strong>未决状态处理</strong>：当系统异常崩溃或对端断线导致处理结果未知时，不能简单将租约超时等同于未发信而直接回退额度，必须进入对账流程，结合上游事务日志确认最终投递状态。</li>
+</ul>
+<!--/email_off-->
+<h2 id="参考资料">参考资料</h2>
+<ul>
+<li><a id="ref-rfc5321" href="https://www.rfc-editor.org/rfc/rfc5321" target="_blank" rel="noopener noreferrer">RFC 5321 - Simple Mail Transfer Protocol</a></li>
+<li><a id="ref-rfc6647" href="https://www.rfc-editor.org/rfc/rfc6647" target="_blank" rel="noopener noreferrer">RFC 6647 - Email Greylisting: An Applicability Statement for SMTP</a></li>
+<li><a id="ref-postfix-postscreen" href="https://github.com/vdukhovni/postfix/blob/cab3653e62c5d0e5d833f556e68a8089652f7ed9/postfix/src/postscreen/postscreen.c" target="_blank" rel="noopener noreferrer">Postfix postscreen 源码 (postscreen.c)</a></li>
+<li><a id="ref-postfix-postscreen-tests" href="https://github.com/vdukhovni/postfix/blob/cab3653e62c5d0e5d833f556e68a8089652f7ed9/postfix/src/postscreen/postscreen_tests.c" target="_blank" rel="noopener noreferrer">Postfix postscreen 行为测试源码 (postscreen_tests.c)</a></li>
+<li><a id="ref-rspamd-greylist" href="https://github.com/rspamd/rspamd/blob/4c56c1210dac78be727fc07d1c29c140034e4b19/src/plugins/lua/greylist.lua" target="_blank" rel="noopener noreferrer">Rspamd 灰名单插件源码 (greylist.lua)</a></li>
+<li><a id="ref-rspamd-ratelimit" href="https://github.com/rspamd/rspamd/blob/4c56c1210dac78be727fc07d1c29c140034e4b19/src/plugins/lua/ratelimit.lua" target="_blank" rel="noopener noreferrer">Rspamd 速率限制插件源码 (ratelimit.lua)</a></li>
+</ul></article><hr class="my-8 border-dashed"><div id="btt-btn-container" class="fixed inset-e-4 bottom-8 z-50 md:sticky md:inset-e-auto md:float-end md:me-1 translate-y-14 opacity-0 transition duration-500"><button data-button="back-to-top" class="group bg-background relative px-2 py-1 size-14 rounded-full shadow-xl md:h-8 md:w-fit md:rounded-md md:shadow-none md:focus-visible:rounded-none md:bg-background/35 md:bg-clip-padding md:backdrop-blur-lg"><span id="progress-indicator" class="absolute inset-0 -z-10 block size-14 scale-110 rounded-full bg-transparent md:hidden md:h-8 md:rounded-md"></span><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="inline-block rotate-90 md:hidden" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M5 12h14M5 12l6 6M5 12l6-6" /></svg><span class="group-hover:text-accent sr-only text-sm md:not-sr-only"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="inline-block size-4" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M12 5v14M16 9l-4-4M8 9l4-4" /></svg> 回到顶部</span></button></div><script data-astro-rerun>
+  function backToTop() {
+    const rootElement = document.documentElement;
+    const btnContainer = document.querySelector("#btt-btn-container");
+    const backToTopBtn = document.querySelector("[data-button='back-to-top']");
+    const progressIndicator = document.querySelector("#progress-indicator");
+
+    if (!rootElement || !btnContainer || !backToTopBtn || !progressIndicator)
+      return;
+
+    backToTopBtn.addEventListener("click", () => {
+      document.body.scrollTop = 0;
+      document.documentElement.scrollTop = 0;
+    });
+
+    let lastVisible = null;
+    function handleScroll() {
+      const scrollTotal = rootElement.scrollHeight - rootElement.clientHeight;
+      const scrollTop = rootElement.scrollTop;
+      const scrollPercent = Math.floor((scrollTop / scrollTotal) * 100);
+
+      progressIndicator.style.setProperty(
+        "background-image",
+        `conic-gradient(var(--accent), var(--accent) ${scrollPercent}%, transparent ${scrollPercent}%)`
+      );
+
+      const isVisible = scrollTop / scrollTotal > 0.3;
+
+      if (isVisible !== lastVisible) {
+        btnContainer.classList.toggle("opacity-100", isVisible);
+        btnContainer.classList.toggle("translate-y-0", isVisible);
+        btnContainer.classList.toggle("opacity-0", !isVisible);
+        btnContainer.classList.toggle("translate-y-14", !isVisible);
+        lastVisible = isVisible;
+      }
+    }
+
+    let ticking = false;
+    document.addEventListener("scroll", () => {
+      if (!ticking) {
+        window.requestAnimationFrame(() => {
+          handleScroll();
+          ticking = false;
+        });
+        ticking = true;
+      }
+    });
+  }
+  backToTop();
+</script><ul class="mt-4 mb-8 flex flex-wrap gap-4 sm:my-8"><li><a data-astro-transition-scope="astro-bztu2lml-1" href="/tags/smtp/" class="flex items-center gap-0.5 border-foreground border-b-2 border-dashed hover:border-accent hover:text-accent hover:-mt-0.5 focus-visible:text-accent focus-visible:border-none text-sm"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="opacity-80 size-4" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M5 9h14M5 15h14M11 4 7 20M17 4l-4 16" /></svg>SMTP</a></li><li><a data-astro-transition-scope="astro-bztu2lml-2" href="/tags/反垃圾邮件/" class="flex items-center gap-0.5 border-foreground border-b-2 border-dashed hover:border-accent hover:text-accent hover:-mt-0.5 focus-visible:text-accent focus-visible:border-none text-sm"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="opacity-80 size-4" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M5 9h14M5 15h14M11 4 7 20M17 4l-4 16" /></svg>反垃圾邮件</a></li><li><a data-astro-transition-scope="astro-bztu2lml-3" href="/tags/邮箱系统/" class="flex items-center gap-0.5 border-foreground border-b-2 border-dashed hover:border-accent hover:text-accent hover:-mt-0.5 focus-visible:text-accent focus-visible:border-none text-sm"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="opacity-80 size-4" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M5 9h14M5 15h14M11 4 7 20M17 4l-4 16" /></svg>邮箱系统</a></li></ul><hr class="my-8 border-dashed"><div data-pagefind-ignore class="my-8 grid grid-cols-1 gap-6 sm:grid-cols-2"><a href="/posts/mail-quarantine-release-state/" class="flex w-full gap-1 hover:opacity-75"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="inline-block flex-none rtl:rotate-180" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M5 12h14M5 12l6 6M5 12l6-6" /></svg><div><span>上一篇</span><div class="text-accent/85 text-sm">隔离邮件的释放与申诉</div></div></a><a href="/posts/mail-gateway-rule-rollout/" class="flex w-full justify-end gap-1 text-end hover:opacity-75 sm:col-start-2"><div><span>下一篇</span><div class="text-accent/85 text-sm">邮件网关规则发布、回放与效果观察</div></div><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="inline-block flex-none rtl:rotate-180" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M5 12h14M13 18l6-6M13 6l6 6" /></svg></a></div></main><footer class="app-layout mt-auto"><div class="border-border flex flex-col items-center justify-between border-t py-6 sm:flex-row-reverse sm:py-4"><div class="flex flex-wrap items-center gap-1"><a href="https://github.com/SaromChars" title="Sarom Chars 的 GitHub" class="group inline-flex items-center gap-1 hover:text-accent p-2 hover:rotate-6 sm:p-1"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="inline-block size-6 scale-125 fill-transparent stroke-current stroke-2 opacity-90 group-hover:fill-transparent sm:scale-110" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M9 19c-4.3 1.4-4.3-2.5-6-3m12 5v-3.5c0-1 .1-1.4-.5-2 2.8-.3 5.5-1.4 5.5-6a4.6 4.6 0 0 0-1.3-3.2 4.2 4.2 0 0 0-.1-3.2s-1.1-.3-3.5 1.3a12.3 12.3 0 0 0-6.2 0C6.5 2.8 5.4 3.1 5.4 3.1a4.2 4.2 0 0 0-.1 3.2A4.6 4.6 0 0 0 4 9.5c0 4.6 2.7 5.7 5.5 6-.6.6-.6 1.2-.5 2V21" /></svg><span class="sr-only">Sarom Chars 的 GitHub</span></a></div><div class="my-2 flex flex-col items-center whitespace-nowrap sm:flex-row"><span>版权 &#169; 2026</span><span class="hidden sm:inline">&nbsp;|&nbsp;</span><span>保留所有权利。</span></div></div></footer><script type="module">var e=`theme`,t=`light`,n=`dark`;function r(){return localStorage.getItem(e)||(window.matchMedia(`(prefers-color-scheme: dark)`).matches?n:t)}var i=window.__theme?.value??r();function a(){localStorage.setItem(e,i),o()}function o(){let e=document.firstElementChild;e?.setAttribute(`data-theme`,i),e?.classList.toggle(`dark`,i===n),document.querySelector(`#theme-btn`)?.setAttribute(`aria-label`,i);let t=window.getComputedStyle(document.body).backgroundColor;document.querySelector(`meta[name='theme-color']`)?.setAttribute(`content`,t)}function s(){o(),document.querySelector(`#theme-btn`)?.addEventListener(`click`,()=>{i=i===t?n:t,a()})}s(),document.addEventListener(`astro:after-swap`,s),document.addEventListener(`astro:before-swap`,e=>{let t=document.querySelector(`meta[name='theme-color']`)?.getAttribute(`content`);t&&e.newDocument.querySelector(`meta[name='theme-color']`)?.setAttribute(`content`,t)}),window.matchMedia(`(prefers-color-scheme: dark)`).addEventListener(`change`,({matches:e})=>{i=e?n:t,a()});</script></body></html><script type="module">var e=document.querySelector(`#article`);if(e?.querySelector(`a[href^="#ref-"]`)){let t=null,n=!1,r=document.createElement(`button`);r.type=`button`,r.className=`citation-return`,r.textContent=`返回阅读位置`,r.setAttribute(`data-pagefind-ignore`,``),e.addEventListener(`click`,n=>{if(n.button!==0||n.metaKey||n.ctrlKey||n.shiftKey||n.altKey)return;let i=n.target instanceof Element?n.target.closest(`a[href^="#ref-"]`):null;if(!i||!e.contains(i))return;let a=i.hash,o=document.getElementById(decodeURIComponent(a.slice(1)));o&&e.contains(o)&&(t={source:i,url:window.location.href,top:window.scrollY,left:window.scrollX,targetHash:a},o.insertAdjacentElement(`afterend`,r))}),r.addEventListener(`click`,()=>{if(!t||n)return;let e=t,i=i=>{r.remove(),window.requestAnimationFrame(()=>{window.requestAnimationFrame(()=>{e.source.focus({preventScroll:!0}),window.scrollTo({top:e.top,left:e.left,behavior:`instant`}),t=null,n=!1,i?.()})})};window.location.href===e.url?i():(n=!0,window.addEventListener(`popstate`,()=>{let e=window.history.scrollRestoration;window.history.scrollRestoration=`manual`,window.setTimeout(()=>{i(()=>{window.history.scrollRestoration=e})},0)},{once:!0}),window.history.back())}),window.addEventListener(`hashchange`,()=>{!n&&t&&window.location.hash!==t.targetHash&&(r.remove(),t=null)})}</script><script data-astro-rerun>
+  function createProgressBar() {
+    const progressContainer = document.createElement("div");
+    progressContainer.className =
+      "progress-container fixed top-0 z-10 h-1 w-full bg-background";
+
+    const progressBar = document.createElement("div");
+    progressBar.className = "progress-bar h-1 w-0 bg-accent";
+    progressBar.id = "myBar";
+
+    progressContainer.appendChild(progressBar);
+    document.body.appendChild(progressContainer);
+  }
+  createProgressBar();
+
+  function updateScrollProgress() {
+    document.addEventListener("scroll", () => {
+      const winScroll =
+        document.body.scrollTop || document.documentElement.scrollTop;
+      const height =
+        document.documentElement.scrollHeight -
+        document.documentElement.clientHeight;
+      const scrolled = (winScroll / height) * 100;
+      if (document) {
+        const myBar = document.getElementById("myBar");
+        if (myBar) {
+          myBar.style.width = scrolled + "%";
+        }
+      }
+    });
+  }
+  updateScrollProgress();
+
+  function addHeadingLinks() {
+    const headings = Array.from(
+      document.querySelectorAll("h2, h3, h4, h5, h6")
+    );
+    for (const heading of headings) {
+      heading.classList.add("group");
+      const link = document.createElement("a");
+      link.className =
+        "heading-link ms-2 no-underline opacity-75 md:opacity-0 md:group-hover:opacity-100 md:focus:opacity-100";
+      link.href = "#" + heading.id;
+
+      const span = document.createElement("span");
+      span.ariaHidden = "true";
+      span.innerText = "#";
+      link.appendChild(span);
+      heading.appendChild(link);
+    }
+  }
+  addHeadingLinks();
+
+  function attachCopyButtons() {
+    const copyButtonLabel = "Copy";
+    const codeBlocks = Array.from(document.querySelectorAll("pre"));
+
+    for (const codeBlock of codeBlocks) {
+      const wrapper = document.createElement("div");
+      wrapper.style.position = "relative";
+
+      const computedStyle = getComputedStyle(codeBlock);
+      const hasFileNameOffset =
+        computedStyle.getPropertyValue("--file-name-offset").trim() !== "";
+
+      const topClass = hasFileNameOffset
+        ? "top-(--file-name-offset)"
+        : "-top-3";
+
+      const copyButton = document.createElement("button");
+      copyButton.className = `copy-code absolute end-3 ${topClass} rounded bg-muted border border-muted px-2 py-1 text-xs leading-4 text-foreground font-medium`;
+      copyButton.innerHTML = copyButtonLabel;
+      codeBlock.setAttribute("tabindex", "0");
+      codeBlock.appendChild(copyButton);
+
+      codeBlock?.parentNode?.insertBefore(wrapper, codeBlock);
+      wrapper.appendChild(codeBlock);
+
+      copyButton.addEventListener("click", async () => {
+        await copyCode(codeBlock, copyButton);
+      });
+    }
+
+    async function copyCode(block, button) {
+      const code = block.querySelector("code");
+      const text = code?.innerText;
+
+      await navigator.clipboard.writeText(text ?? "");
+
+      button.innerText = "Copied";
+
+      setTimeout(() => {
+        button.innerText = copyButtonLabel;
+      }, 700);
+    }
+  }
+  attachCopyButtons();
+
+  /** Accessible image lightbox for article images. */
+  function initLightbox() {
+    const article = document.getElementById("article");
+    if (!article) return;
+
+    const prefersReducedMotion = () =>
+      window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+    let overlay = null;
+    let lastFocused = null;
+    let removeDragListeners = null;
+
+    // Defer attribute mutations so they don't push the LCP timestamp.
+    // Event listeners below use delegation and don't need the attributes to exist yet.
+    requestAnimationFrame(() => {
+      const images = Array.from(article.querySelectorAll("img"));
+      for (const image of images) {
+        if (image.closest("a")) continue;
+        image.setAttribute("role", "button");
+        image.setAttribute("tabindex", "0");
+        image.setAttribute("aria-haspopup", "dialog");
+        image.setAttribute(
+          "aria-label",
+          image.alt ? `Zoom image: ${image.alt}` : "Zoom image"
+        );
+      }
+    });
+
+    function open(src, alt, trigger) {
+      if (overlay) return;
+      lastFocused = trigger ?? document.activeElement;
+
+      overlay = document.createElement("div");
+      overlay.setAttribute("role", "dialog");
+      overlay.setAttribute("aria-modal", "true");
+      overlay.setAttribute(
+        "aria-label",
+        alt ? `Image preview: ${alt}` : "Image preview"
+      );
+      overlay.className =
+        "fixed inset-0 z-50 flex cursor-zoom-out items-center justify-center bg-black/70 backdrop-blur-sm opacity-0 transition-opacity duration-200 motion-reduce:transition-none";
+
+      const closeButton = document.createElement("button");
+      closeButton.type = "button";
+      closeButton.setAttribute("aria-label", "Close image preview");
+      closeButton.className =
+        "absolute end-4 top-4 z-1 flex size-11 items-center justify-center rounded bg-black/50 text-3xl leading-none text-white";
+      closeButton.innerHTML = "&#10005;";
+      closeButton.addEventListener("click", close);
+
+      const image = document.createElement("img");
+      image.src = src;
+      image.alt = "";
+      image.className =
+        "max-h-[90dvh] max-w-[90dvw] cursor-default object-contain transition-transform duration-100 ease-out motion-reduce:transition-none data-[zoom=drag]:cursor-grabbing data-[zoom=drag]:transition-none data-[zoom=in]:cursor-grab";
+
+      overlay.append(closeButton, image);
+      overlay.addEventListener("click", e => {
+        if (e.target === overlay && currentScale <= 1) close();
+      });
+
+      let currentScale = 1;
+      let translateX = 0;
+      let translateY = 0;
+      let initialDist = 0;
+      let initialScale = 1;
+      let panStartX = 0;
+      let panStartY = 0;
+      let panStartTranslateX = 0;
+      let panStartTranslateY = 0;
+      let lastTapTime = 0;
+
+      function applyTransform() {
+        image.style.transform = `scale(${currentScale}) translate(${translateX}px, ${translateY}px)`;
+        // A backdrop click only closes at fit size, so drop the zoom-out cursor while zoomed.
+        overlay?.classList.toggle("cursor-zoom-out", currentScale <= 1);
+      }
+
+      function resetTransform() {
+        currentScale = 1;
+        translateX = 0;
+        translateY = 0;
+        image.style.transform = "";
+        image.removeAttribute("data-zoom");
+        overlay?.classList.add("cursor-zoom-out");
+      }
+
+      // Keep the zoomed image from being panned past its edges.
+      function clampTranslate() {
+        if (!overlay) return;
+        const maxX = Math.max(
+          0,
+          (image.clientWidth - overlay.clientWidth / currentScale) / 2
+        );
+        const maxY = Math.max(
+          0,
+          (image.clientHeight - overlay.clientHeight / currentScale) / 2
+        );
+        translateX = Math.min(maxX, Math.max(-maxX, translateX));
+        translateY = Math.min(maxY, Math.max(-maxY, translateY));
+      }
+
+      overlay.addEventListener(
+        "touchstart",
+        e => {
+          const t = e.touches;
+          if (t.length === 2) {
+            image.setAttribute("data-zoom", "drag");
+            initialDist = Math.hypot(
+              t[1].clientX - t[0].clientX,
+              t[1].clientY - t[0].clientY
+            );
+            initialScale = currentScale;
+          } else if (t.length === 1) {
+            const now = Date.now();
+            if (now - lastTapTime < 300) {
+              e.preventDefault();
+              if (currentScale > 1) {
+                resetTransform();
+              } else {
+                currentScale = 2;
+                translateX = 0;
+                translateY = 0;
+                applyTransform();
+                image.setAttribute("data-zoom", "in");
+              }
+              lastTapTime = 0;
+              panStartX = t[0].clientX;
+              panStartY = t[0].clientY;
+              panStartTranslateX = translateX;
+              panStartTranslateY = translateY;
+            } else {
+              lastTapTime = now;
+              if (currentScale > 1) {
+                image.setAttribute("data-zoom", "drag");
+                panStartX = t[0].clientX;
+                panStartY = t[0].clientY;
+                panStartTranslateX = translateX;
+                panStartTranslateY = translateY;
+              }
+            }
+          }
+        },
+        { passive: false }
+      );
+
+      overlay.addEventListener(
+        "touchmove",
+        e => {
+          const t = e.touches;
+          if (t.length === 2) {
+            e.preventDefault();
+            const dist = Math.hypot(
+              t[1].clientX - t[0].clientX,
+              t[1].clientY - t[0].clientY
+            );
+            const oldScale = currentScale;
+            currentScale = Math.min(
+              4,
+              Math.max(1, initialScale * (dist / initialDist))
+            );
+
+            // Zoom to the geometric center of the two fingers
+            const midX = (t[0].clientX + t[1].clientX) / 2;
+            const midY = (t[0].clientY + t[1].clientY) / 2;
+            const ox = overlay.clientWidth / 2;
+            const oy = overlay.clientHeight / 2;
+            translateX =
+              (midX - ox) * (1 / currentScale - 1 / oldScale) + translateX;
+            translateY =
+              (midY - oy) * (1 / currentScale - 1 / oldScale) + translateY;
+            clampTranslate();
+            applyTransform();
+          } else if (t.length === 1) {
+            if (currentScale > 1) {
+              e.preventDefault();
+              image.setAttribute("data-zoom", "drag");
+              translateX =
+                panStartTranslateX + (t[0].clientX - panStartX) / currentScale;
+              translateY =
+                panStartTranslateY + (t[0].clientY - panStartY) / currentScale;
+              clampTranslate();
+              applyTransform();
+            } else {
+              e.preventDefault();
+            }
+          }
+        },
+        { passive: false }
+      );
+
+      overlay.addEventListener("touchend", e => {
+        if (e.touches.length === 0) {
+          if (currentScale > 1) {
+            image.setAttribute("data-zoom", "in");
+          } else {
+            image.removeAttribute("data-zoom");
+          }
+          if (currentScale <= 1.05) resetTransform();
+        }
+      });
+
+      overlay.addEventListener("touchcancel", e => {
+        if (e.touches.length === 0) {
+          if (currentScale > 1) {
+            image.setAttribute("data-zoom", "in");
+          } else {
+            image.removeAttribute("data-zoom");
+          }
+          if (currentScale <= 1.05) resetTransform();
+        }
+      });
+
+      overlay.addEventListener(
+        "wheel",
+        e => {
+          e.preventDefault();
+          const oldScale = currentScale;
+          const delta = -e.deltaY * 0.001;
+          currentScale = Math.min(4, Math.max(1, currentScale * (1 + delta)));
+
+          if (currentScale <= 1.05) {
+            resetTransform();
+          } else {
+            image.setAttribute("data-zoom", "in");
+            // Zoom to cursor: adjust translate so the point under cursor stays fixed
+            const ox = overlay.clientWidth / 2;
+            const oy = overlay.clientHeight / 2;
+            translateX =
+              (e.clientX - ox) * (1 / currentScale - 1 / oldScale) + translateX;
+            translateY =
+              (e.clientY - oy) * (1 / currentScale - 1 / oldScale) + translateY;
+            clampTranslate();
+            applyTransform();
+          }
+        },
+        { passive: false }
+      );
+
+      let isMouseDown = false;
+      let mouseStartX = 0;
+      let mouseStartY = 0;
+
+      overlay.addEventListener("mousedown", e => {
+        if (e.button !== 0 || currentScale <= 1) return;
+        if (e.target.closest("button")) return;
+        isMouseDown = true;
+        mouseStartX = e.clientX;
+        mouseStartY = e.clientY;
+        panStartTranslateX = translateX;
+        panStartTranslateY = translateY;
+        image.setAttribute("data-zoom", "drag");
+        e.preventDefault();
+      });
+
+      function onMouseMove(e) {
+        if (!isMouseDown || !overlay) return;
+        translateX =
+          panStartTranslateX + (e.clientX - mouseStartX) / currentScale;
+        translateY =
+          panStartTranslateY + (e.clientY - mouseStartY) / currentScale;
+        clampTranslate();
+        applyTransform();
+      }
+
+      function onMouseUp() {
+        if (!isMouseDown) return;
+        isMouseDown = false;
+        if (currentScale > 1) {
+          image.setAttribute("data-zoom", "in");
+        } else {
+          image.removeAttribute("data-zoom");
+        }
+      }
+
+      document.addEventListener("mousemove", onMouseMove);
+      document.addEventListener("mouseup", onMouseUp);
+      removeDragListeners = () => {
+        document.removeEventListener("mousemove", onMouseMove);
+        document.removeEventListener("mouseup", onMouseUp);
+      };
+
+      document.body.appendChild(overlay);
+      document.documentElement.style.overflow = "hidden";
+      document.addEventListener("keydown", onKeyDown);
+      window.__closeLightbox = close;
+
+      requestAnimationFrame(() => overlay?.classList.add("opacity-100"));
+      closeButton.focus();
+    }
+
+    function close() {
+      if (!overlay) return;
+      const el = overlay;
+      overlay = null;
+      el.classList.add("pointer-events-none");
+      window.__closeLightbox = null;
+
+      document.removeEventListener("keydown", onKeyDown);
+      removeDragListeners?.();
+      removeDragListeners = null;
+      document.documentElement.style.overflow = "";
+      lastFocused?.focus();
+      lastFocused = null;
+
+      if (prefersReducedMotion()) {
+        el.remove();
+        return;
+      }
+      const remove = () => el.remove();
+      el.addEventListener("transitionend", remove, { once: true });
+      setTimeout(remove, 250); // fallback in case transitionend never fires
+      el.classList.remove("opacity-100");
+    }
+
+    function onKeyDown(e) {
+      if (e.key === "Escape") {
+        close();
+      } else if (e.key === "Tab") {
+        trapFocus(e);
+      }
+    }
+
+    // Keep keyboard focus inside the open dialog.
+    function trapFocus(e) {
+      if (!overlay) return;
+      const focusables = overlay.querySelectorAll(
+        'a[href], button, [tabindex]:not([tabindex="-1"])'
+      );
+      if (focusables.length === 0) return;
+      const first = focusables[0];
+      const last = focusables[focusables.length - 1];
+      if (e.shiftKey && document.activeElement === first) {
+        e.preventDefault();
+        last.focus();
+      } else if (!e.shiftKey && document.activeElement === last) {
+        e.preventDefault();
+        first.focus();
+      }
+    }
+
+    function triggerFromEvent(e) {
+      const image = e.target.closest("img");
+      if (!image || !article.contains(image) || image.closest("a")) return null;
+      return image;
+    }
+
+    function activate(image) {
+      open(image.currentSrc || image.src, image.alt, image);
+    }
+
+    article.addEventListener("click", e => {
+      const image = triggerFromEvent(e);
+      if (!image) return;
+      e.preventDefault();
+      activate(image);
+    });
+
+    article.addEventListener("keydown", e => {
+      if (e.key !== "Enter" && e.key !== " " && e.key !== "Spacebar") return;
+      const image = triggerFromEvent(e);
+      if (!image) return;
+      e.preventDefault();
+      activate(image);
+    });
+  }
+  initLightbox();
+
+  if (!window.__lightboxSwapBound) {
+    window.__lightboxSwapBound = true;
+    document.addEventListener("astro:before-swap", () =>
+      window.__closeLightbox?.()
+    );
+  }
+
+  document.addEventListener("astro:after-swap", () =>
+    window.scrollTo({ left: 0, top: 0, behavior: "instant" })
+  );
+</script>

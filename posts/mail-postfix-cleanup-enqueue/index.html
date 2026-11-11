@@ -1,0 +1,799 @@
+<!DOCTYPE html><html dir="ltr" lang="zh-CN" class="overflow-y-scroll scroll-smooth"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1"><link rel="icon" type="image/png" href="/images/favicon-32x32-next.png"><link rel="icon" href="/favicon.ico"><link rel="canonical" href="https://www.saromchars.tech/posts/mail-postfix-cleanup-enqueue/"><meta name="generator" content="Astro v7.4.5"><!-- Primary meta --><title>Postfix 的 cleanup 处理与消息入队边界 | Sarom&#39;s Blog</title><meta name="title" content="Postfix 的 cleanup 处理与消息入队边界 | Sarom's Blog"><meta name="description" content="分析 Postfix cleanup 服务的内部运行机制，梳理信封与正文的记录结构、状态切换、条件改写、落盘入队确认及错误处理边界。"><meta name="author" content="Sarom Chars"><link rel="sitemap" href="/sitemap-index.xml"><!-- Open Graph --><meta property="og:type" content="article"><meta property="og:site_name" content="Sarom's Blog"><meta property="og:title" content="Postfix 的 cleanup 处理与消息入队边界 | Sarom's Blog"><meta property="og:description" content="分析 Postfix cleanup 服务的内部运行机制，梳理信封与正文的记录结构、状态切换、条件改写、落盘入队确认及错误处理边界。"><meta property="og:url" content="https://www.saromchars.tech/posts/mail-postfix-cleanup-enqueue/"><meta property="og:image" content="https://www.saromchars.tech/og.png"><!-- Twitter / X --><meta property="twitter:card" content="summary_large_image"><meta property="twitter:url" content="https://www.saromchars.tech/posts/mail-postfix-cleanup-enqueue/"><meta property="twitter:title" content="Postfix 的 cleanup 处理与消息入队边界 | Sarom's Blog"><meta property="twitter:description" content="分析 Postfix cleanup 服务的内部运行机制，梳理信封与正文的记录结构、状态切换、条件改写、落盘入队确认及错误处理边界。"><meta property="twitter:image" content="https://www.saromchars.tech/og.png"><!-- RSS autodiscovery --><link rel="alternate" type="application/rss+xml" title="Sarom's Blog" href="https://www.saromchars.tech/rss.xml"><!-- Filled at runtime by theme.ts to match the current background colour --><meta name="theme-color" content=""><!-- Extra head content injected by child layouts (e.g. JSON-LD, article meta) --><meta property="article:published_time" content="2021-11-03T02:00:00.000Z"><script type="application/ld+json">{"@context":"https://schema.org","@type":"BlogPosting","headline":"Postfix 的 cleanup 处理与消息入队边界","mainEntityOfPage":"https://www.saromchars.tech/posts/mail-postfix-cleanup-enqueue/","datePublished":"2021-11-03T02:00:00.000Z","author":[{"@type":"Person","name":"Sarom Chars","url":"https://github.com/SaromChars"}]}</script><!--
+      Inline FOUC-prevention script: sets data-theme on <html> before
+      the browser paints. Runs synchronously, no defer/async.
+    --><script>
+      (function () {
+        const stored = localStorage.getItem("theme");
+        const prefersDark = window.matchMedia(
+          "(prefers-color-scheme: dark)"
+        ).matches;
+        const theme = stored ?? (prefersDark ? "dark" : "light");
+        const root = document.firstElementChild;
+        root?.setAttribute("data-theme", theme);
+        root?.classList.toggle("dark", theme === "dark");
+        // Expose value so theme.ts can skip re-detection.
+        window.__theme = { value: theme };
+      })();
+    </script><meta name="robots" content="index, follow"><script async src="https://www.googletagmanager.com/gtag/js?id=G-WJJJTJ4FWX"></script><script>(function(){const measurementId = "G-WJJJTJ4FWX";
+
+    window.dataLayer = window.dataLayer || [];
+    function gtag(){ window.dataLayer.push(arguments); }
+    gtag('js', new Date());
+    gtag('config', measurementId);
+  })();</script><style>@keyframes astroFadeInOut{0%{opacity:1}to{opacity:0}}@keyframes astroFadeIn{0%{opacity:0;mix-blend-mode:plus-lighter}to{opacity:1;mix-blend-mode:plus-lighter}}@keyframes astroFadeOut{0%{opacity:1;mix-blend-mode:plus-lighter}to{opacity:0;mix-blend-mode:plus-lighter}}@keyframes astroSlideFromRight{0%{transform:translate(100%)}}@keyframes astroSlideFromLeft{0%{transform:translate(-100%)}}@keyframes astroSlideToRight{to{transform:translate(100%)}}@keyframes astroSlideToLeft{to{transform:translate(-100%)}}@media (prefers-reduced-motion){::view-transition-group(*),::view-transition-old(*),::view-transition-new(*),[data-astro-transition-scope]{animation:none!important}}
+</style><link rel="stylesheet" href="/_astro/Footer.wlxowfqU.css"><style>[data-astro-transition-scope="astro-bztu2lml-1"] { view-transition-name: \90AE\7BB1\7CFB\7EDF; }@layer astro { ::view-transition-old(\90AE\7BB1\7CFB\7EDF) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }::view-transition-new(\90AE\7BB1\7CFB\7EDF) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }[data-astro-transition=back]::view-transition-old(\90AE\7BB1\7CFB\7EDF) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition=back]::view-transition-new(\90AE\7BB1\7CFB\7EDF) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; } }[data-astro-transition-fallback="old"] [data-astro-transition-scope="astro-bztu2lml-1"],
+			[data-astro-transition-fallback="old"][data-astro-transition-scope="astro-bztu2lml-1"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition-fallback="new"] [data-astro-transition-scope="astro-bztu2lml-1"],
+			[data-astro-transition-fallback="new"][data-astro-transition-scope="astro-bztu2lml-1"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }[data-astro-transition=back][data-astro-transition-fallback="old"] [data-astro-transition-scope="astro-bztu2lml-1"],
+			[data-astro-transition=back][data-astro-transition-fallback="old"][data-astro-transition-scope="astro-bztu2lml-1"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition=back][data-astro-transition-fallback="new"] [data-astro-transition-scope="astro-bztu2lml-1"],
+			[data-astro-transition=back][data-astro-transition-fallback="new"][data-astro-transition-scope="astro-bztu2lml-1"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }</style><style>[data-astro-transition-scope="astro-bztu2lml-2"] { view-transition-name: \6D88\606F\961F\5217; }@layer astro { ::view-transition-old(\6D88\606F\961F\5217) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }::view-transition-new(\6D88\606F\961F\5217) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }[data-astro-transition=back]::view-transition-old(\6D88\606F\961F\5217) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition=back]::view-transition-new(\6D88\606F\961F\5217) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; } }[data-astro-transition-fallback="old"] [data-astro-transition-scope="astro-bztu2lml-2"],
+			[data-astro-transition-fallback="old"][data-astro-transition-scope="astro-bztu2lml-2"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition-fallback="new"] [data-astro-transition-scope="astro-bztu2lml-2"],
+			[data-astro-transition-fallback="new"][data-astro-transition-scope="astro-bztu2lml-2"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }[data-astro-transition=back][data-astro-transition-fallback="old"] [data-astro-transition-scope="astro-bztu2lml-2"],
+			[data-astro-transition=back][data-astro-transition-fallback="old"][data-astro-transition-scope="astro-bztu2lml-2"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition=back][data-astro-transition-fallback="new"] [data-astro-transition-scope="astro-bztu2lml-2"],
+			[data-astro-transition=back][data-astro-transition-fallback="new"][data-astro-transition-scope="astro-bztu2lml-2"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }</style><style>[data-astro-transition-scope="astro-bztu2lml-3"] { view-transition-name: smtp; }@layer astro { ::view-transition-old(smtp) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }::view-transition-new(smtp) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }[data-astro-transition=back]::view-transition-old(smtp) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition=back]::view-transition-new(smtp) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; } }[data-astro-transition-fallback="old"] [data-astro-transition-scope="astro-bztu2lml-3"],
+			[data-astro-transition-fallback="old"][data-astro-transition-scope="astro-bztu2lml-3"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition-fallback="new"] [data-astro-transition-scope="astro-bztu2lml-3"],
+			[data-astro-transition-fallback="new"][data-astro-transition-scope="astro-bztu2lml-3"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }[data-astro-transition=back][data-astro-transition-fallback="old"] [data-astro-transition-scope="astro-bztu2lml-3"],
+			[data-astro-transition=back][data-astro-transition-fallback="old"][data-astro-transition-scope="astro-bztu2lml-3"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition=back][data-astro-transition-fallback="new"] [data-astro-transition-scope="astro-bztu2lml-3"],
+			[data-astro-transition=back][data-astro-transition-fallback="new"][data-astro-transition-scope="astro-bztu2lml-3"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }</style></head><body class="bg-background font-app text-foreground selection:bg-accent/75 selection:text-accent-foreground flex min-h-svh flex-col"><a id="skip-to-content" href="#main-content" class="bg-background text-accent absolute inset-s-16 -top-full z-50 px-3 py-2 backdrop-blur-lg transition-all focus:top-4">跳到正文</a><header class="app-layout flex flex-col items-center justify-between sm:flex-row"><div class="border-border bg-background relative flex w-full items-baseline justify-between border-b py-4 sm:items-center sm:py-6"><a href="/" class="absolute py-1 text-xl leading-8 font-semibold whitespace-nowrap sm:static sm:my-auto sm:text-2xl sm:leading-none">Sarom&#39;s Blog</a><nav id="nav-menu" class="flex w-full flex-col items-center sm:ms-2 sm:flex-row sm:justify-end sm:space-x-4 sm:py-0"><button id="menu-btn" class="focus-outline self-end p-2 sm:hidden" aria-label="展开菜单" aria-expanded="false" aria-controls="menu-items" data-label-open="展开菜单" data-label-close="收起菜单"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="hidden" viewBox="0 0 24 24" id="close-icon"><path stroke="none" d="M0 0h24v24H0z" /><path d="M18 6 6 18M6 6l12 12" /></svg><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="icon icon-tabler icons-tabler-outline icon-tabler-menu-deep" viewBox="0 0 24 24" id="menu-icon"><path stroke="none" d="M0 0h24v24H0z" /><path d="M4 6h16M7 12h13M10 18h10" /></svg></button><ul id="menu-items" class="[&amp;&gt;li&gt;a]:hover:text-accent mt-4 hidden w-44 grid-cols-2 place-content-center gap-2 sm:mt-0 sm:flex sm:w-auto sm:gap-x-5 sm:gap-y-0 sm:[&amp;&gt;li]:h-8 [&amp;&gt;li&gt;a]:block [&amp;&gt;li&gt;a]:px-4 [&amp;&gt;li&gt;a]:py-3 [&amp;&gt;li&gt;a]:text-center [&amp;&gt;li&gt;a]:font-medium sm:[&amp;&gt;li&gt;a]:px-2 sm:[&amp;&gt;li&gt;a]:py-1"><li class="col-span-2"><a href="/posts/" class="active-nav">文章</a></li><li class="col-span-2"><a href="/tags/">标签</a></li><li class="col-span-2"><a href="/about/">关于</a></li><li class="col-span-2"><a href="/archives/" title="归档" aria-label="归档" class="group inline-flex items-center gap-1 hover:text-accent focus-outline flex size-full justify-center p-3 sm:relative sm:size-8 sm:p-0"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="hidden sm:absolute sm:top-1/2 sm:left-1/2 sm:block sm:size-6 sm:-translate-x-1/2 sm:-translate-y-1/2" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M3 6a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2 2 2 0 0 1-2 2H5a2 2 0 0 1-2-2M5 8v10a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8M10 12h4" /></svg><span class="sm:sr-only">归档</span></a></li><li class="col-span-1 flex items-center justify-center"><a href="/search/" title="搜索" aria-label="搜索" class="group inline-flex items-center gap-1 hover:text-accent focus-outline relative size-8"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="absolute top-1/2 left-1/2 size-6 -translate-x-1/2 -translate-y-1/2" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M3 10a7 7 0 1 0 14 0 7 7 0 1 0-14 0M21 21l-6-6" /></svg><span class="sr-only">搜索</span></a></li><li class="col-span-1 flex items-center justify-center"><button id="theme-btn" class="focus-outline hover:[&amp;&gt;svg]:stroke-accent relative size-12 p-4 sm:size-8" title="切换主题" aria-label="auto" aria-live="polite"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="absolute top-[50%] left-[50%] translate-[-50%] scale-100 rotate-0 transition-all dark:scale-0 dark:-rotate-90" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M12 3h.393a7.5 7.5 0 0 0 7.92 12.446A9 9 0 1 1 12 2.992z" /></svg><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="absolute top-[50%] left-[50%] translate-[-50%] scale-0 rotate-90 transition-all dark:scale-100 dark:rotate-0" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M14.828 14.828a4 4 0 1 0-5.656-5.656 4 4 0 0 0 5.656 5.656M6.343 17.657l-1.414 1.414M6.343 6.343 4.929 4.929M17.657 6.343l1.414-1.414M17.657 17.657l1.414 1.414M4 12H2M12 4V2M20 12h2M12 20v2" /></svg></button></li></ul></nav></div></header><script type="module">function e(){let e=document.querySelector(`#menu-btn`),t=document.querySelector(`#menu-items`),n=document.querySelector(`#menu-icon`),r=document.querySelector(`#close-icon`);if(!e||!t||!n||!r)return;let i=e.dataset.labelOpen??`Open menu`,a=e.dataset.labelClose??`Close menu`;e.addEventListener(`click`,()=>{let o=e.getAttribute(`aria-expanded`)===`true`;e.setAttribute(`aria-expanded`,o?`false`:`true`),e.setAttribute(`aria-label`,o?i:a),t.classList.toggle(`hidden`),t.classList.toggle(`grid`),n.classList.toggle(`hidden`),r.classList.toggle(`hidden`)})}function t(){let e=document.getElementById(`skip-to-content`);e&&e.addEventListener(`click`,e=>{if(e.defaultPrevented||e.metaKey||e.ctrlKey||e.shiftKey||e.button!==0)return;e.preventDefault();let t=document.getElementById(`main-content`);t&&(t.setAttribute(`tabindex`,`-1`),t.addEventListener(`blur`,()=>t.removeAttribute(`tabindex`),{once:!0}),t.focus(),t.scrollIntoView({behavior:`smooth`}))})}e(),document.addEventListener(`astro:after-swap`,e),t(),document.addEventListener(`astro:after-swap`,t);</script><div class="app-layout flex items-center justify-start"><a id="back-button" href="/" class="group inline-flex items-center gap-1 hover:text-accent focus-outline hover:text-foreground/75 -ms-2 mt-8 mb-2"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="inline-block size-6 rtl:rotate-180" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="m15 6-6 6 6 6" /></svg><span>返回</span></a></div><script type="module">function e(){let e=document.querySelector(`#back-button`),t=sessionStorage.getItem(`backUrl`);t&&e&&(e.href=t)}document.addEventListener(`astro:page-load`,e),e();</script><main id="main-content" class="app-layout" data-pagefind-body><h1 style="view-transition-name:mail-postfix-cleanup-enqueue" class="text-accent inline-block text-2xl font-bold sm:text-3xl">Postfix 的 cleanup 处理与消息入队边界</h1><div class="my-2 flex items-center gap-2"><div class="text-muted-foreground flex flex-wrap items-center gap-x-2 gap-y-1"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="inline-block size-6 min-w-5.5" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M4 7a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2zM16 3v4M8 3v4M4 11h16M7 14h.013M10.01 14h.005M13.01 14h.005M16.015 14h.005M13.015 17h.005M7.01 17h.005M10.01 17h.005" /></svg><time class="text-sm sm:text-base" datetime="2021-11-03T02:00:00.000Z">2021年11月3日</time></div><span aria-hidden="true" class="text-muted-foreground max-sm:hidden hidden">|</span></div><article id="article" class="mt-8 w-full app-prose max-w-app prose-pre:bg-(--shiki-light-bg) dark:prose-pre:bg-(--shiki-dark-bg)"><!--email_off-->
+<p>在基于简单邮件传输协议（Simple Mail Transfer Protocol，SMTP，RFC 5321 <a href="#ref-rfc5321">#</a>）的普通邮件接收交互中，邮件传输代理（mail transfer agent，MTA）在接收端完成 <code>DATA</code> 内容传输（<code>CRLF.CRLF</code>）后，需要明确界定接收责任的转移点。在普通入队投递流程中，服务端只有在完成持久化入队或按策略完成终结动作后，才向发送方返回 <code>250 OK</code> 确认应答。</p>
+<p>在 Postfix 架构中，该队列前处理防线由独立的 <code>cleanup(8)</code> 守护进程承担。无论是来自 <code>smtpd(8)</code> 的网络接入，还是来自本地提交组件，消息数据与控制指令都会通过进程间通信（inter-process communication，IPC）流经 <code>cleanup</code> 进行信封解析、头部检查、规范化改写、资源限制评估，并最终在 <code>incoming</code> 队列中完成提交。本文基于 Postfix 3.6.2 源码 <a href="#ref-postfix-source">#</a>，梳理其记录流结构、状态机切换、改写限制以及落盘确认边界。</p>
+<h2 id="记录流架构与队列文件布局">记录流架构与队列文件布局</h2>
+<p>Postfix 队列文件并非松散的纯文本文件，而是由类型与长度界定的二进制/文本混合记录流（record stream，见 <code>src/global/rec_type.h</code> <a href="#ref-rec-type-h">#</a>）。</p>
+<p>整个队列文件在物理布局上按阶段写入，依次由三个逻辑区段组成：</p>
+<ol>
+<li><strong>信封区段（Envelope Segment）</strong>：以占位记录 <code>REC_TYPE_SIZE</code>（<code>C</code>）开头，随后记录到达时间（<code>REC_TYPE_TIME</code>）、发件人（<code>REC_TYPE_FROM</code>）、收件人列表（<code>REC_TYPE_RCPT</code>）及各种属性。</li>
+<li><strong>消息内容区段（Message Content Segment）</strong>：以 <code>REC_TYPE_MESG</code>（<code>M</code>）记录标记起始，存储邮件头部和正文。每行内容以普通记录（<code>REC_TYPE_NORM</code>）写入；若单行超出 <code>var_line_limit</code> 配置，则切片为连续的长数据记录（<code>REC_TYPE_CONT</code>）。</li>
+<li><strong>提取信息区段（Extracted Segment）</strong>：以 <code>REC_TYPE_XTRA</code>（<code>X</code>）记录起始，记录从头部解析提取的元数据或由 <code>cleanup</code> 计算补充的内部属性，最终以严格的结束记录 <code>REC_TYPE_END</code>（<code>E</code>）作为文件完整的封顶边界。</li>
+</ol>
+<p>在 <code>src/cleanup/cleanup_out.c</code> <a href="#ref-cleanup-out-c">#</a> 中，<code>cleanup_out()</code> 函数实现记录输出与超长行切片：当文本行长度超过行长限制时，循环将其切成固定长度的 <code>REC_TYPE_CONT</code> 块，最后以剩余长度写入原始类型。下游读取消息内容的程序可按 CONT/NORM 重建逻辑行，切片操作在逻辑语义上等价于原文本行，不是物理截断。若底层写文件返回 <code>EFBIG</code> 错误，<code>cleanup</code> 置位 <code>CLEANUP_STAT_SIZE</code>；其余写入失败则置位 <code>CLEANUP_STAT_WRITE</code>。</p>
+<h3 id="分层大小配额限制">分层大小配额限制</h3>
+<p>邮件大小的管控在系统内是分层生效的。在网络接入层，<code>smtpd</code> 通过流式读取的字节计数（见 <code>smtpd/smtpd.c</code> <a href="#ref-smtpd-c">#</a>）进行早期拦截；而在 <code>cleanup</code> 进程中，<code>cleanup_post_jail()</code>（见 <code>src/cleanup/cleanup_init.c</code> <a href="#ref-cleanup-init-c">#</a>）在启用大小限制时调用底层的 <code>set_file_limit(var_message_limit)</code>，其中 <code>message_size_limit</code> 对应源码变量 <code>var_message_limit</code>。该资源限制直接约束整个队列文件的磁盘占用，因而不仅包含邮件正文，还涵盖了信封记录、路由属性以及提取区开销。此外，附件编码后的消息大小与原始附件额度也不同，业务设计中的原始附件额度不能等同于底层队列文件的大小预算，必须为信封与记录元数据保留合理安全裕量。</p>
+<h2 id="会话流程与状态机流转">会话流程与状态机流转</h2>
+<p>在 <code>src/cleanup/cleanup.c</code> 的核心驱动函数 <code>cleanup_service()</code> <a href="#ref-cleanup-c">#</a> 中，<code>cleanup</code> 为每封消息维护 <code>CLEANUP_STATE</code>，其内部通过处理函数指针 <code>state->action</code> 实现阶段状态机的递进流转：</p>
+<pre class="astro-code astro-code-themes min-light night-owl" style="--shiki-light:#24292eff;--shiki-dark:#d6deeb;--shiki-light-bg:#ffffff;--shiki-dark-bg:#011627; overflow-x: auto;--file-name-offset: -0.75rem;" tabindex="0" data-language="text"><code><span class="line"><span>客户端连接 -> cleanup_open() (创建 incoming 文件，分配 queue_id)</span></span>
+<span class="line"><span>        -> 向前端回传 queue_id 与协议版本</span></span>
+<span class="line"><span>        -> 读取前端控制标记 (flags 与 err_mask 初始化)</span></span>
+<span class="line"><span>        -> state->action: cleanup_envelope (解析信封 REC_TYPE_FROM / RCPT 等)</span></span>
+<span class="line"><span>        -> 遇到 REC_TYPE_MESG -> state->action 切换为 cleanup_message (处理头部与正文)</span></span>
+<span class="line"><span>        -> 遇到 REC_TYPE_XTRA -> state->action 切换为 cleanup_extracted (提取元数据与收尾)</span></span>
+<span class="line"><span>        -> 遇到 REC_TYPE_END -> 循环接收结束</span></span>
+<span class="line"><span>        -> cleanup_flush() (首部更新、落盘、权限变更与完成确认)</span></span>
+<span class="line"><span>        -> 向前端回传 MAIL_ATTR_STATUS 与原因说明</span></span></code></pre>
+<p>在建立会话之初，<code>cleanup_open()</code> 内部通过 <code>mail_stream_file()</code> 在 <code>incoming</code> 队列目录下创建文件并生成 <code>queue_id</code>。紧接着，<code>cleanup</code> 立即通过 IPC 将该 <code>queue_id</code> 回传给前端 <code>smtpd</code>。</p>
+<p>前端日志中此时记录的 <code>queue_id</code> 仅代表本次会话在磁盘上分配的队列文件标识，绝对不代表该邮件已经成功入队。此时甚至尚未接收到具体的正文数据。</p>
+<p>在随后的记录读取循环中，<code>cleanup</code> 持续累积错误位 <code>state->errs</code>。若在传输过程中遭遇错误（如大小超限或格式非法导致 <code>CLEANUP_OUT_OK(state)</code> 变为假），<code>cleanup</code> 不会立即强行关闭套接字，而是在仍有输入的情况下继续读取丢弃数据，尽量排空到 <code>REC_TYPE_END</code>（或直到读取出错）。这种处理能尽量让先写后读的前端进入接收状态报告的阶段。</p>
+<h2 id="规范化改写多用途互联网邮件扩展检查与安全边界">规范化改写、多用途互联网邮件扩展检查与安全边界</h2>
+<p><code>cleanup</code> 承担了由 Postfix 配置决定的规范化处理，但其职责范围与独立的安全网关存在明确的工程分界：</p>
+<ol>
+<li><strong>信封地址规范化</strong>：
+在 <code>src/cleanup/cleanup_addr.c</code> <a href="#ref-cleanup-addr-c">#</a> 中，信封发件人与收件人分别通过 <code>cleanup_addr_sender()</code> 与 <code>cleanup_addr_recipient()</code> 处理。地址首先经由 <code>cleanup_rewrite_internal()</code> 补充本地上下文，随后根据配置的 <code>flags</code> 决定是否应用规范化映射（<code>canonical_maps</code>）与域名伪装（<code>masquerade_domains</code>）。如果映射查询发生临时错误，<code>cleanup</code> 会将状态标记为临时错误（置位 <code>CLEANUP_STAT_WRITE</code>）。
+信封地址与正文头部的地址改写规则及配置上下文并不相同，邮件头部的 <code>From:</code> 绝不会直接覆盖或自动成为信封的发件人（<code>MAIL FROM</code>）。</li>
+<li><strong>头部检查与条件补全</strong>：
+在 <code>src/cleanup/cleanup_message.c</code> <a href="#ref-cleanup-message-c">#</a> 中，<code>cleanup</code> 通过多用途互联网邮件扩展（Multipurpose Internet Mail Extensions，MIME）状态机解析邮件头部与结构。
+解析头部由 <code>cleanup_header_callback()</code> 处理，可根据头选项 <code>HDR_OPT_DROP</code> 剔除 <code>Bcc:</code>，并可另外通过 <code>header_checks</code> 匹配丢弃或拒绝等动作。
+而缺失头部的补全则位于 <code>cleanup_header_done_callback()</code>：只有在满足重写上下文（<code>hdr_rewrite_context</code>）或者显式配置了总是补充缺失头（<code>always_add_missing_headers</code>，由源码变量 <code>var_always_add_hdrs</code> 控制）时，才会条件性地补全 <code>Message-Id:</code>、<code>Date:</code>、<code>From:</code> 等头部，而非无条件全量补充。</li>
+<li><strong>安全扫描边界</strong>：
+虽然 <code>cleanup</code> 支持配置 <code>header_checks</code>、<code>body_checks</code> 以及接入邮件过滤接口（Milter），但其核心定位是协议清洗、结构规范化与状态流转。它不会对压缩包或多层嵌套附件执行深度解构、恶意宏分析或行为沙箱检测。开发邮件系统时，不能将入队阶段的结构规范化等同于建立了完整的反病毒与反垃圾邮件安全防护。</li>
+</ol>
+<h2 id="提交与最终应答">提交与最终应答</h2>
+<p>当全部记录接收完毕后，流程进入 <code>cleanup_flush()</code>（位于 <code>src/cleanup/cleanup_api.c</code> <a href="#ref-cleanup-api-c">#</a>）执行最终提交与状态收尾。</p>
+<h3 id="索引更新与-cleanup_final">索引更新与 cleanup_final</h3>
+<p>在最终持久化之前，<code>cleanup_final()</code>（位于 <code>src/cleanup/cleanup_final.c</code> <a href="#ref-cleanup-final-c">#</a>）被触发。它首先调用 <code>vstream_fflush()</code> 冲刷应用层写缓冲区，随后通过 <code>vstream_fseek()</code> 将文件指针定位至起始位置，将根据提取区与内容区偏移之差计算的内容段大小、消息内容起始偏移（<code>data_offset</code>，包含邮件头部）、有效收件人计数（<code>rcpt_count</code>）以及消息内容长度等字段重新格式化写入文件头部的 <code>REC_TYPE_SIZE</code> 记录，使下游投递调度进程能够直接索引文件结构。</p>
+<h3 id="落盘提交机制mail_stream_finish_file">落盘提交机制：mail_stream_finish_file</h3>
+<p>与常见的“写入临时目录后通过原子重命名移动到工作队列”不同，Postfix 采用直接就地初始化的机制：</p>
+<ol>
+<li><strong>原地创建与权限限制</strong>：文件自创建开始就位于 <code>incoming</code> 队列目录下，但初始权限为严格限制（通常未赋予执行位 <code>+x</code>），下游队列管理器在扫描时会自动忽略未就绪的文件。</li>
+<li><strong>同步与权限赋予</strong>：
+在 <code>src/global/mail_stream.c</code> 的 <code>mail_stream_finish_file()</code> <a href="#ref-mail-stream-c">#</a> 中：
+<ul>
+<li>显式刷新应用层缓冲 <code>vstream_fflush()</code>。</li>
+<li>调用 <code>fchmod(fd, 0700 | info->mode)</code> 为文件增加执行权限位。</li>
+<li>在编译并开启 <code>HAS_FSYNC</code> 条件的系统上，显式调用 <code>fsync(fd)</code> 请求操作系统内核将脏数据同步至底层存储介质。这一系统调用的成功返回依赖于宿主操作系统与底层存储硬件对于持久性刷盘语义的实现。</li>
+<li>需要注意，权限位设置早于 <code>fsync()</code> 执行完成，单一的执行位并不能证明邮件已完整提交；文件必须具有包含 <code>REC_TYPE_END</code> 的完整记录结构才会被队列识别。</li>
+</ul>
+</li>
+<li><strong>关闭校验</strong>：
+接着调用 <code>info->close(info->stream)</code> 关闭文件。即使前面的写入和 <code>fsync()</code> 没有报错，<code>close()</code> 调用依然可能因网络文件系统冲刷或元数据提交失败而返回错误。若 <code>close()</code> 返回失败，状态仍会被标记为写入错误。</li>
+<li><strong>下游通知</strong>：唯有持久化和文件关闭全过程无误返回 <code>CLEANUP_STAT_OK</code> 时，若配置了对应的投递服务，系统才会调用 <code>mail_trigger()</code> 发送通知唤醒下游队列调度。下游被唤醒并不意味着邮件已经投递到收件人，仅代表正式进入投递调度管辖。</li>
+<li><strong>责任转移与清理钩子解除</strong>：一旦确认持久化完成且状态正常，<code>cleanup</code> 会立即将全局清理路径变量置空（<code>cleanup_path = 0</code>），以此解除运行时的异常清理钩子。源码注释特别强调：“宁可发生重复投递，也绝不能在已承诺接收后丢失邮件”。</li>
+</ol>
+<h3 id="终结动作的特殊状态语义">终结动作的特殊状态语义</h3>
+<p>在 <code>cleanup_flush()</code> 中，部分终结状态具有偏离常规队列流转的特殊语义：</p>
+<ul>
+<li><strong>策略丢弃（DISCARD）</strong>：若访问规则命中丢弃指令，<code>cleanup</code> 会将错误码归零（<code>state->errs = 0</code>），向 SMTP 前端报告成功（返回 250 应答），但在物理层面会主动调用 <code>REMOVE(cleanup_path)</code> 删除该队列文件。这种“向客户端伪装成功但在底层静默销毁”的行为是反垃圾防护中的有意设计。</li>
+<li><strong>本地来源退信（BOUNCE）</strong>：对于本地特定来源（如通过本地命令行提交或特定转发）产生的错误，<code>cleanup</code> 可能会就地生成退信通知，在通知发送成功后重置错误码并请求删除当前队列文件，其应答状态并不代表邮件保留在 <code>incoming</code> 队列中。</li>
+<li><strong>挂起保留（HOLD）</strong>：若命中保留策略，<code>cleanup</code> 会在关闭文件前通过 <code>mail_stream_ctl()</code> 提前将队列目标切换为 <code>hold</code> 队列并调整文件路径，避免其直接流入常规调度队列。</li>
+</ul>
+<h2 id="内部状态码与-smtp-状态映射">内部状态码与 SMTP 状态映射</h2>
+<p><code>cleanup</code> 完成后将处理状态传回前端服务。<code>src/global/cleanup_strerror.c</code> <a href="#ref-cleanup-strerror">#</a> 定义了内部状态位与对外应答状态之间的转换关系：</p>
+<p><code>CLEANUP_STAT_OK</code>：</p>
+<pre class="astro-code astro-code-themes min-light night-owl" style="--shiki-light:#24292eff;--shiki-dark:#d6deeb;--shiki-light-bg:#ffffff;--shiki-dark-bg:#011627; overflow-x: auto;--file-name-offset: -0.75rem;" tabindex="0" data-language="text"><code><span class="line"><span>250 2.0.0</span></span></code></pre>
+<p>处理成功。在普通入队投递流程中代表邮件已可靠提交至队列目录并移交调度管辖。</p>
+<p><code>CLEANUP_STAT_SIZE</code>：</p>
+<pre class="astro-code astro-code-themes min-light night-owl" style="--shiki-light:#24292eff;--shiki-dark:#d6deeb;--shiki-light-bg:#ffffff;--shiki-dark-bg:#011627; overflow-x: auto;--file-name-offset: -0.75rem;" tabindex="0" data-language="text"><code><span class="line"><span>552 5.3.4</span></span></code></pre>
+<p>邮件或队列文件大小超出配置限制，属于永久性拒绝。</p>
+<p><code>CLEANUP_STAT_WRITE</code>：</p>
+<pre class="astro-code astro-code-themes min-light night-owl" style="--shiki-light:#24292eff;--shiki-dark:#d6deeb;--shiki-light-bg:#ffffff;--shiki-dark-bg:#011627; overflow-x: auto;--file-name-offset: -0.75rem;" tabindex="0" data-language="text"><code><span class="line"><span>451 4.3.0</span></span></code></pre>
+<p>队列文件写入、表查询或落盘关闭失败，属于临时拒绝。</p>
+<p><code>CLEANUP_STAT_BAD</code>：</p>
+<pre class="astro-code astro-code-themes min-light night-owl" style="--shiki-light:#24292eff;--shiki-dark:#d6deeb;--shiki-light-bg:#ffffff;--shiki-dark-bg:#011627; overflow-x: auto;--file-name-offset: -0.75rem;" tabindex="0" data-language="text"><code><span class="line"><span>451 4.3.0</span></span></code></pre>
+<p>内部协议异常或数据记录结构损坏，属于临时拒绝。</p>
+<p><code>CLEANUP_STAT_DEFER</code>：</p>
+<pre class="astro-code astro-code-themes min-light night-owl" style="--shiki-light:#24292eff;--shiki-dark:#d6deeb;--shiki-light-bg:#ffffff;--shiki-dark-bg:#011627; overflow-x: auto;--file-name-offset: -0.75rem;" tabindex="0" data-language="text"><code><span class="line"><span>451 4.7.1</span></span></code></pre>
+<p>服务临时不可用，要求客户端稍后重试，属于临时拒绝。</p>
+<p><code>CLEANUP_STAT_RCPT</code>：</p>
+<pre class="astro-code astro-code-themes min-light night-owl" style="--shiki-light:#24292eff;--shiki-dark:#d6deeb;--shiki-light-bg:#ffffff;--shiki-dark-bg:#011627; overflow-x: auto;--file-name-offset: -0.75rem;" tabindex="0" data-language="text"><code><span class="line"><span>550 5.1.0</span></span></code></pre>
+<p>未能指定任何有效收件人，属于永久性拒绝。</p>
+<p>在 <code>smtpd</code> 的实现中（见 <code>smtpd/smtpd.c</code> 3620–3740 行 <a href="#ref-smtpd-c">#</a>），接收端必须完整等待从 <code>cleanup</code> 获得的最终处理状态。只有在状态为 <code>CLEANUP_STAT_OK</code> 时，才向客户端发出 <code>250 2.0.0 Ok: queued as &#x3C;queue_id></code>。</p>
+<h2 id="应用层集成设计考量">应用层集成设计考量</h2>
+<p>基于上述底层机制，在设计自研 Webmail、API 发送中台或邮件网关时，需要遵循以下工程推导出的设计原则：</p>
+<ol>
+<li><strong>已发送副本与双写补偿</strong>：
+MTA 入队只负责邮件在传输队列中的流转，不会为用户自动保存已发送邮件（Sent 文件夹）。业务系统中的“发送并保存”属于跨系统的双写操作。若 MTA 返回 250 确认后，本地存储写入已发送副本失败，应用层的重试补偿机制<strong>只能针对已发送存储的副本写入进行重试</strong>，切勿盲目向 MTA 重新发起 SMTP 发送请求，否则将导致收件方收到重复邮件。</li>
+<li><strong>应用层去重设计</strong>：
+Postfix 依赖自身分配的 <code>queue_id</code> 管理队列，不会以 <code>Message-ID</code> 头字段自动保证跨 SMTP 事务去重。若业务客户端在网络超时等场景下可能重发邮件，应用层必须在网关前端基于业务全局唯一标识（如自研提交 ID）设计幂等防重机制。</li>
+<li><strong>原始邮件审计存证</strong>：
+如果业务有严格的合规审计或取证需求，要求保留发件人提交的不可变原始报文，应当在邮件提交至 <code>cleanup</code> 之前由接入网关留存原始数据。因为 <code>cleanup</code> 在处理过程中可能补全缺失头部、折叠清洗格式或改写地址，不可直接以队列内部文件的内容替代原始提交凭证。</li>
+</ol>
+<h2 id="未运行的故障注入验证设计">未运行的故障注入验证设计</h2>
+<p>为了在离线测试环境中检验入队失败路径的契约行为，可以通过故障注入验证推导出的状态映射。以下为推导的测试场景设计（注：本方案属于工程推导设计，<strong>未执行这些测试</strong>）：</p>
+<h3 id="场景一文件大小超限">场景一：文件大小超限</h3>
+<ul>
+<li><strong>模拟注入方式</strong>：在单元隔离测试中对记录输入设置桩（stub），使 <code>cleanup</code> 写入触发并返回 <code>EFBIG</code>。</li>
+<li><strong>内部路径与状态</strong>：<code>cleanup_out()</code> 捕获 <code>EFBIG</code>，置位 <code>CLEANUP_STAT_SIZE</code>，在有后续输入时排空 IPC 到 <code>REC_TYPE_END</code>，最后删除未完成的队列文件。</li>
+<li><strong>对外预期响应</strong>：</li>
+</ul>
+<pre class="astro-code astro-code-themes min-light night-owl" style="--shiki-light:#24292eff;--shiki-dark:#d6deeb;--shiki-light-bg:#ffffff;--shiki-dark-bg:#011627; overflow-x: auto;--file-name-offset: -0.75rem;" tabindex="0" data-language="text"><code><span class="line"><span>552 5.3.4 message file too big</span></span></code></pre>
+<p>属于永久性拒绝，发送方不应直接原样重试。</p>
+<h3 id="场景二持久化提交中断">场景二：持久化提交中断</h3>
+<ul>
+<li><strong>模拟注入方式</strong>：在 <code>fsync()</code> 或 <code>close()</code> 阶段注入 <code>EIO</code> 或 <code>ENOSPC</code> 故障。</li>
+<li><strong>内部路径与状态</strong>：<code>mail_stream_finish_file()</code> 捕获返回错误，置位 <code>CLEANUP_STAT_WRITE</code>，取消下游唤醒并删除残余队列文件。</li>
+<li><strong>对外预期响应</strong>：</li>
+</ul>
+<pre class="astro-code astro-code-themes min-light night-owl" style="--shiki-light:#24292eff;--shiki-dark:#d6deeb;--shiki-light-bg:#ffffff;--shiki-dark-bg:#011627; overflow-x: auto;--file-name-offset: -0.75rem;" tabindex="0" data-language="text"><code><span class="line"><span>451 4.3.0 queue file write error</span></span></code></pre>
+<p>属于临时拒绝，发送方可稍后重新发起投递。</p>
+<h3 id="场景三响应断链不确定窗口">场景三：响应断链不确定窗口</h3>
+<ul>
+<li><strong>模拟注入方式</strong>：确保服务端 <code>cleanup</code> 已完全完成持久化提交并生成 250 应答，但在网络发送前拦截丢弃 TCP 响应。</li>
+<li><strong>内部路径与状态</strong>：队列文件已在 <code>incoming</code> 目录中完成持久化，后续调度投递正常推进；客户端因等待应答超时判定传输失败而发起重试。</li>
+<li><strong>对外预期响应</strong>：客户端无响应。此场景下服务端已产生投递责任，需依赖应用层幂等机制应对后续重复重试。</li>
+</ul>
+<p>综上所述，Postfix 的 <code>cleanup</code> 服务通过记录流抽象、阶段状态机流转与严格的刷盘关闭校验，为邮件入队提供了明确的接收责任划分与状态边界。</p>
+<!--/email_off-->
+<h2 id="参考资料">参考资料</h2>
+<ul>
+<li><a id="ref-rfc5321" href="https://www.rfc-editor.org/rfc/rfc5321.html" target="_blank" rel="noopener noreferrer">RFC 5321: Simple Mail Transfer Protocol（2008年10月）第 4.2.5 节、第 4.5.3.2.6 节与第 6.1 节</a></li>
+<li><a id="ref-postfix-source" href="http://www.postfix.org/announcements/postfix-3.6.2.html" target="_blank" rel="noopener noreferrer">Postfix 官方 3.6.2 版本发布公告（2021年7月24日公开）</a></li>
+<li><a id="ref-cleanup-c" href="https://github.com/vdukhovni/postfix/blob/cab3653e62c5d0e5d833f556e68a8089652f7ed9/postfix/src/cleanup/cleanup.c#L499-L600" target="_blank" rel="noopener noreferrer">Postfix 源码: src/cleanup/cleanup.c (commit cab3653e, L499-L600)</a></li>
+<li><a id="ref-cleanup-api-c" href="https://github.com/vdukhovni/postfix/blob/cab3653e62c5d0e5d833f556e68a8089652f7ed9/postfix/src/cleanup/cleanup_api.c#L214-L378" target="_blank" rel="noopener noreferrer">Postfix 源码: src/cleanup/cleanup_api.c (commit cab3653e, L214-L378)</a></li>
+<li><a id="ref-cleanup-addr-c" href="https://github.com/vdukhovni/postfix/blob/cab3653e62c5d0e5d833f556e68a8089652f7ed9/postfix/src/cleanup/cleanup_addr.c#L122-L210" target="_blank" rel="noopener noreferrer">Postfix 源码: src/cleanup/cleanup_addr.c (commit cab3653e, L122-L210)</a></li>
+<li><a id="ref-cleanup-message-c" href="https://github.com/vdukhovni/postfix/blob/cab3653e62c5d0e5d833f556e68a8089652f7ed9/postfix/src/cleanup/cleanup_message.c#L494-L754" target="_blank" rel="noopener noreferrer">Postfix 源码: src/cleanup/cleanup_message.c (commit cab3653e, L494-L754)</a></li>
+<li><a id="ref-cleanup-out-c" href="https://github.com/vdukhovni/postfix/blob/cab3653e62c5d0e5d833f556e68a8089652f7ed9/postfix/src/cleanup/cleanup_out.c#L107-L152" target="_blank" rel="noopener noreferrer">Postfix 源码: src/cleanup/cleanup_out.c (commit cab3653e, L107-L152)</a></li>
+<li><a id="ref-cleanup-init-c" href="https://github.com/vdukhovni/postfix/blob/cab3653e62c5d0e5d833f556e68a8089652f7ed9/postfix/src/cleanup/cleanup_init.c#L436-L451" target="_blank" rel="noopener noreferrer">Postfix 源码: src/cleanup/cleanup_init.c (commit cab3653e, L436-L451)</a></li>
+<li><a id="ref-cleanup-final-c" href="https://github.com/vdukhovni/postfix/blob/cab3653e62c5d0e5d833f556e68a8089652f7ed9/postfix/src/cleanup/cleanup_final.c#L44-L78" target="_blank" rel="noopener noreferrer">Postfix 源码: src/cleanup/cleanup_final.c (commit cab3653e, L44-L78)</a></li>
+<li><a id="ref-rec-type-h" href="https://github.com/vdukhovni/postfix/blob/cab3653e62c5d0e5d833f556e68a8089652f7ed9/postfix/src/global/rec_type.h" target="_blank" rel="noopener noreferrer">Postfix 源码: src/global/rec_type.h (commit cab3653e)</a></li>
+<li><a id="ref-mail-stream-c" href="https://github.com/vdukhovni/postfix/blob/cab3653e62c5d0e5d833f556e68a8089652f7ed9/postfix/src/global/mail_stream.c#L221-L375" target="_blank" rel="noopener noreferrer">Postfix 源码: src/global/mail_stream.c (commit cab3653e, L221-L375)</a></li>
+<li><a id="ref-cleanup-strerror" href="https://github.com/vdukhovni/postfix/blob/cab3653e62c5d0e5d833f556e68a8089652f7ed9/postfix/src/global/cleanup_strerror.c#L66-L76" target="_blank" rel="noopener noreferrer">Postfix 源码: src/global/cleanup_strerror.c (commit cab3653e, L66-L76)</a></li>
+<li><a id="ref-smtpd-c" href="https://github.com/vdukhovni/postfix/blob/cab3653e62c5d0e5d833f556e68a8089652f7ed9/postfix/src/smtpd/smtpd.c#L3539-L3740" target="_blank" rel="noopener noreferrer">Postfix 源码: src/smtpd/smtpd.c (commit cab3653e, L3539-L3740)</a></li>
+</ul></article><hr class="my-8 border-dashed"><div id="btt-btn-container" class="fixed inset-e-4 bottom-8 z-50 md:sticky md:inset-e-auto md:float-end md:me-1 translate-y-14 opacity-0 transition duration-500"><button data-button="back-to-top" class="group bg-background relative px-2 py-1 size-14 rounded-full shadow-xl md:h-8 md:w-fit md:rounded-md md:shadow-none md:focus-visible:rounded-none md:bg-background/35 md:bg-clip-padding md:backdrop-blur-lg"><span id="progress-indicator" class="absolute inset-0 -z-10 block size-14 scale-110 rounded-full bg-transparent md:hidden md:h-8 md:rounded-md"></span><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="inline-block rotate-90 md:hidden" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M5 12h14M5 12l6 6M5 12l6-6" /></svg><span class="group-hover:text-accent sr-only text-sm md:not-sr-only"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="inline-block size-4" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M12 5v14M16 9l-4-4M8 9l4-4" /></svg> 回到顶部</span></button></div><script data-astro-rerun>
+  function backToTop() {
+    const rootElement = document.documentElement;
+    const btnContainer = document.querySelector("#btt-btn-container");
+    const backToTopBtn = document.querySelector("[data-button='back-to-top']");
+    const progressIndicator = document.querySelector("#progress-indicator");
+
+    if (!rootElement || !btnContainer || !backToTopBtn || !progressIndicator)
+      return;
+
+    backToTopBtn.addEventListener("click", () => {
+      document.body.scrollTop = 0;
+      document.documentElement.scrollTop = 0;
+    });
+
+    let lastVisible = null;
+    function handleScroll() {
+      const scrollTotal = rootElement.scrollHeight - rootElement.clientHeight;
+      const scrollTop = rootElement.scrollTop;
+      const scrollPercent = Math.floor((scrollTop / scrollTotal) * 100);
+
+      progressIndicator.style.setProperty(
+        "background-image",
+        `conic-gradient(var(--accent), var(--accent) ${scrollPercent}%, transparent ${scrollPercent}%)`
+      );
+
+      const isVisible = scrollTop / scrollTotal > 0.3;
+
+      if (isVisible !== lastVisible) {
+        btnContainer.classList.toggle("opacity-100", isVisible);
+        btnContainer.classList.toggle("translate-y-0", isVisible);
+        btnContainer.classList.toggle("opacity-0", !isVisible);
+        btnContainer.classList.toggle("translate-y-14", !isVisible);
+        lastVisible = isVisible;
+      }
+    }
+
+    let ticking = false;
+    document.addEventListener("scroll", () => {
+      if (!ticking) {
+        window.requestAnimationFrame(() => {
+          handleScroll();
+          ticking = false;
+        });
+        ticking = true;
+      }
+    });
+  }
+  backToTop();
+</script><ul class="mt-4 mb-8 flex flex-wrap gap-4 sm:my-8"><li><a data-astro-transition-scope="astro-bztu2lml-1" href="/tags/邮箱系统/" class="flex items-center gap-0.5 border-foreground border-b-2 border-dashed hover:border-accent hover:text-accent hover:-mt-0.5 focus-visible:text-accent focus-visible:border-none text-sm"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="opacity-80 size-4" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M5 9h14M5 15h14M11 4 7 20M17 4l-4 16" /></svg>邮箱系统</a></li><li><a data-astro-transition-scope="astro-bztu2lml-2" href="/tags/消息队列/" class="flex items-center gap-0.5 border-foreground border-b-2 border-dashed hover:border-accent hover:text-accent hover:-mt-0.5 focus-visible:text-accent focus-visible:border-none text-sm"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="opacity-80 size-4" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M5 9h14M5 15h14M11 4 7 20M17 4l-4 16" /></svg>消息队列</a></li><li><a data-astro-transition-scope="astro-bztu2lml-3" href="/tags/smtp/" class="flex items-center gap-0.5 border-foreground border-b-2 border-dashed hover:border-accent hover:text-accent hover:-mt-0.5 focus-visible:text-accent focus-visible:border-none text-sm"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="opacity-80 size-4" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M5 9h14M5 15h14M11 4 7 20M17 4l-4 16" /></svg>SMTP</a></li></ul><hr class="my-8 border-dashed"><div data-pagefind-ignore class="my-8 grid grid-cols-1 gap-6 sm:grid-cols-2"><a href="/posts/mail-postfix-smtpd-state/" class="flex w-full gap-1 hover:opacity-75"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="inline-block flex-none rtl:rotate-180" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M5 12h14M5 12l6 6M5 12l6-6" /></svg><div><span>上一篇</span><div class="text-accent/85 text-sm">Postfix smtpd 的会话状态与收件人校验</div></div></a><a href="/posts/mail-postfix-qmgr-scheduling/" class="flex w-full justify-end gap-1 text-end hover:opacity-75 sm:col-start-2"><div><span>下一篇</span><div class="text-accent/85 text-sm">Postfix qmgr 的队列调度</div></div><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="inline-block flex-none rtl:rotate-180" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M5 12h14M13 18l6-6M13 6l6 6" /></svg></a></div></main><footer class="app-layout mt-auto"><div class="border-border flex flex-col items-center justify-between border-t py-6 sm:flex-row-reverse sm:py-4"><div class="flex flex-wrap items-center gap-1"><a href="https://github.com/SaromChars" title="Sarom Chars 的 GitHub" class="group inline-flex items-center gap-1 hover:text-accent p-2 hover:rotate-6 sm:p-1"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="inline-block size-6 scale-125 fill-transparent stroke-current stroke-2 opacity-90 group-hover:fill-transparent sm:scale-110" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M9 19c-4.3 1.4-4.3-2.5-6-3m12 5v-3.5c0-1 .1-1.4-.5-2 2.8-.3 5.5-1.4 5.5-6a4.6 4.6 0 0 0-1.3-3.2 4.2 4.2 0 0 0-.1-3.2s-1.1-.3-3.5 1.3a12.3 12.3 0 0 0-6.2 0C6.5 2.8 5.4 3.1 5.4 3.1a4.2 4.2 0 0 0-.1 3.2A4.6 4.6 0 0 0 4 9.5c0 4.6 2.7 5.7 5.5 6-.6.6-.6 1.2-.5 2V21" /></svg><span class="sr-only">Sarom Chars 的 GitHub</span></a></div><div class="my-2 flex flex-col items-center whitespace-nowrap sm:flex-row"><span>版权 &#169; 2026</span><span class="hidden sm:inline">&nbsp;|&nbsp;</span><span>保留所有权利。</span></div></div></footer><script type="module">var e=`theme`,t=`light`,n=`dark`;function r(){return localStorage.getItem(e)||(window.matchMedia(`(prefers-color-scheme: dark)`).matches?n:t)}var i=window.__theme?.value??r();function a(){localStorage.setItem(e,i),o()}function o(){let e=document.firstElementChild;e?.setAttribute(`data-theme`,i),e?.classList.toggle(`dark`,i===n),document.querySelector(`#theme-btn`)?.setAttribute(`aria-label`,i);let t=window.getComputedStyle(document.body).backgroundColor;document.querySelector(`meta[name='theme-color']`)?.setAttribute(`content`,t)}function s(){o(),document.querySelector(`#theme-btn`)?.addEventListener(`click`,()=>{i=i===t?n:t,a()})}s(),document.addEventListener(`astro:after-swap`,s),document.addEventListener(`astro:before-swap`,e=>{let t=document.querySelector(`meta[name='theme-color']`)?.getAttribute(`content`);t&&e.newDocument.querySelector(`meta[name='theme-color']`)?.setAttribute(`content`,t)}),window.matchMedia(`(prefers-color-scheme: dark)`).addEventListener(`change`,({matches:e})=>{i=e?n:t,a()});</script></body></html><script type="module">var e=document.querySelector(`#article`);if(e?.querySelector(`a[href^="#ref-"]`)){let t=null,n=!1,r=document.createElement(`button`);r.type=`button`,r.className=`citation-return`,r.textContent=`返回阅读位置`,r.setAttribute(`data-pagefind-ignore`,``),e.addEventListener(`click`,n=>{if(n.button!==0||n.metaKey||n.ctrlKey||n.shiftKey||n.altKey)return;let i=n.target instanceof Element?n.target.closest(`a[href^="#ref-"]`):null;if(!i||!e.contains(i))return;let a=i.hash,o=document.getElementById(decodeURIComponent(a.slice(1)));o&&e.contains(o)&&(t={source:i,url:window.location.href,top:window.scrollY,left:window.scrollX,targetHash:a},o.insertAdjacentElement(`afterend`,r))}),r.addEventListener(`click`,()=>{if(!t||n)return;let e=t,i=i=>{r.remove(),window.requestAnimationFrame(()=>{window.requestAnimationFrame(()=>{e.source.focus({preventScroll:!0}),window.scrollTo({top:e.top,left:e.left,behavior:`instant`}),t=null,n=!1,i?.()})})};window.location.href===e.url?i():(n=!0,window.addEventListener(`popstate`,()=>{let e=window.history.scrollRestoration;window.history.scrollRestoration=`manual`,window.setTimeout(()=>{i(()=>{window.history.scrollRestoration=e})},0)},{once:!0}),window.history.back())}),window.addEventListener(`hashchange`,()=>{!n&&t&&window.location.hash!==t.targetHash&&(r.remove(),t=null)})}</script><script data-astro-rerun>
+  function createProgressBar() {
+    const progressContainer = document.createElement("div");
+    progressContainer.className =
+      "progress-container fixed top-0 z-10 h-1 w-full bg-background";
+
+    const progressBar = document.createElement("div");
+    progressBar.className = "progress-bar h-1 w-0 bg-accent";
+    progressBar.id = "myBar";
+
+    progressContainer.appendChild(progressBar);
+    document.body.appendChild(progressContainer);
+  }
+  createProgressBar();
+
+  function updateScrollProgress() {
+    document.addEventListener("scroll", () => {
+      const winScroll =
+        document.body.scrollTop || document.documentElement.scrollTop;
+      const height =
+        document.documentElement.scrollHeight -
+        document.documentElement.clientHeight;
+      const scrolled = (winScroll / height) * 100;
+      if (document) {
+        const myBar = document.getElementById("myBar");
+        if (myBar) {
+          myBar.style.width = scrolled + "%";
+        }
+      }
+    });
+  }
+  updateScrollProgress();
+
+  function addHeadingLinks() {
+    const headings = Array.from(
+      document.querySelectorAll("h2, h3, h4, h5, h6")
+    );
+    for (const heading of headings) {
+      heading.classList.add("group");
+      const link = document.createElement("a");
+      link.className =
+        "heading-link ms-2 no-underline opacity-75 md:opacity-0 md:group-hover:opacity-100 md:focus:opacity-100";
+      link.href = "#" + heading.id;
+
+      const span = document.createElement("span");
+      span.ariaHidden = "true";
+      span.innerText = "#";
+      link.appendChild(span);
+      heading.appendChild(link);
+    }
+  }
+  addHeadingLinks();
+
+  function attachCopyButtons() {
+    const copyButtonLabel = "Copy";
+    const codeBlocks = Array.from(document.querySelectorAll("pre"));
+
+    for (const codeBlock of codeBlocks) {
+      const wrapper = document.createElement("div");
+      wrapper.style.position = "relative";
+
+      const computedStyle = getComputedStyle(codeBlock);
+      const hasFileNameOffset =
+        computedStyle.getPropertyValue("--file-name-offset").trim() !== "";
+
+      const topClass = hasFileNameOffset
+        ? "top-(--file-name-offset)"
+        : "-top-3";
+
+      const copyButton = document.createElement("button");
+      copyButton.className = `copy-code absolute end-3 ${topClass} rounded bg-muted border border-muted px-2 py-1 text-xs leading-4 text-foreground font-medium`;
+      copyButton.innerHTML = copyButtonLabel;
+      codeBlock.setAttribute("tabindex", "0");
+      codeBlock.appendChild(copyButton);
+
+      codeBlock?.parentNode?.insertBefore(wrapper, codeBlock);
+      wrapper.appendChild(codeBlock);
+
+      copyButton.addEventListener("click", async () => {
+        await copyCode(codeBlock, copyButton);
+      });
+    }
+
+    async function copyCode(block, button) {
+      const code = block.querySelector("code");
+      const text = code?.innerText;
+
+      await navigator.clipboard.writeText(text ?? "");
+
+      button.innerText = "Copied";
+
+      setTimeout(() => {
+        button.innerText = copyButtonLabel;
+      }, 700);
+    }
+  }
+  attachCopyButtons();
+
+  /** Accessible image lightbox for article images. */
+  function initLightbox() {
+    const article = document.getElementById("article");
+    if (!article) return;
+
+    const prefersReducedMotion = () =>
+      window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+    let overlay = null;
+    let lastFocused = null;
+    let removeDragListeners = null;
+
+    // Defer attribute mutations so they don't push the LCP timestamp.
+    // Event listeners below use delegation and don't need the attributes to exist yet.
+    requestAnimationFrame(() => {
+      const images = Array.from(article.querySelectorAll("img"));
+      for (const image of images) {
+        if (image.closest("a")) continue;
+        image.setAttribute("role", "button");
+        image.setAttribute("tabindex", "0");
+        image.setAttribute("aria-haspopup", "dialog");
+        image.setAttribute(
+          "aria-label",
+          image.alt ? `Zoom image: ${image.alt}` : "Zoom image"
+        );
+      }
+    });
+
+    function open(src, alt, trigger) {
+      if (overlay) return;
+      lastFocused = trigger ?? document.activeElement;
+
+      overlay = document.createElement("div");
+      overlay.setAttribute("role", "dialog");
+      overlay.setAttribute("aria-modal", "true");
+      overlay.setAttribute(
+        "aria-label",
+        alt ? `Image preview: ${alt}` : "Image preview"
+      );
+      overlay.className =
+        "fixed inset-0 z-50 flex cursor-zoom-out items-center justify-center bg-black/70 backdrop-blur-sm opacity-0 transition-opacity duration-200 motion-reduce:transition-none";
+
+      const closeButton = document.createElement("button");
+      closeButton.type = "button";
+      closeButton.setAttribute("aria-label", "Close image preview");
+      closeButton.className =
+        "absolute end-4 top-4 z-1 flex size-11 items-center justify-center rounded bg-black/50 text-3xl leading-none text-white";
+      closeButton.innerHTML = "&#10005;";
+      closeButton.addEventListener("click", close);
+
+      const image = document.createElement("img");
+      image.src = src;
+      image.alt = "";
+      image.className =
+        "max-h-[90dvh] max-w-[90dvw] cursor-default object-contain transition-transform duration-100 ease-out motion-reduce:transition-none data-[zoom=drag]:cursor-grabbing data-[zoom=drag]:transition-none data-[zoom=in]:cursor-grab";
+
+      overlay.append(closeButton, image);
+      overlay.addEventListener("click", e => {
+        if (e.target === overlay && currentScale <= 1) close();
+      });
+
+      let currentScale = 1;
+      let translateX = 0;
+      let translateY = 0;
+      let initialDist = 0;
+      let initialScale = 1;
+      let panStartX = 0;
+      let panStartY = 0;
+      let panStartTranslateX = 0;
+      let panStartTranslateY = 0;
+      let lastTapTime = 0;
+
+      function applyTransform() {
+        image.style.transform = `scale(${currentScale}) translate(${translateX}px, ${translateY}px)`;
+        // A backdrop click only closes at fit size, so drop the zoom-out cursor while zoomed.
+        overlay?.classList.toggle("cursor-zoom-out", currentScale <= 1);
+      }
+
+      function resetTransform() {
+        currentScale = 1;
+        translateX = 0;
+        translateY = 0;
+        image.style.transform = "";
+        image.removeAttribute("data-zoom");
+        overlay?.classList.add("cursor-zoom-out");
+      }
+
+      // Keep the zoomed image from being panned past its edges.
+      function clampTranslate() {
+        if (!overlay) return;
+        const maxX = Math.max(
+          0,
+          (image.clientWidth - overlay.clientWidth / currentScale) / 2
+        );
+        const maxY = Math.max(
+          0,
+          (image.clientHeight - overlay.clientHeight / currentScale) / 2
+        );
+        translateX = Math.min(maxX, Math.max(-maxX, translateX));
+        translateY = Math.min(maxY, Math.max(-maxY, translateY));
+      }
+
+      overlay.addEventListener(
+        "touchstart",
+        e => {
+          const t = e.touches;
+          if (t.length === 2) {
+            image.setAttribute("data-zoom", "drag");
+            initialDist = Math.hypot(
+              t[1].clientX - t[0].clientX,
+              t[1].clientY - t[0].clientY
+            );
+            initialScale = currentScale;
+          } else if (t.length === 1) {
+            const now = Date.now();
+            if (now - lastTapTime < 300) {
+              e.preventDefault();
+              if (currentScale > 1) {
+                resetTransform();
+              } else {
+                currentScale = 2;
+                translateX = 0;
+                translateY = 0;
+                applyTransform();
+                image.setAttribute("data-zoom", "in");
+              }
+              lastTapTime = 0;
+              panStartX = t[0].clientX;
+              panStartY = t[0].clientY;
+              panStartTranslateX = translateX;
+              panStartTranslateY = translateY;
+            } else {
+              lastTapTime = now;
+              if (currentScale > 1) {
+                image.setAttribute("data-zoom", "drag");
+                panStartX = t[0].clientX;
+                panStartY = t[0].clientY;
+                panStartTranslateX = translateX;
+                panStartTranslateY = translateY;
+              }
+            }
+          }
+        },
+        { passive: false }
+      );
+
+      overlay.addEventListener(
+        "touchmove",
+        e => {
+          const t = e.touches;
+          if (t.length === 2) {
+            e.preventDefault();
+            const dist = Math.hypot(
+              t[1].clientX - t[0].clientX,
+              t[1].clientY - t[0].clientY
+            );
+            const oldScale = currentScale;
+            currentScale = Math.min(
+              4,
+              Math.max(1, initialScale * (dist / initialDist))
+            );
+
+            // Zoom to the geometric center of the two fingers
+            const midX = (t[0].clientX + t[1].clientX) / 2;
+            const midY = (t[0].clientY + t[1].clientY) / 2;
+            const ox = overlay.clientWidth / 2;
+            const oy = overlay.clientHeight / 2;
+            translateX =
+              (midX - ox) * (1 / currentScale - 1 / oldScale) + translateX;
+            translateY =
+              (midY - oy) * (1 / currentScale - 1 / oldScale) + translateY;
+            clampTranslate();
+            applyTransform();
+          } else if (t.length === 1) {
+            if (currentScale > 1) {
+              e.preventDefault();
+              image.setAttribute("data-zoom", "drag");
+              translateX =
+                panStartTranslateX + (t[0].clientX - panStartX) / currentScale;
+              translateY =
+                panStartTranslateY + (t[0].clientY - panStartY) / currentScale;
+              clampTranslate();
+              applyTransform();
+            } else {
+              e.preventDefault();
+            }
+          }
+        },
+        { passive: false }
+      );
+
+      overlay.addEventListener("touchend", e => {
+        if (e.touches.length === 0) {
+          if (currentScale > 1) {
+            image.setAttribute("data-zoom", "in");
+          } else {
+            image.removeAttribute("data-zoom");
+          }
+          if (currentScale <= 1.05) resetTransform();
+        }
+      });
+
+      overlay.addEventListener("touchcancel", e => {
+        if (e.touches.length === 0) {
+          if (currentScale > 1) {
+            image.setAttribute("data-zoom", "in");
+          } else {
+            image.removeAttribute("data-zoom");
+          }
+          if (currentScale <= 1.05) resetTransform();
+        }
+      });
+
+      overlay.addEventListener(
+        "wheel",
+        e => {
+          e.preventDefault();
+          const oldScale = currentScale;
+          const delta = -e.deltaY * 0.001;
+          currentScale = Math.min(4, Math.max(1, currentScale * (1 + delta)));
+
+          if (currentScale <= 1.05) {
+            resetTransform();
+          } else {
+            image.setAttribute("data-zoom", "in");
+            // Zoom to cursor: adjust translate so the point under cursor stays fixed
+            const ox = overlay.clientWidth / 2;
+            const oy = overlay.clientHeight / 2;
+            translateX =
+              (e.clientX - ox) * (1 / currentScale - 1 / oldScale) + translateX;
+            translateY =
+              (e.clientY - oy) * (1 / currentScale - 1 / oldScale) + translateY;
+            clampTranslate();
+            applyTransform();
+          }
+        },
+        { passive: false }
+      );
+
+      let isMouseDown = false;
+      let mouseStartX = 0;
+      let mouseStartY = 0;
+
+      overlay.addEventListener("mousedown", e => {
+        if (e.button !== 0 || currentScale <= 1) return;
+        if (e.target.closest("button")) return;
+        isMouseDown = true;
+        mouseStartX = e.clientX;
+        mouseStartY = e.clientY;
+        panStartTranslateX = translateX;
+        panStartTranslateY = translateY;
+        image.setAttribute("data-zoom", "drag");
+        e.preventDefault();
+      });
+
+      function onMouseMove(e) {
+        if (!isMouseDown || !overlay) return;
+        translateX =
+          panStartTranslateX + (e.clientX - mouseStartX) / currentScale;
+        translateY =
+          panStartTranslateY + (e.clientY - mouseStartY) / currentScale;
+        clampTranslate();
+        applyTransform();
+      }
+
+      function onMouseUp() {
+        if (!isMouseDown) return;
+        isMouseDown = false;
+        if (currentScale > 1) {
+          image.setAttribute("data-zoom", "in");
+        } else {
+          image.removeAttribute("data-zoom");
+        }
+      }
+
+      document.addEventListener("mousemove", onMouseMove);
+      document.addEventListener("mouseup", onMouseUp);
+      removeDragListeners = () => {
+        document.removeEventListener("mousemove", onMouseMove);
+        document.removeEventListener("mouseup", onMouseUp);
+      };
+
+      document.body.appendChild(overlay);
+      document.documentElement.style.overflow = "hidden";
+      document.addEventListener("keydown", onKeyDown);
+      window.__closeLightbox = close;
+
+      requestAnimationFrame(() => overlay?.classList.add("opacity-100"));
+      closeButton.focus();
+    }
+
+    function close() {
+      if (!overlay) return;
+      const el = overlay;
+      overlay = null;
+      el.classList.add("pointer-events-none");
+      window.__closeLightbox = null;
+
+      document.removeEventListener("keydown", onKeyDown);
+      removeDragListeners?.();
+      removeDragListeners = null;
+      document.documentElement.style.overflow = "";
+      lastFocused?.focus();
+      lastFocused = null;
+
+      if (prefersReducedMotion()) {
+        el.remove();
+        return;
+      }
+      const remove = () => el.remove();
+      el.addEventListener("transitionend", remove, { once: true });
+      setTimeout(remove, 250); // fallback in case transitionend never fires
+      el.classList.remove("opacity-100");
+    }
+
+    function onKeyDown(e) {
+      if (e.key === "Escape") {
+        close();
+      } else if (e.key === "Tab") {
+        trapFocus(e);
+      }
+    }
+
+    // Keep keyboard focus inside the open dialog.
+    function trapFocus(e) {
+      if (!overlay) return;
+      const focusables = overlay.querySelectorAll(
+        'a[href], button, [tabindex]:not([tabindex="-1"])'
+      );
+      if (focusables.length === 0) return;
+      const first = focusables[0];
+      const last = focusables[focusables.length - 1];
+      if (e.shiftKey && document.activeElement === first) {
+        e.preventDefault();
+        last.focus();
+      } else if (!e.shiftKey && document.activeElement === last) {
+        e.preventDefault();
+        first.focus();
+      }
+    }
+
+    function triggerFromEvent(e) {
+      const image = e.target.closest("img");
+      if (!image || !article.contains(image) || image.closest("a")) return null;
+      return image;
+    }
+
+    function activate(image) {
+      open(image.currentSrc || image.src, image.alt, image);
+    }
+
+    article.addEventListener("click", e => {
+      const image = triggerFromEvent(e);
+      if (!image) return;
+      e.preventDefault();
+      activate(image);
+    });
+
+    article.addEventListener("keydown", e => {
+      if (e.key !== "Enter" && e.key !== " " && e.key !== "Spacebar") return;
+      const image = triggerFromEvent(e);
+      if (!image) return;
+      e.preventDefault();
+      activate(image);
+    });
+  }
+  initLightbox();
+
+  if (!window.__lightboxSwapBound) {
+    window.__lightboxSwapBound = true;
+    document.addEventListener("astro:before-swap", () =>
+      window.__closeLightbox?.()
+    );
+  }
+
+  document.addEventListener("astro:after-swap", () =>
+    window.scrollTo({ left: 0, top: 0, behavior: "instant" })
+  );
+</script>

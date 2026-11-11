@@ -1,0 +1,822 @@
+<!DOCTYPE html><html dir="ltr" lang="zh-CN" class="overflow-y-scroll scroll-smooth"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1"><link rel="icon" type="image/png" href="/images/favicon-32x32-next.png"><link rel="icon" href="/favicon.ico"><link rel="canonical" href="https://www.saromchars.tech/posts/mail-rspamd-bayes-storage/"><meta name="generator" content="Astro v7.4.5"><!-- Primary meta --><title>Rspamd 的贝叶斯分类与学习 | Sarom&#39;s Blog</title><meta name="title" content="Rspamd 的贝叶斯分类与学习 | Sarom's Blog"><meta name="description" content="基于 Rspamd 2.7 统计子系统与 Redis 后端源码，解析贝叶斯分类概率计算、学习去重机制与存储一致性约束。"><meta name="author" content="Sarom Chars"><link rel="sitemap" href="/sitemap-index.xml"><!-- Open Graph --><meta property="og:type" content="article"><meta property="og:site_name" content="Sarom's Blog"><meta property="og:title" content="Rspamd 的贝叶斯分类与学习 | Sarom's Blog"><meta property="og:description" content="基于 Rspamd 2.7 统计子系统与 Redis 后端源码，解析贝叶斯分类概率计算、学习去重机制与存储一致性约束。"><meta property="og:url" content="https://www.saromchars.tech/posts/mail-rspamd-bayes-storage/"><meta property="og:image" content="https://www.saromchars.tech/og.png"><!-- Twitter / X --><meta property="twitter:card" content="summary_large_image"><meta property="twitter:url" content="https://www.saromchars.tech/posts/mail-rspamd-bayes-storage/"><meta property="twitter:title" content="Rspamd 的贝叶斯分类与学习 | Sarom's Blog"><meta property="twitter:description" content="基于 Rspamd 2.7 统计子系统与 Redis 后端源码，解析贝叶斯分类概率计算、学习去重机制与存储一致性约束。"><meta property="twitter:image" content="https://www.saromchars.tech/og.png"><!-- RSS autodiscovery --><link rel="alternate" type="application/rss+xml" title="Sarom's Blog" href="https://www.saromchars.tech/rss.xml"><!-- Filled at runtime by theme.ts to match the current background colour --><meta name="theme-color" content=""><!-- Extra head content injected by child layouts (e.g. JSON-LD, article meta) --><meta property="article:published_time" content="2021-12-29T02:00:00.000Z"><script type="application/ld+json">{"@context":"https://schema.org","@type":"BlogPosting","headline":"Rspamd 的贝叶斯分类与学习","mainEntityOfPage":"https://www.saromchars.tech/posts/mail-rspamd-bayes-storage/","datePublished":"2021-12-29T02:00:00.000Z","author":[{"@type":"Person","name":"Sarom Chars","url":"https://github.com/SaromChars"}]}</script><!--
+      Inline FOUC-prevention script: sets data-theme on <html> before
+      the browser paints. Runs synchronously, no defer/async.
+    --><script>
+      (function () {
+        const stored = localStorage.getItem("theme");
+        const prefersDark = window.matchMedia(
+          "(prefers-color-scheme: dark)"
+        ).matches;
+        const theme = stored ?? (prefersDark ? "dark" : "light");
+        const root = document.firstElementChild;
+        root?.setAttribute("data-theme", theme);
+        root?.classList.toggle("dark", theme === "dark");
+        // Expose value so theme.ts can skip re-detection.
+        window.__theme = { value: theme };
+      })();
+    </script><meta name="robots" content="index, follow"><script async src="https://www.googletagmanager.com/gtag/js?id=G-WJJJTJ4FWX"></script><script>(function(){const measurementId = "G-WJJJTJ4FWX";
+
+    window.dataLayer = window.dataLayer || [];
+    function gtag(){ window.dataLayer.push(arguments); }
+    gtag('js', new Date());
+    gtag('config', measurementId);
+  })();</script><style>@keyframes astroFadeInOut{0%{opacity:1}to{opacity:0}}@keyframes astroFadeIn{0%{opacity:0;mix-blend-mode:plus-lighter}to{opacity:1;mix-blend-mode:plus-lighter}}@keyframes astroFadeOut{0%{opacity:1;mix-blend-mode:plus-lighter}to{opacity:0;mix-blend-mode:plus-lighter}}@keyframes astroSlideFromRight{0%{transform:translate(100%)}}@keyframes astroSlideFromLeft{0%{transform:translate(-100%)}}@keyframes astroSlideToRight{to{transform:translate(100%)}}@keyframes astroSlideToLeft{to{transform:translate(-100%)}}@media (prefers-reduced-motion){::view-transition-group(*),::view-transition-old(*),::view-transition-new(*),[data-astro-transition-scope]{animation:none!important}}
+</style><link rel="stylesheet" href="/_astro/Footer.wlxowfqU.css"><style>[data-astro-transition-scope="astro-bztu2lml-1"] { view-transition-name: \53CD\5783\573E\90AE\4EF6; }@layer astro { ::view-transition-old(\53CD\5783\573E\90AE\4EF6) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }::view-transition-new(\53CD\5783\573E\90AE\4EF6) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }[data-astro-transition=back]::view-transition-old(\53CD\5783\573E\90AE\4EF6) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition=back]::view-transition-new(\53CD\5783\573E\90AE\4EF6) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; } }[data-astro-transition-fallback="old"] [data-astro-transition-scope="astro-bztu2lml-1"],
+			[data-astro-transition-fallback="old"][data-astro-transition-scope="astro-bztu2lml-1"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition-fallback="new"] [data-astro-transition-scope="astro-bztu2lml-1"],
+			[data-astro-transition-fallback="new"][data-astro-transition-scope="astro-bztu2lml-1"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }[data-astro-transition=back][data-astro-transition-fallback="old"] [data-astro-transition-scope="astro-bztu2lml-1"],
+			[data-astro-transition=back][data-astro-transition-fallback="old"][data-astro-transition-scope="astro-bztu2lml-1"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition=back][data-astro-transition-fallback="new"] [data-astro-transition-scope="astro-bztu2lml-1"],
+			[data-astro-transition=back][data-astro-transition-fallback="new"][data-astro-transition-scope="astro-bztu2lml-1"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }</style><style>[data-astro-transition-scope="astro-bztu2lml-2"] { view-transition-name: \6570\636E\5B58\50A8; }@layer astro { ::view-transition-old(\6570\636E\5B58\50A8) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }::view-transition-new(\6570\636E\5B58\50A8) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }[data-astro-transition=back]::view-transition-old(\6570\636E\5B58\50A8) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition=back]::view-transition-new(\6570\636E\5B58\50A8) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; } }[data-astro-transition-fallback="old"] [data-astro-transition-scope="astro-bztu2lml-2"],
+			[data-astro-transition-fallback="old"][data-astro-transition-scope="astro-bztu2lml-2"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition-fallback="new"] [data-astro-transition-scope="astro-bztu2lml-2"],
+			[data-astro-transition-fallback="new"][data-astro-transition-scope="astro-bztu2lml-2"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }[data-astro-transition=back][data-astro-transition-fallback="old"] [data-astro-transition-scope="astro-bztu2lml-2"],
+			[data-astro-transition=back][data-astro-transition-fallback="old"][data-astro-transition-scope="astro-bztu2lml-2"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition=back][data-astro-transition-fallback="new"] [data-astro-transition-scope="astro-bztu2lml-2"],
+			[data-astro-transition=back][data-astro-transition-fallback="new"][data-astro-transition-scope="astro-bztu2lml-2"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }</style><style>[data-astro-transition-scope="astro-bztu2lml-3"] { view-transition-name: \90AE\7BB1\7CFB\7EDF; }@layer astro { ::view-transition-old(\90AE\7BB1\7CFB\7EDF) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }::view-transition-new(\90AE\7BB1\7CFB\7EDF) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }[data-astro-transition=back]::view-transition-old(\90AE\7BB1\7CFB\7EDF) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition=back]::view-transition-new(\90AE\7BB1\7CFB\7EDF) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; } }[data-astro-transition-fallback="old"] [data-astro-transition-scope="astro-bztu2lml-3"],
+			[data-astro-transition-fallback="old"][data-astro-transition-scope="astro-bztu2lml-3"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition-fallback="new"] [data-astro-transition-scope="astro-bztu2lml-3"],
+			[data-astro-transition-fallback="new"][data-astro-transition-scope="astro-bztu2lml-3"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }[data-astro-transition=back][data-astro-transition-fallback="old"] [data-astro-transition-scope="astro-bztu2lml-3"],
+			[data-astro-transition=back][data-astro-transition-fallback="old"][data-astro-transition-scope="astro-bztu2lml-3"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition=back][data-astro-transition-fallback="new"] [data-astro-transition-scope="astro-bztu2lml-3"],
+			[data-astro-transition=back][data-astro-transition-fallback="new"][data-astro-transition-scope="astro-bztu2lml-3"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }</style></head><body class="bg-background font-app text-foreground selection:bg-accent/75 selection:text-accent-foreground flex min-h-svh flex-col"><a id="skip-to-content" href="#main-content" class="bg-background text-accent absolute inset-s-16 -top-full z-50 px-3 py-2 backdrop-blur-lg transition-all focus:top-4">跳到正文</a><header class="app-layout flex flex-col items-center justify-between sm:flex-row"><div class="border-border bg-background relative flex w-full items-baseline justify-between border-b py-4 sm:items-center sm:py-6"><a href="/" class="absolute py-1 text-xl leading-8 font-semibold whitespace-nowrap sm:static sm:my-auto sm:text-2xl sm:leading-none">Sarom&#39;s Blog</a><nav id="nav-menu" class="flex w-full flex-col items-center sm:ms-2 sm:flex-row sm:justify-end sm:space-x-4 sm:py-0"><button id="menu-btn" class="focus-outline self-end p-2 sm:hidden" aria-label="展开菜单" aria-expanded="false" aria-controls="menu-items" data-label-open="展开菜单" data-label-close="收起菜单"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="hidden" viewBox="0 0 24 24" id="close-icon"><path stroke="none" d="M0 0h24v24H0z" /><path d="M18 6 6 18M6 6l12 12" /></svg><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="icon icon-tabler icons-tabler-outline icon-tabler-menu-deep" viewBox="0 0 24 24" id="menu-icon"><path stroke="none" d="M0 0h24v24H0z" /><path d="M4 6h16M7 12h13M10 18h10" /></svg></button><ul id="menu-items" class="[&amp;&gt;li&gt;a]:hover:text-accent mt-4 hidden w-44 grid-cols-2 place-content-center gap-2 sm:mt-0 sm:flex sm:w-auto sm:gap-x-5 sm:gap-y-0 sm:[&amp;&gt;li]:h-8 [&amp;&gt;li&gt;a]:block [&amp;&gt;li&gt;a]:px-4 [&amp;&gt;li&gt;a]:py-3 [&amp;&gt;li&gt;a]:text-center [&amp;&gt;li&gt;a]:font-medium sm:[&amp;&gt;li&gt;a]:px-2 sm:[&amp;&gt;li&gt;a]:py-1"><li class="col-span-2"><a href="/posts/" class="active-nav">文章</a></li><li class="col-span-2"><a href="/tags/">标签</a></li><li class="col-span-2"><a href="/about/">关于</a></li><li class="col-span-2"><a href="/archives/" title="归档" aria-label="归档" class="group inline-flex items-center gap-1 hover:text-accent focus-outline flex size-full justify-center p-3 sm:relative sm:size-8 sm:p-0"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="hidden sm:absolute sm:top-1/2 sm:left-1/2 sm:block sm:size-6 sm:-translate-x-1/2 sm:-translate-y-1/2" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M3 6a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2 2 2 0 0 1-2 2H5a2 2 0 0 1-2-2M5 8v10a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8M10 12h4" /></svg><span class="sm:sr-only">归档</span></a></li><li class="col-span-1 flex items-center justify-center"><a href="/search/" title="搜索" aria-label="搜索" class="group inline-flex items-center gap-1 hover:text-accent focus-outline relative size-8"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="absolute top-1/2 left-1/2 size-6 -translate-x-1/2 -translate-y-1/2" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M3 10a7 7 0 1 0 14 0 7 7 0 1 0-14 0M21 21l-6-6" /></svg><span class="sr-only">搜索</span></a></li><li class="col-span-1 flex items-center justify-center"><button id="theme-btn" class="focus-outline hover:[&amp;&gt;svg]:stroke-accent relative size-12 p-4 sm:size-8" title="切换主题" aria-label="auto" aria-live="polite"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="absolute top-[50%] left-[50%] translate-[-50%] scale-100 rotate-0 transition-all dark:scale-0 dark:-rotate-90" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M12 3h.393a7.5 7.5 0 0 0 7.92 12.446A9 9 0 1 1 12 2.992z" /></svg><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="absolute top-[50%] left-[50%] translate-[-50%] scale-0 rotate-90 transition-all dark:scale-100 dark:rotate-0" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M14.828 14.828a4 4 0 1 0-5.656-5.656 4 4 0 0 0 5.656 5.656M6.343 17.657l-1.414 1.414M6.343 6.343 4.929 4.929M17.657 6.343l1.414-1.414M17.657 17.657l1.414 1.414M4 12H2M12 4V2M20 12h2M12 20v2" /></svg></button></li></ul></nav></div></header><script type="module">function e(){let e=document.querySelector(`#menu-btn`),t=document.querySelector(`#menu-items`),n=document.querySelector(`#menu-icon`),r=document.querySelector(`#close-icon`);if(!e||!t||!n||!r)return;let i=e.dataset.labelOpen??`Open menu`,a=e.dataset.labelClose??`Close menu`;e.addEventListener(`click`,()=>{let o=e.getAttribute(`aria-expanded`)===`true`;e.setAttribute(`aria-expanded`,o?`false`:`true`),e.setAttribute(`aria-label`,o?i:a),t.classList.toggle(`hidden`),t.classList.toggle(`grid`),n.classList.toggle(`hidden`),r.classList.toggle(`hidden`)})}function t(){let e=document.getElementById(`skip-to-content`);e&&e.addEventListener(`click`,e=>{if(e.defaultPrevented||e.metaKey||e.ctrlKey||e.shiftKey||e.button!==0)return;e.preventDefault();let t=document.getElementById(`main-content`);t&&(t.setAttribute(`tabindex`,`-1`),t.addEventListener(`blur`,()=>t.removeAttribute(`tabindex`),{once:!0}),t.focus(),t.scrollIntoView({behavior:`smooth`}))})}e(),document.addEventListener(`astro:after-swap`,e),t(),document.addEventListener(`astro:after-swap`,t);</script><div class="app-layout flex items-center justify-start"><a id="back-button" href="/" class="group inline-flex items-center gap-1 hover:text-accent focus-outline hover:text-foreground/75 -ms-2 mt-8 mb-2"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="inline-block size-6 rtl:rotate-180" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="m15 6-6 6 6 6" /></svg><span>返回</span></a></div><script type="module">function e(){let e=document.querySelector(`#back-button`),t=sessionStorage.getItem(`backUrl`);t&&e&&(e.href=t)}document.addEventListener(`astro:page-load`,e),e();</script><main id="main-content" class="app-layout" data-pagefind-body><h1 style="view-transition-name:mail-rspamd-bayes-storage" class="text-accent inline-block text-2xl font-bold sm:text-3xl">Rspamd 的贝叶斯分类与学习</h1><div class="my-2 flex items-center gap-2"><div class="text-muted-foreground flex flex-wrap items-center gap-x-2 gap-y-1"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="inline-block size-6 min-w-5.5" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M4 7a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2zM16 3v4M8 3v4M4 11h16M7 14h.013M10.01 14h.005M13.01 14h.005M16.015 14h.005M13.015 17h.005M7.01 17h.005M10.01 17h.005" /></svg><time class="text-sm sm:text-base" datetime="2021-12-29T02:00:00.000Z">2021年12月29日</time></div><span aria-hidden="true" class="text-muted-foreground max-sm:hidden hidden">|</span></div><article id="article" class="mt-8 w-full app-prose max-w-app prose-pre:bg-(--shiki-light-bg) dark:prose-pre:bg-(--shiki-dark-bg)"><!--email_off-->
+<p>在邮件系统的开发与集成过程中，两类具体问题常引发对统计分类管线的误判：邮件扫描结果中没有出现任何 <code>BAYES</code> 相关符号时，上层业务能否将其直接当作正常邮件（ham）处理？向统计服务提交样本学习请求若遭遇网络超时，调用方能否直接发起原地重试？</p>
+<p>要回答这些问题，需要结合 <a href="#ref-rspamd-release">Rspamd 2.7 源码</a> 剖析统计子系统的真实逻辑。贝叶斯分类器（Bayesian classifier）在整体架构中扮演的是“度量与特征打分”角色，而不是最终的 SMTP 动作裁决者。理解分词器（tokenizer）生成的统计特征单位（token）如何在内存流水线中转换为概率信号，以及学习状态如何在键值存储中持久化，是构建自研邮件反馈控制面的基础。</p>
+<h2 id="分类流水线从特征提取到概率符号">分类流水线：从特征提取到概率符号</h2>
+<p>在 Rspamd 的架构中，邮件在进入分类阶段前已经由解码层拆解，各文本分块（text_parts）已包含解析好的词元列表（utf_words），并附带结构化元数据。统计流水线并不直接处理原始信件文本，而是接收这些已生成的词元数据进行投影。</p>
+<h3 id="特征生成与窗口关联">特征生成与窗口关联</h3>
+<p>Rspamd 默认采用名为 <code>osb</code> 的分词器（详见 <a href="#ref-osb-tokenizer">osb.c</a>）。分词器接收文本部分已有的 <code>utf_words</code>，并结合邮件主题等元数据（meta_words）生成特征。OSB 分词器维护一个固定大小的滑动窗口，将窗口内的词组合计算散列值，生成 64 位无符号整数表示的特征 token。</p>
+<p>在默认的 <a href="#ref-stat-config">statistic.conf</a> 配置中，<code>min_tokens = 11</code> 约束的是进入统计模型的特征 token 数量，而不是自然语言中的 11 个汉字或 11 个自然词。如果一封邮件的正文极短或缺乏足够的有效词对，分词后的 token 总量未达到阈值，分类流水线将直接跳过该邮件的统计分析。在默认配置中，<code>autolearn</code> 仅作为样例代码被注释，系统并未默认启用自动学习机制。</p>
+<h3 id="异步分类的三阶段调度">异步分类的三阶段调度</h3>
+<p>分类过程在 <a href="#ref-stat-process">stat_process.c</a> 中被划分为三个严格递进的阶段：</p>
+<ol>
+<li><strong>预处理阶段（RSPAMD_TASK_STAGE_CLASSIFIERS_PRE）</strong>：调用 <code>rspamd_stat_preprocess</code> 对任务分词，提取 token 数组，并生成当前任务的特征签名。</li>
+<li><strong>后端读取阶段（RSPAMD_TASK_STAGE_CLASSIFIERS）</strong>：调用 <code>rspamd_stat_backends_process</code> 向持久化后端（如 Redis）异步发起特征频次查询。</li>
+<li><strong>后置计算阶段（RSPAMD_TASK_STAGE_CLASSIFIERS_POST）</strong>：在后端返回结果后，调用 <code>rspamd_stat_classifiers_process</code> 执行最终概率计算与符号插入。</li>
+</ol>
+<pre class="astro-code astro-code-themes min-light night-owl" style="--shiki-light:#24292eff;--shiki-dark:#d6deeb;--shiki-light-bg:#ffffff;--shiki-dark-bg:#011627; overflow-x: auto;--file-name-offset: -0.75rem;" tabindex="0" data-language="c"><code><span class="line"><span style="--shiki-light:#C2C3C5;--shiki-light-font-style:inherit;--shiki-dark:#637777;--shiki-dark-font-style:italic">/* 由统计阶段调度源码删节的逻辑示意，不是完整可编译函数 */</span></span>
+<span class="line"><span style="--shiki-light:#1976D2;--shiki-dark:#C5E478">rspamd_stat_result_t</span></span>
+<span class="line"><span style="--shiki-light:#6F42C1;--shiki-light-font-style:inherit;--shiki-dark:#82AAFF;--shiki-dark-font-style:italic">rspamd_stat_classify</span><span style="--shiki-light:#24292EFF;--shiki-dark:#D6DEEB"> (</span><span style="--shiki-light:#D32F2F;--shiki-dark:#C792EA">struct</span><span style="--shiki-light:#24292EFF;--shiki-dark:#D6DEEB"> rspamd_task </span><span style="--shiki-light:#D32F2F;--shiki-dark:#7FDBCA">*</span><span style="--shiki-light:#24292EFF;--shiki-dark:#D7DBE0">task</span><span style="--shiki-light:#212121;--shiki-dark:#D6DEEB">,</span><span style="--shiki-light:#24292EFF;--shiki-dark:#D6DEEB"> lua_State </span><span style="--shiki-light:#D32F2F;--shiki-dark:#7FDBCA">*</span><span style="--shiki-light:#24292EFF;--shiki-dark:#D7DBE0">L</span><span style="--shiki-light:#212121;--shiki-dark:#D6DEEB">,</span><span style="--shiki-light:#24292EFF;--shiki-dark:#D6DEEB"> guint </span><span style="--shiki-light:#24292EFF;--shiki-dark:#D7DBE0">stage</span><span style="--shiki-light:#212121;--shiki-dark:#D6DEEB">,</span></span>
+<span class="line"><span style="--shiki-light:#24292EFF;--shiki-dark:#D6DEEB">		GError </span><span style="--shiki-light:#D32F2F;--shiki-dark:#7FDBCA">**</span><span style="--shiki-light:#24292EFF;--shiki-dark:#D7DBE0">err</span><span style="--shiki-light:#24292EFF;--shiki-dark:#D6DEEB">)</span></span>
+<span class="line"><span style="--shiki-light:#24292EFF;--shiki-dark:#D6DEEB">{</span></span>
+<span class="line"><span style="--shiki-light:#D32F2F;--shiki-dark:#C792EA">	struct</span><span style="--shiki-light:#24292EFF;--shiki-dark:#D6DEEB"> rspamd_stat_ctx </span><span style="--shiki-light:#D32F2F;--shiki-dark:#7FDBCA">*</span><span style="--shiki-light:#24292EFF;--shiki-dark:#D6DEEB">st_ctx </span><span style="--shiki-light:#D32F2F;--shiki-dark:#C792EA">=</span><span style="--shiki-light:#6F42C1;--shiki-light-font-style:inherit;--shiki-dark:#82AAFF;--shiki-dark-font-style:italic"> rspamd_stat_get_ctx</span><span style="--shiki-light:#6F42C1;--shiki-dark:#82AAFF"> ()</span><span style="--shiki-light:#24292EFF;--shiki-dark:#D6DEEB">;</span></span>
+<span class="line"><span style="--shiki-light:#24292EFF;--shiki-dark:#D6DEEB">	...</span></span>
+<span class="line"><span style="--shiki-light:#D32F2F;--shiki-light-font-style:inherit;--shiki-dark:#C792EA;--shiki-dark-font-style:italic">	if</span><span style="--shiki-light:#24292EFF;--shiki-dark:#D6DEEB"> (stage </span><span style="--shiki-light:#D32F2F;--shiki-dark:#C792EA">==</span><span style="--shiki-light:#24292EFF;--shiki-dark:#D6DEEB"> RSPAMD_TASK_STAGE_CLASSIFIERS_PRE) {</span></span>
+<span class="line"><span style="--shiki-light:#6F42C1;--shiki-light-font-style:inherit;--shiki-dark:#82AAFF;--shiki-dark-font-style:italic">		rspamd_stat_preprocess</span><span style="--shiki-light:#6F42C1;--shiki-dark:#82AAFF"> (st_ctx</span><span style="--shiki-light:#212121;--shiki-dark:#82AAFF">,</span><span style="--shiki-light:#6F42C1;--shiki-dark:#82AAFF"> task</span><span style="--shiki-light:#212121;--shiki-dark:#82AAFF">,</span><span style="--shiki-light:#1976D2;--shiki-dark:#82AAFF"> FALSE</span><span style="--shiki-light:#6F42C1;--shiki-dark:#82AAFF">)</span><span style="--shiki-light:#24292EFF;--shiki-dark:#D6DEEB">;</span></span>
+<span class="line"><span style="--shiki-light:#24292EFF;--shiki-dark:#D6DEEB">	}</span></span>
+<span class="line"><span style="--shiki-light:#D32F2F;--shiki-light-font-style:inherit;--shiki-dark:#C792EA;--shiki-dark-font-style:italic">	else</span><span style="--shiki-light:#D32F2F;--shiki-light-font-style:inherit;--shiki-dark:#C792EA;--shiki-dark-font-style:italic"> if</span><span style="--shiki-light:#24292EFF;--shiki-dark:#D6DEEB"> (stage </span><span style="--shiki-light:#D32F2F;--shiki-dark:#C792EA">==</span><span style="--shiki-light:#24292EFF;--shiki-dark:#D6DEEB"> RSPAMD_TASK_STAGE_CLASSIFIERS) {</span></span>
+<span class="line"><span style="--shiki-light:#6F42C1;--shiki-light-font-style:inherit;--shiki-dark:#82AAFF;--shiki-dark-font-style:italic">		rspamd_stat_backends_process</span><span style="--shiki-light:#6F42C1;--shiki-dark:#82AAFF"> (st_ctx</span><span style="--shiki-light:#212121;--shiki-dark:#82AAFF">,</span><span style="--shiki-light:#6F42C1;--shiki-dark:#82AAFF"> task)</span><span style="--shiki-light:#24292EFF;--shiki-dark:#D6DEEB">;</span></span>
+<span class="line"><span style="--shiki-light:#24292EFF;--shiki-dark:#D6DEEB">	}</span></span>
+<span class="line"><span style="--shiki-light:#D32F2F;--shiki-light-font-style:inherit;--shiki-dark:#C792EA;--shiki-dark-font-style:italic">	else</span><span style="--shiki-light:#D32F2F;--shiki-light-font-style:inherit;--shiki-dark:#C792EA;--shiki-dark-font-style:italic"> if</span><span style="--shiki-light:#24292EFF;--shiki-dark:#D6DEEB"> (stage </span><span style="--shiki-light:#D32F2F;--shiki-dark:#C792EA">==</span><span style="--shiki-light:#24292EFF;--shiki-dark:#D6DEEB"> RSPAMD_TASK_STAGE_CLASSIFIERS_POST) {</span></span>
+<span class="line"><span style="--shiki-light:#6F42C1;--shiki-light-font-style:inherit;--shiki-dark:#82AAFF;--shiki-dark-font-style:italic">		rspamd_stat_classifiers_process</span><span style="--shiki-light:#6F42C1;--shiki-dark:#82AAFF"> (st_ctx</span><span style="--shiki-light:#212121;--shiki-dark:#82AAFF">,</span><span style="--shiki-light:#6F42C1;--shiki-dark:#82AAFF"> task)</span><span style="--shiki-light:#24292EFF;--shiki-dark:#D6DEEB">;</span></span>
+<span class="line"><span style="--shiki-light:#24292EFF;--shiki-dark:#D6DEEB">	}</span></span>
+<span class="line"><span style="--shiki-light:#1976D2;--shiki-dark:#C5E478">	task</span><span style="--shiki-light:#212121;--shiki-dark:#D6DEEB">-></span><span style="--shiki-light:#24292EFF;--shiki-dark:#C5E478">processed_stages</span><span style="--shiki-light:#D32F2F;--shiki-dark:#C792EA"> |=</span><span style="--shiki-light:#24292EFF;--shiki-dark:#D6DEEB"> stage;</span></span>
+<span class="line"><span style="--shiki-light:#D32F2F;--shiki-light-font-style:inherit;--shiki-dark:#C792EA;--shiki-dark-font-style:italic">	return</span><span style="--shiki-light:#24292EFF;--shiki-dark:#D6DEEB"> RSPAMD_STAT_PROCESS_OK;</span></span>
+<span class="line"><span style="--shiki-light:#24292EFF;--shiki-dark:#D6DEEB">}</span></span></code></pre>
+<p>在后置计算阶段，分类器首先验证样本基础。在默认配置下，分类器要求正常邮件（ham）与垃圾邮件（spam）的学习样本量均分别达到 <code>min_learns</code>（默认各 200 次）。若任一类别的已学习计数不足，系统直接退出分类，不产生任何统计符号。此外，若后端在异步拉取 token 数据时发生网络超时或连接中断，<code>finalize_process</code> 返回失败，流水线会主动跳过该分类器。在开发与排错中必须明确：<strong>统计后端故障或特征不足导致的“无符号”，绝不能等同于邮件被判定为正常邮件（ham）</strong>。</p>
+<h3 id="概率组合与符号分值映射">概率组合与符号分值映射</h3>
+<p>当 token 频次成功取回后，计算核心进入 <a href="#ref-bayes-calc">classifiers/bayes.c</a>。Rspamd 并未采用朴素贝叶斯的简单概率连乘，而是对每个 token 在两类样本中的频次按实际学习样本数进行归一化计算：</p>
+<pre class="astro-code astro-code-themes min-light night-owl" style="--shiki-light:#24292eff;--shiki-dark:#d6deeb;--shiki-light-bg:#ffffff;--shiki-dark-bg:#011627; overflow-x: auto;--file-name-offset: -0.75rem;" tabindex="0" data-language="c"><code><span class="line"><span style="--shiki-light:#C2C3C5;--shiki-light-font-style:inherit;--shiki-dark:#637777;--shiki-dark-font-style:italic">/* src/libstat/classifiers/bayes.c 中单个 token 的概率计算 */</span></span>
+<span class="line"><span style="--shiki-light:#24292EFF;--shiki-dark:#D6DEEB">spam_freq </span><span style="--shiki-light:#D32F2F;--shiki-dark:#C792EA">=</span><span style="--shiki-light:#24292EFF;--shiki-dark:#D6DEEB"> ((</span><span style="--shiki-light:#D32F2F;--shiki-dark:#C792EA">double</span><span style="--shiki-light:#24292EFF;--shiki-dark:#D6DEEB">)spam_count </span><span style="--shiki-light:#D32F2F;--shiki-dark:#7FDBCA">/</span><span style="--shiki-light:#6F42C1;--shiki-light-font-style:inherit;--shiki-dark:#82AAFF;--shiki-dark-font-style:italic"> MAX</span><span style="--shiki-light:#24292EFF;--shiki-dark:#D6DEEB"> (</span><span style="--shiki-light:#1976D2;--shiki-dark:#F78C6C">1.</span><span style="--shiki-light:#212121;--shiki-dark:#D6DEEB">,</span><span style="--shiki-light:#24292EFF;--shiki-dark:#D6DEEB"> (</span><span style="--shiki-light:#D32F2F;--shiki-dark:#C792EA">double</span><span style="--shiki-light:#24292EFF;--shiki-dark:#D6DEEB">) ctx</span><span style="--shiki-light:#D32F2F;--shiki-dark:#7FDBCA">-</span><span style="--shiki-light:#D32F2F;--shiki-dark:#C792EA">></span><span style="--shiki-light:#24292EFF;--shiki-dark:#D7DBE0">spam_learns</span><span style="--shiki-light:#24292EFF;--shiki-dark:#D6DEEB">));</span></span>
+<span class="line"><span style="--shiki-light:#24292EFF;--shiki-dark:#D6DEEB">ham_freq </span><span style="--shiki-light:#D32F2F;--shiki-dark:#C792EA">=</span><span style="--shiki-light:#24292EFF;--shiki-dark:#D6DEEB"> ((</span><span style="--shiki-light:#D32F2F;--shiki-dark:#C792EA">double</span><span style="--shiki-light:#24292EFF;--shiki-dark:#D6DEEB">)ham_count </span><span style="--shiki-light:#D32F2F;--shiki-dark:#7FDBCA">/</span><span style="--shiki-light:#6F42C1;--shiki-light-font-style:inherit;--shiki-dark:#82AAFF;--shiki-dark-font-style:italic"> MAX</span><span style="--shiki-light:#24292EFF;--shiki-dark:#D6DEEB"> (</span><span style="--shiki-light:#1976D2;--shiki-dark:#F78C6C">1.</span><span style="--shiki-light:#212121;--shiki-dark:#D6DEEB">,</span><span style="--shiki-light:#24292EFF;--shiki-dark:#D6DEEB"> (</span><span style="--shiki-light:#D32F2F;--shiki-dark:#C792EA">double</span><span style="--shiki-light:#24292EFF;--shiki-dark:#D6DEEB">)ctx</span><span style="--shiki-light:#D32F2F;--shiki-dark:#7FDBCA">-</span><span style="--shiki-light:#D32F2F;--shiki-dark:#C792EA">></span><span style="--shiki-light:#24292EFF;--shiki-dark:#D7DBE0">ham_learns</span><span style="--shiki-light:#24292EFF;--shiki-dark:#D6DEEB">));</span></span>
+<span class="line"><span style="--shiki-light:#24292EFF;--shiki-dark:#D6DEEB">spam_prob </span><span style="--shiki-light:#D32F2F;--shiki-dark:#C792EA">=</span><span style="--shiki-light:#24292EFF;--shiki-dark:#D6DEEB"> spam_freq </span><span style="--shiki-light:#D32F2F;--shiki-dark:#7FDBCA">/</span><span style="--shiki-light:#24292EFF;--shiki-dark:#D6DEEB"> (spam_freq </span><span style="--shiki-light:#D32F2F;--shiki-dark:#7FDBCA">+</span><span style="--shiki-light:#24292EFF;--shiki-dark:#D6DEEB"> ham_freq);</span></span>
+<span class="line"><span style="--shiki-light:#24292EFF;--shiki-dark:#D6DEEB">ham_prob </span><span style="--shiki-light:#D32F2F;--shiki-dark:#C792EA">=</span><span style="--shiki-light:#24292EFF;--shiki-dark:#D6DEEB"> ham_freq </span><span style="--shiki-light:#D32F2F;--shiki-dark:#7FDBCA">/</span><span style="--shiki-light:#24292EFF;--shiki-dark:#D6DEEB"> (spam_freq </span><span style="--shiki-light:#D32F2F;--shiki-dark:#7FDBCA">+</span><span style="--shiki-light:#24292EFF;--shiki-dark:#D6DEEB"> ham_freq);</span></span></code></pre>
+<p>通过特征权重与平滑公式组合后，对经过筛选的有效 token 累加对数概率，最终导出整封邮件的综合概率 <code>final_prob</code>（取值在 0.0 到 1.0 之间）。</p>
+<p>只有当 <code>fabs(final_prob - 0.5) > 0.05</code>，即模型输出与中间不确定状态（0.5）的偏离度超过 0.05 时，分类器才会向任务插入符号：</p>
+<ul>
+<li>当 <code>final_prob > 0.5</code> 时，插入 <code>BAYES_SPAM</code>；</li>
+<li>当 <code>final_prob &#x3C; 0.5</code> 时，将概率对称翻转（<code>1.0 - final_prob</code>），插入 <code>BAYES_HAM</code>。</li>
+</ul>
+<p>系统通过 <code>rspamd_normalize_probability</code> 将偏离程度转化为传入 <code>rspamd_task_insert_result</code> 的归一化权重。传递给符号结果的显示字符串为 <code>(final_prob - 0.5) * 200.0</code> 计算出的百分比（范围 0% 到 100%）。例如计算得到概率为 0.95，显示的百分比为 <code>90.00%</code>。<strong>此处的 90.00% 只是特征偏离中立状态的显示信号，而不是最终规则总分，更不是线上检测的准确率或实测命中率</strong>。该符号的分值随后进入评分管线，与其他规则（如 SPF、DKIM、DMARC、DNSBL）综合累加，交由动作引擎决策最终的 SMTP 行为。</p>
+<h2 id="学习状态管理条件去重与更新">学习状态管理：条件、去重与更新</h2>
+<p>统计模型的有效性依赖于持续学习。但在高并发的生产环境中，未经控制的学习请求会导致状态库被污染或损坏。</p>
+<h3 id="学习准入条件与-bulk-语义">学习准入条件与 bulk 语义</h3>
+<p>在触发样本学习时，Rspamd 会在预处理阶段之后检查学习条件。在默认配置中，<code>learn_condition</code> 调用 Lua 模块 <a href="#ref-lua-learn">lua_bayes_learn.lua</a>。需要说明的是，此处的 Lua 脚本是在 Rspamd 进程宿主内部的 Lua 状态机中执行的回调，并不是在 Redis 服务端运行的存储脚本。</p>
+<p>该检查的核心逻辑是防过度学习：如果待学习邮件在当前贝叶斯模型中的推断概率已经极高（例如学习 spam 时已有 <code>bayes_prob >= 0.95</code>，或学习 ham 时已有 <code>bayes_prob &#x3C;= 0.05</code>），则视为“模型已知模式”，直接跳过本次学习，避免无意义的计数放大。</p>
+<p>当且仅当请求头包含 <code>Learn-Type: bulk</code> 时，系统才会跳过这一基于已有推断概率的门限限制。在自研邮件控制面中必须注意：<strong><code>Learn-Type: bulk</code> 仅仅是跳过上述置信度重复检查，绝不代表绕过底层的数据校验、分词限制或请求授权；业务方切勿将其开放为免验通道从不可信前端透传</strong>。</p>
+<h3 id="缓存去重与反向学习unlearn">缓存去重与反向学习（unlearn）</h3>
+<p>为防止同一邮件被重复投递学习，Rspamd 设计了专用的学习缓存（learn cache，详见 <a href="#ref-learn-cache">redis_cache.c</a>）。学习缓存以特定散列作为主键，存储在 Redis 中。</p>
+<p>学习缓存的主键并非邮件头中的 <code>Message-ID</code>。因为在实际垃圾邮件攻击中，<code>Message-ID</code> 极易被伪造或重复。Rspamd 在 <code>rspamd_stat_cache_redis_generate_id</code> 中，将邮件分词后得到的所有 token 哈希序列以及可选的 <code>stat_user</code> 变量拼接后进行哈希计算，生成一个完整的 Base32 编码签名（words_hash）。</p>
+<p>在学习执行前（<code>LEARN_PRE</code> 阶段），系统向 Redis 查询该散列的状态：</p>
+<ul>
+<li>若该主键记录的值表示此前已按同一类别学习过，系统记录 <code>RSPAMD_TASK_FLAG_ALREADY_LEARNED</code> 并中断学习，返回忽略；</li>
+<li>若记录显示此前学习过相反类别（如原先学为 ham，现在请求纠错为 spam），系统打上 <code>RSPAMD_TASK_FLAG_UNLEARN</code> 标记。在后续执行中，系统会对旧类别执行有条件的减量操作，对新类别执行增量更新。但这两者并非跨操作的强原子更新，也不保证先后顺序的绝对连续性。</li>
+</ul>
+<h3 id="状态写入与外部控制面责任">状态写入与外部控制面责任</h3>
+<p>在默认配置下，Rspamd 的 <code>store_tokens = false</code>，因此 Redis 统计库默认不存储明文 token 词面，仅保存散列键。在 <a href="#ref-redis-backend">redis_backend.c</a> 中，学习过程的执行顺序具有明确的单向依赖关系：</p>
+<ol>
+<li>在 <code>LEARN</code> 阶段，先向后端数据库发送 token 增量命令；</li>
+<li>待后端写入确认后，进入 <code>LEARN_POST</code> 阶段，调用缓存写入命令（HSET）记录该邮件特征签名已被学习。</li>
+</ol>
+<p>在源码实现中，缓存写入的回调函数 <code>rspamd_stat_cache_redis_set</code> 仅检查连接通信状态（<code>c->err == 0</code>），而完全忽略 Redis 返回的具体内容。同时，token 递增与 cache 记录是两个独立的网络交互，并非跨状态的原子事务。若网络在 token 写入成功后、cache 写入前断开，系统将无法保证跨故障的“精确一次”（exactly-once）学习。</p>
+<p>为了在业务层安全驱动学习流程，自研控制面不能依赖 Rspamd 自动处理所有边界。以下为业务层可采用的作业数据结构教学设计示例（非 Rspamd 内置 API）：</p>
+<pre class="astro-code astro-code-themes min-light night-owl" style="--shiki-light:#24292eff;--shiki-dark:#d6deeb;--shiki-light-bg:#ffffff;--shiki-dark-bg:#011627; overflow-x: auto;--file-name-offset: -0.75rem;" tabindex="0" data-language="json"><code><span class="line"><span style="--shiki-light:#24292EFF;--shiki-dark:#D6DEEB">{</span></span>
+<span class="line"><span style="--shiki-light:#D32F2F;--shiki-dark:#7FDBCA">  "feedback_id"</span><span style="--shiki-light:#212121;--shiki-dark:#D6DEEB">:</span><span style="--shiki-light:#22863A;--shiki-dark:#D9F5DD"> "</span><span style="--shiki-light:#22863A;--shiki-dark:#C789D6">fb_20211229_00192</span><span style="--shiki-light:#22863A;--shiki-dark:#D9F5DD">"</span><span style="--shiki-light:#212121;--shiki-dark:#D6DEEB">,</span></span>
+<span class="line"><span style="--shiki-light:#D32F2F;--shiki-dark:#7FDBCA">  "tenant_id"</span><span style="--shiki-light:#212121;--shiki-dark:#D6DEEB">:</span><span style="--shiki-light:#22863A;--shiki-dark:#D9F5DD"> "</span><span style="--shiki-light:#22863A;--shiki-dark:#C789D6">tenant_enterprise_a</span><span style="--shiki-light:#22863A;--shiki-dark:#D9F5DD">"</span><span style="--shiki-light:#212121;--shiki-dark:#D6DEEB">,</span></span>
+<span class="line"><span style="--shiki-light:#D32F2F;--shiki-dark:#7FDBCA">  "sample_ref"</span><span style="--shiki-light:#212121;--shiki-dark:#D6DEEB">:</span><span style="--shiki-light:#22863A;--shiki-dark:#D9F5DD"> "</span><span style="--shiki-light:#22863A;--shiki-dark:#C789D6">s3://mail-vault/samples/20211229/hash_abc123.eml</span><span style="--shiki-light:#22863A;--shiki-dark:#D9F5DD">"</span><span style="--shiki-light:#212121;--shiki-dark:#D6DEEB">,</span></span>
+<span class="line"><span style="--shiki-light:#D32F2F;--shiki-dark:#7FDBCA">  "label"</span><span style="--shiki-light:#212121;--shiki-dark:#D6DEEB">:</span><span style="--shiki-light:#22863A;--shiki-dark:#D9F5DD"> "</span><span style="--shiki-light:#22863A;--shiki-dark:#C789D6">spam</span><span style="--shiki-light:#22863A;--shiki-dark:#D9F5DD">"</span><span style="--shiki-light:#212121;--shiki-dark:#D6DEEB">,</span></span>
+<span class="line"><span style="--shiki-light:#D32F2F;--shiki-dark:#7FDBCA">  "actor"</span><span style="--shiki-light:#212121;--shiki-dark:#D6DEEB">:</span><span style="--shiki-light:#22863A;--shiki-dark:#D9F5DD"> "</span><span style="--shiki-light:#22863A;--shiki-dark:#C789D6">user_audit_team</span><span style="--shiki-light:#22863A;--shiki-dark:#D9F5DD">"</span><span style="--shiki-light:#212121;--shiki-dark:#D6DEEB">,</span></span>
+<span class="line"><span style="--shiki-light:#D32F2F;--shiki-dark:#7FDBCA">  "source"</span><span style="--shiki-light:#212121;--shiki-dark:#D6DEEB">:</span><span style="--shiki-light:#22863A;--shiki-dark:#D9F5DD"> "</span><span style="--shiki-light:#22863A;--shiki-dark:#C789D6">webmail_user_report</span><span style="--shiki-light:#22863A;--shiki-dark:#D9F5DD">"</span><span style="--shiki-light:#212121;--shiki-dark:#D6DEEB">,</span></span>
+<span class="line"><span style="--shiki-light:#D32F2F;--shiki-dark:#7FDBCA">  "classifier_config_version"</span><span style="--shiki-light:#212121;--shiki-dark:#D6DEEB">:</span><span style="--shiki-light:#22863A;--shiki-dark:#D9F5DD"> "</span><span style="--shiki-light:#22863A;--shiki-dark:#C789D6">bayes_v2.7_20211201</span><span style="--shiki-light:#22863A;--shiki-dark:#D9F5DD">"</span><span style="--shiki-light:#212121;--shiki-dark:#D6DEEB">,</span></span>
+<span class="line"><span style="--shiki-light:#D32F2F;--shiki-dark:#7FDBCA">  "created_at"</span><span style="--shiki-light:#212121;--shiki-dark:#D6DEEB">:</span><span style="--shiki-light:#22863A;--shiki-dark:#D9F5DD"> "</span><span style="--shiki-light:#22863A;--shiki-dark:#C789D6">2021-12-29T09:30:00Z</span><span style="--shiki-light:#22863A;--shiki-dark:#D9F5DD">"</span><span style="--shiki-light:#212121;--shiki-dark:#D6DEEB">,</span></span>
+<span class="line"><span style="--shiki-light:#D32F2F;--shiki-dark:#7FDBCA">  "status"</span><span style="--shiki-light:#212121;--shiki-dark:#D6DEEB">:</span><span style="--shiki-light:#22863A;--shiki-dark:#D9F5DD"> "</span><span style="--shiki-light:#22863A;--shiki-dark:#C789D6">pending</span><span style="--shiki-light:#22863A;--shiki-dark:#D9F5DD">"</span></span>
+<span class="line"><span style="--shiki-light:#24292EFF;--shiki-dark:#D6DEEB">}</span></span></code></pre>
+<p>作业状态在流转中可严格维护为 <code>pending</code>、<code>approved</code>、<code>submitted</code>、<code>applied</code>、<code>skipped</code>、<code>unknown</code>、<code>failed</code>。针对上述机制，控制面必须落实以下约束：</p>
+<ul>
+<li><strong><code>unknown</code> 状态禁止盲目重试</strong>：当向后端发送学习请求遭遇网络超时或断连时，状态应置为 <code>unknown</code>。此时服务端可能已完成计数递增，盲目重试会导致特征频次被双重累加；</li>
+<li><strong>总学习数无法证明单样本</strong>：Redis 中的 <code>learns_spam</code> / <code>learns_ham</code> 仅代表全局递增趋势，不能作为单封邮件是否已成功应用学习状态的证据；</li>
+<li><strong>纠错串行化</strong>：对同一 <code>sample_ref</code> 的重复举报或误报反向纠错请求，控制面必须通过锁或单一工作队列强制串行化执行；</li>
+<li><strong>归档依据</strong>：控制面应持久保存原始举报授权记录、合法邮件样本引用与审核依据，供后续核对与审计。</li>
+</ul>
+<h2 id="后端存储与一致性约束">后端存储与一致性约束</h2>
+<p>Rspamd 2.7 推荐使用 Redis 新存储架构（<code>new_schema = true</code>）。理解数据在 Redis 中的物理组织与持久化边界，有助于评估系统的高可用方案。</p>
+<h3 id="redis-键模式与事务语义">Redis 键模式与事务语义</h3>
+<p>在新架构下，Redis 的典型键与字段布局如下：</p>
+<ol>
+<li><strong>类别总学习数</strong>：保存在分类器前缀哈希中，字段为 <code>learns_spam</code> 和 <code>learns_ham</code>；</li>
+<li><strong>特征计数哈希</strong>：每个 token 作为一个独立的哈希表，键形如 <code>&#x3C;prefix>_&#x3C;token_id></code>。默认情况下哈希表内部字段保存整数计数值，若分类器配置了浮点增量标志，则支持按配置使用 <code>HINCRBYFLOAT</code> 递增。字段 <code>S</code> 代表垃圾邮件频次，<code>H</code> 代表正常邮件频次；</li>
+<li><strong>学习缓存哈希</strong>：键为配置的 <code>redis_object</code>，字段为邮件特征的 <code>words_hash</code>，值为 <code>1</code>（spam）或 <code>-1</code>（ham）。</li>
+</ol>
+<p>在写入学习数据时，Rspamd 在客户端将命令封装在 <code>MULTI</code> 与 <code>EXEC</code> 块中。根据 <a href="#ref-redis-multi">Redis multi.c 源码</a>，<code>MULTI/EXEC</code> 能够保证该批次命令按顺序执行且不会被其他客户端的请求穿插。但其事务语义与关系型数据库存在本质差异：</p>
+<ul>
+<li><strong>无运行时回滚</strong>：如果事务中某一条子命令在运行期间发生错误（如数据类型不匹配），已成功执行的子命令并不会回滚；</li>
+<li><strong>非跨系统事务</strong>：<code>MULTI/EXEC</code> 仅作用于统计特征的增量写入，与后置执行的缓存写入（learn cache）是完全独立的步骤；</li>
+<li><strong>非持久化刷盘保证</strong>：单凭 EXEC 的成功回复，不能证明此次学习在所选持久化策略下已可靠落盘；</li>
+<li><strong>回调只查连接状态</strong>：<code>rspamd_redis_learned</code> 仅验证异步连接上下文是否存在通信错误，并不逐项校验 <code>EXEC</code> 返回的每条子命令结果。</li>
+</ul>
+<h3 id="持久化配置与数据丢失窗口">持久化配置与数据丢失窗口</h3>
+<p>在 <a href="#ref-redis-conf">Redis 6.0.10 配置</a> 中，提供了 RDB 快照持久化（Redis Database）与 AOF 追加日志（Append Only File）两种主要机制。默认配置为 <code>appendonly no</code>，仅启用周期性 RDB 快照。</p>
+<p>若维持默认配置，当主机断电或进程崩溃时，丢失窗口取决于最近一次触发快照的时间间隔。若开启追加日志（AOF），不同的刷盘策略（<code>appendfsync</code>）代表着不同的风险窗口：</p>
+<ul>
+<li><code>appendfsync no</code>：完全由操作系统内核决定何时将数据写入磁盘，丢失窗口取决于系统负载与文件系统行为；</li>
+<li><code>appendfsync everysec</code>：后台线程周期性执行 fsync，通常对应约一秒的写入损失窗口，但具体仍依赖操作系统调度与故障情形；</li>
+<li><code>appendfsync always</code>：针对每次写入增加 fsync 调用频率，能显著收窄数据丢失窗口，但即便如此也不能完全承诺在极端硬件故障或内核崩溃下零数据丢失。</li>
+</ul>
+<p>在设计容灾备份时必须注意：如果从备份中恢复 Redis，而学习总计数（learns）、单个特征哈希以及学习缓存（cache）三者的数据集恢复时间点不一致，将使贝叶斯模型的学习状态发生偏移。因此，统计库的备份策略必须一并捕获这三类状态，不能将统计库视作丢了也能由单点重新推断的普通无状态缓存。</p>
+<h2 id="教学案例营销模板误报与时间切分评估">教学案例：营销模板误报与时间切分评估</h2>
+<p>以下构建一个促销邮件模板误报推导案例，并给出基于时间切分的数据集验证方法（本案例用于系统机制推导与接口验证，所有指标为教学示例，非生产实测数据）。</p>
+<h3 id="场景背景与污染传导">场景背景与污染传导</h3>
+<p>某企业邮箱系统承载了大量标准化模板的促销通知邮件。由于部分用户连续点击“举报为垃圾邮件”，这些反馈未经前置聚合与审核，直接被提交给贝叶斯分类器学习。</p>
+<p>推导其在模型内部的传导过程：</p>
+<ol>
+<li><strong>共用特征倾斜</strong>：该促销模板虽然正文变量不同，但包含了相同的版式结构、页脚声明与域名特征。随着此类举报被多次学为 spam，这些共用特征 token 在 Redis 中的 <code>S</code> 计数被逐步抬高；</li>
+<li><strong>后验概率偏移</strong>：此后，业务系统向其他用户发送基于同套模板骨架的正常通知（如发货提醒）时，分词器提取到相同的 token 组合。在其他统计条件相近时，这些共享特征可能使新信件的 spam 倾向增加，甚至产生 BAYES_SPAM 符号；</li>
+<li><strong>网关动作</strong>：<code>BAYES_SPAM</code> 符号的出现提高了整体垃圾评分，但最终该邮件是被直接放行、标记主题还是拒收，依然取决于 SPF/DKIM 认证结果、发信 IP 信誉以及网关配置的动作阈值策略。不能脱离规则链条将贝叶斯符号直接等同于邮件被拒。</li>
+</ol>
+<h3 id="控制面防护边界">控制面防护边界</h3>
+<p>要阻断此类误报传导，自研反馈控制面应落实以下防护措施：</p>
+<ul>
+<li><strong>样本抽样与人工审核</strong>：对于大量相似的集中举报，不能直接全量灌入模型，需经过人工审核或可信标签校验。需要注意：<strong>SPF/DKIM 提供有关主机授权或域签名验证的信号，不能作为内容属于正常邮件（ham）的合法标签</strong>；</li>
+<li><strong>租户频次与配额熔断</strong>：对单一来源或集中举报设置时间窗口计数上限，防止瞬间冲刷统计库；</li>
+<li><strong>纠错提交</strong>：对已确认的误标样本，控制面串行提交原样本和纠正后的类别标签，利用学习缓存识别异类并触发 UNLEARN 路径；仍需检查学习条件是否跳过、后端是否返回未决结果，不能保证一批提交就完全消除污染。</li>
+</ul>
+<h3 id="基于时间切分的模型离线验证">基于时间切分的模型离线验证</h3>
+<p>在评估模型参数或验证去污染效果时，必须按时间时序切分数据集：</p>
+<ul>
+<li>历史区间训练集（如 T0 至 T1）</li>
+<li>近期过渡验证集（如 T1 至 T2）</li>
+<li>现网时序测试集（如 T2 至 T3）</li>
+</ul>
+<p>验证流程与指标规范：</p>
+<ol>
+<li><strong>时序隔离与近重复隔离</strong>：按邮件活动或会话线程分组，避免同一营销波次的近重复邮件同时跨越训练集与测试集；</li>
+<li><strong>静态冻结评估</strong>：在验证集与测试集上执行打分评估时，必须关闭自动学习（autolearn）及外部人工学习输入，确保测试过程中模型状态完全冻结；</li>
+<li><strong>指标分层统计</strong>：将模型层信号与最终网关动作明确拆开，分类记录：
+<ul>
+<li>模型层面：正常邮件错分为 <code>BAYES_SPAM</code>、垃圾邮件错分为 <code>BAYES_HAM</code>、因 token 不足未产生信号的比例；</li>
+<li>动作层面：网关最终产生的误杀动作（如拦截正常邮件）与漏放动作（如放行垃圾邮件）；</li>
+</ul>
+</li>
+<li><strong>故障降级预期观察</strong>：以下验证步骤均属于教学设计推导，非线上实测。分类测试：在隔离测试环境中使 Redis 产生读取超时，观察系统记录后端错误、该分类器不产生统计符号，且其他规则继续完成评估；邮件最终被放行或暂缓取决于网关整体策略配置，不预设系统必然不崩溃。学习测试：对已提交的学习请求阻断后端确认回复，观察自研作业状态进入 <code>unknown</code> 并阻止原地重试；随后通过保留的反馈流水与受控状态核对再决定是否补偿重放。不能将普通分类时的失联直接等同于学习状态 unknown。</li>
+</ol>
+<hr>
+<h2 id="参考文献">参考文献</h2>
+<ul>
+<li><a id="ref-rspamd-release" href="https://lists.rspamd.com/pipermail/users/2021-January/001908.html" target="_blank" rel="noopener noreferrer">Rspamd 2.7 发行公告（2021-01-08）</a></li>
+<li><a id="ref-stat-config" href="https://github.com/rspamd/rspamd/blob/4c56c1210dac78be727fc07d1c29c140034e4b19/conf/statistic.conf#L20-L64" target="_blank" rel="noopener noreferrer">Rspamd 2.7 统计默认配置 statistic.conf</a></li>
+<li><a id="ref-stat-process" href="https://github.com/rspamd/rspamd/blob/4c56c1210dac78be727fc07d1c29c140034e4b19/src/libstat/stat_process.c#L392-L423" target="_blank" rel="noopener noreferrer">Rspamd 2.7 统计流水线调度源码 stat_process.c</a></li>
+<li><a id="ref-bayes-calc" href="https://github.com/rspamd/rspamd/blob/4c56c1210dac78be727fc07d1c29c140034e4b19/src/libstat/classifiers/bayes.c#L177-L215" target="_blank" rel="noopener noreferrer">Rspamd 2.7 贝叶斯概率组合实现 bayes.c</a></li>
+<li><a id="ref-redis-backend" href="https://github.com/rspamd/rspamd/blob/4c56c1210dac78be727fc07d1c29c140034e4b19/src/libstat/backends/redis_backend.c#L448-L485" target="_blank" rel="noopener noreferrer">Rspamd 2.7 Redis 统计后端实现 redis_backend.c</a></li>
+<li><a id="ref-learn-cache" href="https://github.com/rspamd/rspamd/blob/4c56c1210dac78be727fc07d1c29c140034e4b19/src/libstat/learn_cache/redis_cache.c#L200-L236" target="_blank" rel="noopener noreferrer">Rspamd 2.7 Redis 学习缓存实现 redis_cache.c</a></li>
+<li><a id="ref-lua-learn" href="https://github.com/rspamd/rspamd/blob/4c56c1210dac78be727fc07d1c29c140034e4b19/lualib/lua_bayes_learn.lua#L25-L51" target="_blank" rel="noopener noreferrer">Rspamd 2.7 贝叶斯学习条件模块 lua_bayes_learn.lua</a></li>
+<li><a id="ref-osb-tokenizer" href="https://github.com/rspamd/rspamd/blob/4c56c1210dac78be727fc07d1c29c140034e4b19/src/libstat/tokenizers/osb.c#L350-L410" target="_blank" rel="noopener noreferrer">Rspamd 2.7 OSB 分词器实现 osb.c</a></li>
+<li><a id="ref-redis-conf" href="https://github.com/redis/redis/blob/6.0.10/redis.conf#L1076-L1125" target="_blank" rel="noopener noreferrer">Redis 6.0.10 持久化默认配置参考 redis.conf</a></li>
+<li><a id="ref-redis-multi" href="https://github.com/redis/redis/blob/6.0.10/src/multi.c#L145-L235" target="_blank" rel="noopener noreferrer">Redis 6.0.10 MULTI/EXEC 实现 multi.c</a></li>
+</ul>
+<!-- email_on -->
+<!--/email_off--></article><hr class="my-8 border-dashed"><div id="btt-btn-container" class="fixed inset-e-4 bottom-8 z-50 md:sticky md:inset-e-auto md:float-end md:me-1 translate-y-14 opacity-0 transition duration-500"><button data-button="back-to-top" class="group bg-background relative px-2 py-1 size-14 rounded-full shadow-xl md:h-8 md:w-fit md:rounded-md md:shadow-none md:focus-visible:rounded-none md:bg-background/35 md:bg-clip-padding md:backdrop-blur-lg"><span id="progress-indicator" class="absolute inset-0 -z-10 block size-14 scale-110 rounded-full bg-transparent md:hidden md:h-8 md:rounded-md"></span><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="inline-block rotate-90 md:hidden" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M5 12h14M5 12l6 6M5 12l6-6" /></svg><span class="group-hover:text-accent sr-only text-sm md:not-sr-only"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="inline-block size-4" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M12 5v14M16 9l-4-4M8 9l4-4" /></svg> 回到顶部</span></button></div><script data-astro-rerun>
+  function backToTop() {
+    const rootElement = document.documentElement;
+    const btnContainer = document.querySelector("#btt-btn-container");
+    const backToTopBtn = document.querySelector("[data-button='back-to-top']");
+    const progressIndicator = document.querySelector("#progress-indicator");
+
+    if (!rootElement || !btnContainer || !backToTopBtn || !progressIndicator)
+      return;
+
+    backToTopBtn.addEventListener("click", () => {
+      document.body.scrollTop = 0;
+      document.documentElement.scrollTop = 0;
+    });
+
+    let lastVisible = null;
+    function handleScroll() {
+      const scrollTotal = rootElement.scrollHeight - rootElement.clientHeight;
+      const scrollTop = rootElement.scrollTop;
+      const scrollPercent = Math.floor((scrollTop / scrollTotal) * 100);
+
+      progressIndicator.style.setProperty(
+        "background-image",
+        `conic-gradient(var(--accent), var(--accent) ${scrollPercent}%, transparent ${scrollPercent}%)`
+      );
+
+      const isVisible = scrollTop / scrollTotal > 0.3;
+
+      if (isVisible !== lastVisible) {
+        btnContainer.classList.toggle("opacity-100", isVisible);
+        btnContainer.classList.toggle("translate-y-0", isVisible);
+        btnContainer.classList.toggle("opacity-0", !isVisible);
+        btnContainer.classList.toggle("translate-y-14", !isVisible);
+        lastVisible = isVisible;
+      }
+    }
+
+    let ticking = false;
+    document.addEventListener("scroll", () => {
+      if (!ticking) {
+        window.requestAnimationFrame(() => {
+          handleScroll();
+          ticking = false;
+        });
+        ticking = true;
+      }
+    });
+  }
+  backToTop();
+</script><ul class="mt-4 mb-8 flex flex-wrap gap-4 sm:my-8"><li><a data-astro-transition-scope="astro-bztu2lml-1" href="/tags/反垃圾邮件/" class="flex items-center gap-0.5 border-foreground border-b-2 border-dashed hover:border-accent hover:text-accent hover:-mt-0.5 focus-visible:text-accent focus-visible:border-none text-sm"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="opacity-80 size-4" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M5 9h14M5 15h14M11 4 7 20M17 4l-4 16" /></svg>反垃圾邮件</a></li><li><a data-astro-transition-scope="astro-bztu2lml-2" href="/tags/数据存储/" class="flex items-center gap-0.5 border-foreground border-b-2 border-dashed hover:border-accent hover:text-accent hover:-mt-0.5 focus-visible:text-accent focus-visible:border-none text-sm"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="opacity-80 size-4" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M5 9h14M5 15h14M11 4 7 20M17 4l-4 16" /></svg>数据存储</a></li><li><a data-astro-transition-scope="astro-bztu2lml-3" href="/tags/邮箱系统/" class="flex items-center gap-0.5 border-foreground border-b-2 border-dashed hover:border-accent hover:text-accent hover:-mt-0.5 focus-visible:text-accent focus-visible:border-none text-sm"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="opacity-80 size-4" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M5 9h14M5 15h14M11 4 7 20M17 4l-4 16" /></svg>邮箱系统</a></li></ul><hr class="my-8 border-dashed"><div data-pagefind-ignore class="my-8 grid grid-cols-1 gap-6 sm:grid-cols-2"><a href="/posts/mail-gateway-async-auth-dns/" class="flex w-full gap-1 hover:opacity-75"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="inline-block flex-none rtl:rotate-180" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M5 12h14M5 12l6 6M5 12l6-6" /></svg><div><span>上一篇</span><div class="text-accent/85 text-sm">Rspamd的DNS与身份认证异步检查</div></div></a><a href="/posts/mail-url-attachment-scanning/" class="flex w-full justify-end gap-1 text-end hover:opacity-75 sm:col-start-2"><div><span>下一篇</span><div class="text-accent/85 text-sm">邮件中的 URL 检查、模糊指纹与附件扫描</div></div><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="inline-block flex-none rtl:rotate-180" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M5 12h14M13 18l6-6M13 6l6 6" /></svg></a></div></main><footer class="app-layout mt-auto"><div class="border-border flex flex-col items-center justify-between border-t py-6 sm:flex-row-reverse sm:py-4"><div class="flex flex-wrap items-center gap-1"><a href="https://github.com/SaromChars" title="Sarom Chars 的 GitHub" class="group inline-flex items-center gap-1 hover:text-accent p-2 hover:rotate-6 sm:p-1"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="inline-block size-6 scale-125 fill-transparent stroke-current stroke-2 opacity-90 group-hover:fill-transparent sm:scale-110" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M9 19c-4.3 1.4-4.3-2.5-6-3m12 5v-3.5c0-1 .1-1.4-.5-2 2.8-.3 5.5-1.4 5.5-6a4.6 4.6 0 0 0-1.3-3.2 4.2 4.2 0 0 0-.1-3.2s-1.1-.3-3.5 1.3a12.3 12.3 0 0 0-6.2 0C6.5 2.8 5.4 3.1 5.4 3.1a4.2 4.2 0 0 0-.1 3.2A4.6 4.6 0 0 0 4 9.5c0 4.6 2.7 5.7 5.5 6-.6.6-.6 1.2-.5 2V21" /></svg><span class="sr-only">Sarom Chars 的 GitHub</span></a></div><div class="my-2 flex flex-col items-center whitespace-nowrap sm:flex-row"><span>版权 &#169; 2026</span><span class="hidden sm:inline">&nbsp;|&nbsp;</span><span>保留所有权利。</span></div></div></footer><script type="module">var e=`theme`,t=`light`,n=`dark`;function r(){return localStorage.getItem(e)||(window.matchMedia(`(prefers-color-scheme: dark)`).matches?n:t)}var i=window.__theme?.value??r();function a(){localStorage.setItem(e,i),o()}function o(){let e=document.firstElementChild;e?.setAttribute(`data-theme`,i),e?.classList.toggle(`dark`,i===n),document.querySelector(`#theme-btn`)?.setAttribute(`aria-label`,i);let t=window.getComputedStyle(document.body).backgroundColor;document.querySelector(`meta[name='theme-color']`)?.setAttribute(`content`,t)}function s(){o(),document.querySelector(`#theme-btn`)?.addEventListener(`click`,()=>{i=i===t?n:t,a()})}s(),document.addEventListener(`astro:after-swap`,s),document.addEventListener(`astro:before-swap`,e=>{let t=document.querySelector(`meta[name='theme-color']`)?.getAttribute(`content`);t&&e.newDocument.querySelector(`meta[name='theme-color']`)?.setAttribute(`content`,t)}),window.matchMedia(`(prefers-color-scheme: dark)`).addEventListener(`change`,({matches:e})=>{i=e?n:t,a()});</script></body></html><script type="module">var e=document.querySelector(`#article`);if(e?.querySelector(`a[href^="#ref-"]`)){let t=null,n=!1,r=document.createElement(`button`);r.type=`button`,r.className=`citation-return`,r.textContent=`返回阅读位置`,r.setAttribute(`data-pagefind-ignore`,``),e.addEventListener(`click`,n=>{if(n.button!==0||n.metaKey||n.ctrlKey||n.shiftKey||n.altKey)return;let i=n.target instanceof Element?n.target.closest(`a[href^="#ref-"]`):null;if(!i||!e.contains(i))return;let a=i.hash,o=document.getElementById(decodeURIComponent(a.slice(1)));o&&e.contains(o)&&(t={source:i,url:window.location.href,top:window.scrollY,left:window.scrollX,targetHash:a},o.insertAdjacentElement(`afterend`,r))}),r.addEventListener(`click`,()=>{if(!t||n)return;let e=t,i=i=>{r.remove(),window.requestAnimationFrame(()=>{window.requestAnimationFrame(()=>{e.source.focus({preventScroll:!0}),window.scrollTo({top:e.top,left:e.left,behavior:`instant`}),t=null,n=!1,i?.()})})};window.location.href===e.url?i():(n=!0,window.addEventListener(`popstate`,()=>{let e=window.history.scrollRestoration;window.history.scrollRestoration=`manual`,window.setTimeout(()=>{i(()=>{window.history.scrollRestoration=e})},0)},{once:!0}),window.history.back())}),window.addEventListener(`hashchange`,()=>{!n&&t&&window.location.hash!==t.targetHash&&(r.remove(),t=null)})}</script><script data-astro-rerun>
+  function createProgressBar() {
+    const progressContainer = document.createElement("div");
+    progressContainer.className =
+      "progress-container fixed top-0 z-10 h-1 w-full bg-background";
+
+    const progressBar = document.createElement("div");
+    progressBar.className = "progress-bar h-1 w-0 bg-accent";
+    progressBar.id = "myBar";
+
+    progressContainer.appendChild(progressBar);
+    document.body.appendChild(progressContainer);
+  }
+  createProgressBar();
+
+  function updateScrollProgress() {
+    document.addEventListener("scroll", () => {
+      const winScroll =
+        document.body.scrollTop || document.documentElement.scrollTop;
+      const height =
+        document.documentElement.scrollHeight -
+        document.documentElement.clientHeight;
+      const scrolled = (winScroll / height) * 100;
+      if (document) {
+        const myBar = document.getElementById("myBar");
+        if (myBar) {
+          myBar.style.width = scrolled + "%";
+        }
+      }
+    });
+  }
+  updateScrollProgress();
+
+  function addHeadingLinks() {
+    const headings = Array.from(
+      document.querySelectorAll("h2, h3, h4, h5, h6")
+    );
+    for (const heading of headings) {
+      heading.classList.add("group");
+      const link = document.createElement("a");
+      link.className =
+        "heading-link ms-2 no-underline opacity-75 md:opacity-0 md:group-hover:opacity-100 md:focus:opacity-100";
+      link.href = "#" + heading.id;
+
+      const span = document.createElement("span");
+      span.ariaHidden = "true";
+      span.innerText = "#";
+      link.appendChild(span);
+      heading.appendChild(link);
+    }
+  }
+  addHeadingLinks();
+
+  function attachCopyButtons() {
+    const copyButtonLabel = "Copy";
+    const codeBlocks = Array.from(document.querySelectorAll("pre"));
+
+    for (const codeBlock of codeBlocks) {
+      const wrapper = document.createElement("div");
+      wrapper.style.position = "relative";
+
+      const computedStyle = getComputedStyle(codeBlock);
+      const hasFileNameOffset =
+        computedStyle.getPropertyValue("--file-name-offset").trim() !== "";
+
+      const topClass = hasFileNameOffset
+        ? "top-(--file-name-offset)"
+        : "-top-3";
+
+      const copyButton = document.createElement("button");
+      copyButton.className = `copy-code absolute end-3 ${topClass} rounded bg-muted border border-muted px-2 py-1 text-xs leading-4 text-foreground font-medium`;
+      copyButton.innerHTML = copyButtonLabel;
+      codeBlock.setAttribute("tabindex", "0");
+      codeBlock.appendChild(copyButton);
+
+      codeBlock?.parentNode?.insertBefore(wrapper, codeBlock);
+      wrapper.appendChild(codeBlock);
+
+      copyButton.addEventListener("click", async () => {
+        await copyCode(codeBlock, copyButton);
+      });
+    }
+
+    async function copyCode(block, button) {
+      const code = block.querySelector("code");
+      const text = code?.innerText;
+
+      await navigator.clipboard.writeText(text ?? "");
+
+      button.innerText = "Copied";
+
+      setTimeout(() => {
+        button.innerText = copyButtonLabel;
+      }, 700);
+    }
+  }
+  attachCopyButtons();
+
+  /** Accessible image lightbox for article images. */
+  function initLightbox() {
+    const article = document.getElementById("article");
+    if (!article) return;
+
+    const prefersReducedMotion = () =>
+      window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+    let overlay = null;
+    let lastFocused = null;
+    let removeDragListeners = null;
+
+    // Defer attribute mutations so they don't push the LCP timestamp.
+    // Event listeners below use delegation and don't need the attributes to exist yet.
+    requestAnimationFrame(() => {
+      const images = Array.from(article.querySelectorAll("img"));
+      for (const image of images) {
+        if (image.closest("a")) continue;
+        image.setAttribute("role", "button");
+        image.setAttribute("tabindex", "0");
+        image.setAttribute("aria-haspopup", "dialog");
+        image.setAttribute(
+          "aria-label",
+          image.alt ? `Zoom image: ${image.alt}` : "Zoom image"
+        );
+      }
+    });
+
+    function open(src, alt, trigger) {
+      if (overlay) return;
+      lastFocused = trigger ?? document.activeElement;
+
+      overlay = document.createElement("div");
+      overlay.setAttribute("role", "dialog");
+      overlay.setAttribute("aria-modal", "true");
+      overlay.setAttribute(
+        "aria-label",
+        alt ? `Image preview: ${alt}` : "Image preview"
+      );
+      overlay.className =
+        "fixed inset-0 z-50 flex cursor-zoom-out items-center justify-center bg-black/70 backdrop-blur-sm opacity-0 transition-opacity duration-200 motion-reduce:transition-none";
+
+      const closeButton = document.createElement("button");
+      closeButton.type = "button";
+      closeButton.setAttribute("aria-label", "Close image preview");
+      closeButton.className =
+        "absolute end-4 top-4 z-1 flex size-11 items-center justify-center rounded bg-black/50 text-3xl leading-none text-white";
+      closeButton.innerHTML = "&#10005;";
+      closeButton.addEventListener("click", close);
+
+      const image = document.createElement("img");
+      image.src = src;
+      image.alt = "";
+      image.className =
+        "max-h-[90dvh] max-w-[90dvw] cursor-default object-contain transition-transform duration-100 ease-out motion-reduce:transition-none data-[zoom=drag]:cursor-grabbing data-[zoom=drag]:transition-none data-[zoom=in]:cursor-grab";
+
+      overlay.append(closeButton, image);
+      overlay.addEventListener("click", e => {
+        if (e.target === overlay && currentScale <= 1) close();
+      });
+
+      let currentScale = 1;
+      let translateX = 0;
+      let translateY = 0;
+      let initialDist = 0;
+      let initialScale = 1;
+      let panStartX = 0;
+      let panStartY = 0;
+      let panStartTranslateX = 0;
+      let panStartTranslateY = 0;
+      let lastTapTime = 0;
+
+      function applyTransform() {
+        image.style.transform = `scale(${currentScale}) translate(${translateX}px, ${translateY}px)`;
+        // A backdrop click only closes at fit size, so drop the zoom-out cursor while zoomed.
+        overlay?.classList.toggle("cursor-zoom-out", currentScale <= 1);
+      }
+
+      function resetTransform() {
+        currentScale = 1;
+        translateX = 0;
+        translateY = 0;
+        image.style.transform = "";
+        image.removeAttribute("data-zoom");
+        overlay?.classList.add("cursor-zoom-out");
+      }
+
+      // Keep the zoomed image from being panned past its edges.
+      function clampTranslate() {
+        if (!overlay) return;
+        const maxX = Math.max(
+          0,
+          (image.clientWidth - overlay.clientWidth / currentScale) / 2
+        );
+        const maxY = Math.max(
+          0,
+          (image.clientHeight - overlay.clientHeight / currentScale) / 2
+        );
+        translateX = Math.min(maxX, Math.max(-maxX, translateX));
+        translateY = Math.min(maxY, Math.max(-maxY, translateY));
+      }
+
+      overlay.addEventListener(
+        "touchstart",
+        e => {
+          const t = e.touches;
+          if (t.length === 2) {
+            image.setAttribute("data-zoom", "drag");
+            initialDist = Math.hypot(
+              t[1].clientX - t[0].clientX,
+              t[1].clientY - t[0].clientY
+            );
+            initialScale = currentScale;
+          } else if (t.length === 1) {
+            const now = Date.now();
+            if (now - lastTapTime < 300) {
+              e.preventDefault();
+              if (currentScale > 1) {
+                resetTransform();
+              } else {
+                currentScale = 2;
+                translateX = 0;
+                translateY = 0;
+                applyTransform();
+                image.setAttribute("data-zoom", "in");
+              }
+              lastTapTime = 0;
+              panStartX = t[0].clientX;
+              panStartY = t[0].clientY;
+              panStartTranslateX = translateX;
+              panStartTranslateY = translateY;
+            } else {
+              lastTapTime = now;
+              if (currentScale > 1) {
+                image.setAttribute("data-zoom", "drag");
+                panStartX = t[0].clientX;
+                panStartY = t[0].clientY;
+                panStartTranslateX = translateX;
+                panStartTranslateY = translateY;
+              }
+            }
+          }
+        },
+        { passive: false }
+      );
+
+      overlay.addEventListener(
+        "touchmove",
+        e => {
+          const t = e.touches;
+          if (t.length === 2) {
+            e.preventDefault();
+            const dist = Math.hypot(
+              t[1].clientX - t[0].clientX,
+              t[1].clientY - t[0].clientY
+            );
+            const oldScale = currentScale;
+            currentScale = Math.min(
+              4,
+              Math.max(1, initialScale * (dist / initialDist))
+            );
+
+            // Zoom to the geometric center of the two fingers
+            const midX = (t[0].clientX + t[1].clientX) / 2;
+            const midY = (t[0].clientY + t[1].clientY) / 2;
+            const ox = overlay.clientWidth / 2;
+            const oy = overlay.clientHeight / 2;
+            translateX =
+              (midX - ox) * (1 / currentScale - 1 / oldScale) + translateX;
+            translateY =
+              (midY - oy) * (1 / currentScale - 1 / oldScale) + translateY;
+            clampTranslate();
+            applyTransform();
+          } else if (t.length === 1) {
+            if (currentScale > 1) {
+              e.preventDefault();
+              image.setAttribute("data-zoom", "drag");
+              translateX =
+                panStartTranslateX + (t[0].clientX - panStartX) / currentScale;
+              translateY =
+                panStartTranslateY + (t[0].clientY - panStartY) / currentScale;
+              clampTranslate();
+              applyTransform();
+            } else {
+              e.preventDefault();
+            }
+          }
+        },
+        { passive: false }
+      );
+
+      overlay.addEventListener("touchend", e => {
+        if (e.touches.length === 0) {
+          if (currentScale > 1) {
+            image.setAttribute("data-zoom", "in");
+          } else {
+            image.removeAttribute("data-zoom");
+          }
+          if (currentScale <= 1.05) resetTransform();
+        }
+      });
+
+      overlay.addEventListener("touchcancel", e => {
+        if (e.touches.length === 0) {
+          if (currentScale > 1) {
+            image.setAttribute("data-zoom", "in");
+          } else {
+            image.removeAttribute("data-zoom");
+          }
+          if (currentScale <= 1.05) resetTransform();
+        }
+      });
+
+      overlay.addEventListener(
+        "wheel",
+        e => {
+          e.preventDefault();
+          const oldScale = currentScale;
+          const delta = -e.deltaY * 0.001;
+          currentScale = Math.min(4, Math.max(1, currentScale * (1 + delta)));
+
+          if (currentScale <= 1.05) {
+            resetTransform();
+          } else {
+            image.setAttribute("data-zoom", "in");
+            // Zoom to cursor: adjust translate so the point under cursor stays fixed
+            const ox = overlay.clientWidth / 2;
+            const oy = overlay.clientHeight / 2;
+            translateX =
+              (e.clientX - ox) * (1 / currentScale - 1 / oldScale) + translateX;
+            translateY =
+              (e.clientY - oy) * (1 / currentScale - 1 / oldScale) + translateY;
+            clampTranslate();
+            applyTransform();
+          }
+        },
+        { passive: false }
+      );
+
+      let isMouseDown = false;
+      let mouseStartX = 0;
+      let mouseStartY = 0;
+
+      overlay.addEventListener("mousedown", e => {
+        if (e.button !== 0 || currentScale <= 1) return;
+        if (e.target.closest("button")) return;
+        isMouseDown = true;
+        mouseStartX = e.clientX;
+        mouseStartY = e.clientY;
+        panStartTranslateX = translateX;
+        panStartTranslateY = translateY;
+        image.setAttribute("data-zoom", "drag");
+        e.preventDefault();
+      });
+
+      function onMouseMove(e) {
+        if (!isMouseDown || !overlay) return;
+        translateX =
+          panStartTranslateX + (e.clientX - mouseStartX) / currentScale;
+        translateY =
+          panStartTranslateY + (e.clientY - mouseStartY) / currentScale;
+        clampTranslate();
+        applyTransform();
+      }
+
+      function onMouseUp() {
+        if (!isMouseDown) return;
+        isMouseDown = false;
+        if (currentScale > 1) {
+          image.setAttribute("data-zoom", "in");
+        } else {
+          image.removeAttribute("data-zoom");
+        }
+      }
+
+      document.addEventListener("mousemove", onMouseMove);
+      document.addEventListener("mouseup", onMouseUp);
+      removeDragListeners = () => {
+        document.removeEventListener("mousemove", onMouseMove);
+        document.removeEventListener("mouseup", onMouseUp);
+      };
+
+      document.body.appendChild(overlay);
+      document.documentElement.style.overflow = "hidden";
+      document.addEventListener("keydown", onKeyDown);
+      window.__closeLightbox = close;
+
+      requestAnimationFrame(() => overlay?.classList.add("opacity-100"));
+      closeButton.focus();
+    }
+
+    function close() {
+      if (!overlay) return;
+      const el = overlay;
+      overlay = null;
+      el.classList.add("pointer-events-none");
+      window.__closeLightbox = null;
+
+      document.removeEventListener("keydown", onKeyDown);
+      removeDragListeners?.();
+      removeDragListeners = null;
+      document.documentElement.style.overflow = "";
+      lastFocused?.focus();
+      lastFocused = null;
+
+      if (prefersReducedMotion()) {
+        el.remove();
+        return;
+      }
+      const remove = () => el.remove();
+      el.addEventListener("transitionend", remove, { once: true });
+      setTimeout(remove, 250); // fallback in case transitionend never fires
+      el.classList.remove("opacity-100");
+    }
+
+    function onKeyDown(e) {
+      if (e.key === "Escape") {
+        close();
+      } else if (e.key === "Tab") {
+        trapFocus(e);
+      }
+    }
+
+    // Keep keyboard focus inside the open dialog.
+    function trapFocus(e) {
+      if (!overlay) return;
+      const focusables = overlay.querySelectorAll(
+        'a[href], button, [tabindex]:not([tabindex="-1"])'
+      );
+      if (focusables.length === 0) return;
+      const first = focusables[0];
+      const last = focusables[focusables.length - 1];
+      if (e.shiftKey && document.activeElement === first) {
+        e.preventDefault();
+        last.focus();
+      } else if (!e.shiftKey && document.activeElement === last) {
+        e.preventDefault();
+        first.focus();
+      }
+    }
+
+    function triggerFromEvent(e) {
+      const image = e.target.closest("img");
+      if (!image || !article.contains(image) || image.closest("a")) return null;
+      return image;
+    }
+
+    function activate(image) {
+      open(image.currentSrc || image.src, image.alt, image);
+    }
+
+    article.addEventListener("click", e => {
+      const image = triggerFromEvent(e);
+      if (!image) return;
+      e.preventDefault();
+      activate(image);
+    });
+
+    article.addEventListener("keydown", e => {
+      if (e.key !== "Enter" && e.key !== " " && e.key !== "Spacebar") return;
+      const image = triggerFromEvent(e);
+      if (!image) return;
+      e.preventDefault();
+      activate(image);
+    });
+  }
+  initLightbox();
+
+  if (!window.__lightboxSwapBound) {
+    window.__lightboxSwapBound = true;
+    document.addEventListener("astro:before-swap", () =>
+      window.__closeLightbox?.()
+    );
+  }
+
+  document.addEventListener("astro:after-swap", () =>
+    window.scrollTo({ left: 0, top: 0, behavior: "instant" })
+  );
+</script>

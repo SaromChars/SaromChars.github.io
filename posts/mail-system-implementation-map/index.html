@@ -1,0 +1,794 @@
+<!DOCTYPE html><html dir="ltr" lang="zh-CN" class="overflow-y-scroll scroll-smooth"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1"><link rel="icon" type="image/png" href="/images/favicon-32x32-next.png"><link rel="icon" href="/favicon.ico"><link rel="canonical" href="https://www.saromchars.tech/posts/mail-system-implementation-map/"><meta name="generator" content="Astro v7.4.5"><!-- Primary meta --><title>邮箱系统的组成与实现范围 | Sarom&#39;s Blog</title><meta name="title" content="邮箱系统的组成与实现范围 | Sarom's Blog"><meta name="description" content="从工程实现角度梳理邮箱后端的核心组件拆分、能力子集划分、数据流控制流与组件失败责任边界。"><meta name="author" content="Sarom Chars"><link rel="sitemap" href="/sitemap-index.xml"><!-- Open Graph --><meta property="og:type" content="article"><meta property="og:site_name" content="Sarom's Blog"><meta property="og:title" content="邮箱系统的组成与实现范围 | Sarom's Blog"><meta property="og:description" content="从工程实现角度梳理邮箱后端的核心组件拆分、能力子集划分、数据流控制流与组件失败责任边界。"><meta property="og:url" content="https://www.saromchars.tech/posts/mail-system-implementation-map/"><meta property="og:image" content="https://www.saromchars.tech/og.png"><!-- Twitter / X --><meta property="twitter:card" content="summary_large_image"><meta property="twitter:url" content="https://www.saromchars.tech/posts/mail-system-implementation-map/"><meta property="twitter:title" content="邮箱系统的组成与实现范围 | Sarom's Blog"><meta property="twitter:description" content="从工程实现角度梳理邮箱后端的核心组件拆分、能力子集划分、数据流控制流与组件失败责任边界。"><meta property="twitter:image" content="https://www.saromchars.tech/og.png"><!-- RSS autodiscovery --><link rel="alternate" type="application/rss+xml" title="Sarom's Blog" href="https://www.saromchars.tech/rss.xml"><!-- Filled at runtime by theme.ts to match the current background colour --><meta name="theme-color" content=""><!-- Extra head content injected by child layouts (e.g. JSON-LD, article meta) --><meta property="article:published_time" content="2021-10-20T02:00:00.000Z"><script type="application/ld+json">{"@context":"https://schema.org","@type":"BlogPosting","headline":"邮箱系统的组成与实现范围","mainEntityOfPage":"https://www.saromchars.tech/posts/mail-system-implementation-map/","datePublished":"2021-10-20T02:00:00.000Z","author":[{"@type":"Person","name":"Sarom Chars","url":"https://github.com/SaromChars"}]}</script><!--
+      Inline FOUC-prevention script: sets data-theme on <html> before
+      the browser paints. Runs synchronously, no defer/async.
+    --><script>
+      (function () {
+        const stored = localStorage.getItem("theme");
+        const prefersDark = window.matchMedia(
+          "(prefers-color-scheme: dark)"
+        ).matches;
+        const theme = stored ?? (prefersDark ? "dark" : "light");
+        const root = document.firstElementChild;
+        root?.setAttribute("data-theme", theme);
+        root?.classList.toggle("dark", theme === "dark");
+        // Expose value so theme.ts can skip re-detection.
+        window.__theme = { value: theme };
+      })();
+    </script><meta name="robots" content="index, follow"><script async src="https://www.googletagmanager.com/gtag/js?id=G-WJJJTJ4FWX"></script><script>(function(){const measurementId = "G-WJJJTJ4FWX";
+
+    window.dataLayer = window.dataLayer || [];
+    function gtag(){ window.dataLayer.push(arguments); }
+    gtag('js', new Date());
+    gtag('config', measurementId);
+  })();</script><style>@keyframes astroFadeInOut{0%{opacity:1}to{opacity:0}}@keyframes astroFadeIn{0%{opacity:0;mix-blend-mode:plus-lighter}to{opacity:1;mix-blend-mode:plus-lighter}}@keyframes astroFadeOut{0%{opacity:1;mix-blend-mode:plus-lighter}to{opacity:0;mix-blend-mode:plus-lighter}}@keyframes astroSlideFromRight{0%{transform:translate(100%)}}@keyframes astroSlideFromLeft{0%{transform:translate(-100%)}}@keyframes astroSlideToRight{to{transform:translate(100%)}}@keyframes astroSlideToLeft{to{transform:translate(-100%)}}@media (prefers-reduced-motion){::view-transition-group(*),::view-transition-old(*),::view-transition-new(*),[data-astro-transition-scope]{animation:none!important}}
+</style><link rel="stylesheet" href="/_astro/Footer.wlxowfqU.css"><style>[data-astro-transition-scope="astro-bztu2lml-1"] { view-transition-name: \90AE\7BB1\7CFB\7EDF; }@layer astro { ::view-transition-old(\90AE\7BB1\7CFB\7EDF) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }::view-transition-new(\90AE\7BB1\7CFB\7EDF) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }[data-astro-transition=back]::view-transition-old(\90AE\7BB1\7CFB\7EDF) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition=back]::view-transition-new(\90AE\7BB1\7CFB\7EDF) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; } }[data-astro-transition-fallback="old"] [data-astro-transition-scope="astro-bztu2lml-1"],
+			[data-astro-transition-fallback="old"][data-astro-transition-scope="astro-bztu2lml-1"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition-fallback="new"] [data-astro-transition-scope="astro-bztu2lml-1"],
+			[data-astro-transition-fallback="new"][data-astro-transition-scope="astro-bztu2lml-1"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }[data-astro-transition=back][data-astro-transition-fallback="old"] [data-astro-transition-scope="astro-bztu2lml-1"],
+			[data-astro-transition=back][data-astro-transition-fallback="old"][data-astro-transition-scope="astro-bztu2lml-1"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition=back][data-astro-transition-fallback="new"] [data-astro-transition-scope="astro-bztu2lml-1"],
+			[data-astro-transition=back][data-astro-transition-fallback="new"][data-astro-transition-scope="astro-bztu2lml-1"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }</style><style>[data-astro-transition-scope="astro-bztu2lml-2"] { view-transition-name: \6D88\606F\961F\5217; }@layer astro { ::view-transition-old(\6D88\606F\961F\5217) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }::view-transition-new(\6D88\606F\961F\5217) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }[data-astro-transition=back]::view-transition-old(\6D88\606F\961F\5217) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition=back]::view-transition-new(\6D88\606F\961F\5217) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; } }[data-astro-transition-fallback="old"] [data-astro-transition-scope="astro-bztu2lml-2"],
+			[data-astro-transition-fallback="old"][data-astro-transition-scope="astro-bztu2lml-2"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition-fallback="new"] [data-astro-transition-scope="astro-bztu2lml-2"],
+			[data-astro-transition-fallback="new"][data-astro-transition-scope="astro-bztu2lml-2"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }[data-astro-transition=back][data-astro-transition-fallback="old"] [data-astro-transition-scope="astro-bztu2lml-2"],
+			[data-astro-transition=back][data-astro-transition-fallback="old"][data-astro-transition-scope="astro-bztu2lml-2"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition=back][data-astro-transition-fallback="new"] [data-astro-transition-scope="astro-bztu2lml-2"],
+			[data-astro-transition=back][data-astro-transition-fallback="new"][data-astro-transition-scope="astro-bztu2lml-2"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }</style><style>[data-astro-transition-scope="astro-bztu2lml-3"] { view-transition-name: \6570\636E\5B58\50A8; }@layer astro { ::view-transition-old(\6570\636E\5B58\50A8) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }::view-transition-new(\6570\636E\5B58\50A8) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }[data-astro-transition=back]::view-transition-old(\6570\636E\5B58\50A8) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition=back]::view-transition-new(\6570\636E\5B58\50A8) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; } }[data-astro-transition-fallback="old"] [data-astro-transition-scope="astro-bztu2lml-3"],
+			[data-astro-transition-fallback="old"][data-astro-transition-scope="astro-bztu2lml-3"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition-fallback="new"] [data-astro-transition-scope="astro-bztu2lml-3"],
+			[data-astro-transition-fallback="new"][data-astro-transition-scope="astro-bztu2lml-3"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }[data-astro-transition=back][data-astro-transition-fallback="old"] [data-astro-transition-scope="astro-bztu2lml-3"],
+			[data-astro-transition=back][data-astro-transition-fallback="old"][data-astro-transition-scope="astro-bztu2lml-3"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition=back][data-astro-transition-fallback="new"] [data-astro-transition-scope="astro-bztu2lml-3"],
+			[data-astro-transition=back][data-astro-transition-fallback="new"][data-astro-transition-scope="astro-bztu2lml-3"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }</style></head><body class="bg-background font-app text-foreground selection:bg-accent/75 selection:text-accent-foreground flex min-h-svh flex-col"><a id="skip-to-content" href="#main-content" class="bg-background text-accent absolute inset-s-16 -top-full z-50 px-3 py-2 backdrop-blur-lg transition-all focus:top-4">跳到正文</a><header class="app-layout flex flex-col items-center justify-between sm:flex-row"><div class="border-border bg-background relative flex w-full items-baseline justify-between border-b py-4 sm:items-center sm:py-6"><a href="/" class="absolute py-1 text-xl leading-8 font-semibold whitespace-nowrap sm:static sm:my-auto sm:text-2xl sm:leading-none">Sarom&#39;s Blog</a><nav id="nav-menu" class="flex w-full flex-col items-center sm:ms-2 sm:flex-row sm:justify-end sm:space-x-4 sm:py-0"><button id="menu-btn" class="focus-outline self-end p-2 sm:hidden" aria-label="展开菜单" aria-expanded="false" aria-controls="menu-items" data-label-open="展开菜单" data-label-close="收起菜单"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="hidden" viewBox="0 0 24 24" id="close-icon"><path stroke="none" d="M0 0h24v24H0z" /><path d="M18 6 6 18M6 6l12 12" /></svg><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="icon icon-tabler icons-tabler-outline icon-tabler-menu-deep" viewBox="0 0 24 24" id="menu-icon"><path stroke="none" d="M0 0h24v24H0z" /><path d="M4 6h16M7 12h13M10 18h10" /></svg></button><ul id="menu-items" class="[&amp;&gt;li&gt;a]:hover:text-accent mt-4 hidden w-44 grid-cols-2 place-content-center gap-2 sm:mt-0 sm:flex sm:w-auto sm:gap-x-5 sm:gap-y-0 sm:[&amp;&gt;li]:h-8 [&amp;&gt;li&gt;a]:block [&amp;&gt;li&gt;a]:px-4 [&amp;&gt;li&gt;a]:py-3 [&amp;&gt;li&gt;a]:text-center [&amp;&gt;li&gt;a]:font-medium sm:[&amp;&gt;li&gt;a]:px-2 sm:[&amp;&gt;li&gt;a]:py-1"><li class="col-span-2"><a href="/posts/" class="active-nav">文章</a></li><li class="col-span-2"><a href="/tags/">标签</a></li><li class="col-span-2"><a href="/about/">关于</a></li><li class="col-span-2"><a href="/archives/" title="归档" aria-label="归档" class="group inline-flex items-center gap-1 hover:text-accent focus-outline flex size-full justify-center p-3 sm:relative sm:size-8 sm:p-0"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="hidden sm:absolute sm:top-1/2 sm:left-1/2 sm:block sm:size-6 sm:-translate-x-1/2 sm:-translate-y-1/2" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M3 6a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2 2 2 0 0 1-2 2H5a2 2 0 0 1-2-2M5 8v10a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8M10 12h4" /></svg><span class="sm:sr-only">归档</span></a></li><li class="col-span-1 flex items-center justify-center"><a href="/search/" title="搜索" aria-label="搜索" class="group inline-flex items-center gap-1 hover:text-accent focus-outline relative size-8"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="absolute top-1/2 left-1/2 size-6 -translate-x-1/2 -translate-y-1/2" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M3 10a7 7 0 1 0 14 0 7 7 0 1 0-14 0M21 21l-6-6" /></svg><span class="sr-only">搜索</span></a></li><li class="col-span-1 flex items-center justify-center"><button id="theme-btn" class="focus-outline hover:[&amp;&gt;svg]:stroke-accent relative size-12 p-4 sm:size-8" title="切换主题" aria-label="auto" aria-live="polite"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="absolute top-[50%] left-[50%] translate-[-50%] scale-100 rotate-0 transition-all dark:scale-0 dark:-rotate-90" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M12 3h.393a7.5 7.5 0 0 0 7.92 12.446A9 9 0 1 1 12 2.992z" /></svg><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="absolute top-[50%] left-[50%] translate-[-50%] scale-0 rotate-90 transition-all dark:scale-100 dark:rotate-0" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M14.828 14.828a4 4 0 1 0-5.656-5.656 4 4 0 0 0 5.656 5.656M6.343 17.657l-1.414 1.414M6.343 6.343 4.929 4.929M17.657 6.343l1.414-1.414M17.657 17.657l1.414 1.414M4 12H2M12 4V2M20 12h2M12 20v2" /></svg></button></li></ul></nav></div></header><script type="module">function e(){let e=document.querySelector(`#menu-btn`),t=document.querySelector(`#menu-items`),n=document.querySelector(`#menu-icon`),r=document.querySelector(`#close-icon`);if(!e||!t||!n||!r)return;let i=e.dataset.labelOpen??`Open menu`,a=e.dataset.labelClose??`Close menu`;e.addEventListener(`click`,()=>{let o=e.getAttribute(`aria-expanded`)===`true`;e.setAttribute(`aria-expanded`,o?`false`:`true`),e.setAttribute(`aria-label`,o?i:a),t.classList.toggle(`hidden`),t.classList.toggle(`grid`),n.classList.toggle(`hidden`),r.classList.toggle(`hidden`)})}function t(){let e=document.getElementById(`skip-to-content`);e&&e.addEventListener(`click`,e=>{if(e.defaultPrevented||e.metaKey||e.ctrlKey||e.shiftKey||e.button!==0)return;e.preventDefault();let t=document.getElementById(`main-content`);t&&(t.setAttribute(`tabindex`,`-1`),t.addEventListener(`blur`,()=>t.removeAttribute(`tabindex`),{once:!0}),t.focus(),t.scrollIntoView({behavior:`smooth`}))})}e(),document.addEventListener(`astro:after-swap`,e),t(),document.addEventListener(`astro:after-swap`,t);</script><div class="app-layout flex items-center justify-start"><a id="back-button" href="/" class="group inline-flex items-center gap-1 hover:text-accent focus-outline hover:text-foreground/75 -ms-2 mt-8 mb-2"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="inline-block size-6 rtl:rotate-180" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="m15 6-6 6 6 6" /></svg><span>返回</span></a></div><script type="module">function e(){let e=document.querySelector(`#back-button`),t=sessionStorage.getItem(`backUrl`);t&&e&&(e.href=t)}document.addEventListener(`astro:page-load`,e),e();</script><main id="main-content" class="app-layout" data-pagefind-body><h1 style="view-transition-name:mail-system-implementation-map" class="text-accent inline-block text-2xl font-bold sm:text-3xl">邮箱系统的组成与实现范围</h1><div class="my-2 flex items-center gap-2"><div class="text-muted-foreground flex flex-wrap items-center gap-x-2 gap-y-1"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="inline-block size-6 min-w-5.5" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M4 7a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2zM16 3v4M8 3v4M4 11h16M7 14h.013M10.01 14h.005M13.01 14h.005M16.015 14h.005M13.015 17h.005M7.01 17h.005M10.01 17h.005" /></svg><time class="text-sm sm:text-base" datetime="2021-10-20T02:00:00.000Z">2021年10月20日</time></div><span aria-hidden="true" class="text-muted-foreground max-sm:hidden hidden">|</span></div><article id="article" class="mt-8 w-full app-prose max-w-app prose-pre:bg-(--shiki-light-bg) dark:prose-pre:bg-(--shiki-dark-bg)"><!--email_off-->
+<p>搭建或规划一套邮箱系统时，核心问题通常不在于缺少协议说明，而在于如何界定实现范围：构建一套服务需要引入哪些组件、哪些功能由自研代码负责，以及做到什么状态才算完成闭环。</p>
+<p><a href="#ref-rfc5598">RFC 5598 §4 图 5</a> 划分了消息传输代理（Message Transfer Agent，MTA）、邮件投递代理（Mail Delivery Agent，MDA）与消息用户代理（Message User Agent，MUA）等角色。但在工程实现中，逻辑角色并不对应单一可执行文件，也无需从零自行编写所有底层协议。本文从后端工程视角梳理系统能力子集、自建与自研分工、组件失败责任，并通过一封邮件的处理过程说明数据流与控制流边界。</p>
+<h2 id="目标产品能力与工程实现口径">目标产品能力与工程实现口径</h2>
+<p>构建邮箱服务前，首先需要按业务定位界定交付的能力子集：</p>
+<p>完整邮箱产品需要具备域管理、账号认证、公网邮件收发、本地邮箱存储，以及标准邮箱访问协议（邮局协议第三版，Post Office Protocol Version 3，POP3 或互联网消息访问协议，Internet Message Access Protocol，IMAP）。自研 Web 端界面（Webmail）、组织通讯录与日历协同属于可省略或选配能力，仅提供标准协议接入同样构成闭环。</p>
+<p>仅出站服务聚焦于业务通知、账单外发或自动化推送场景。其必需能力包括提交认证与发件授权、持久排队、向远端或上游中继发送，以及投递状态通知（Delivery Status Notification，DSN）。该形态可以省略面向最终用户的邮箱存储、POP3/IMAP 访问服务，以及入站公网 MX 接收与清洗。</p>
+<p>入站网关承担外部邮件接收、流量清洗、反垃圾与防病毒扫描、路由判定、下游投递与背压策略及审计管理。入站网关本身可省略面向终端用户的邮箱存储与直接访问协议（POP3/IMAP），核心职责在于对下游的可靠转交与上游流量治理。</p>
+<p>按工程实现深度，实现范围通常分为三类口径：</p>
+<h3 id="自建部署集成">自建部署集成</h3>
+<p>典型做法是组合开源 MTA、存储服务、扫描引擎与账号目录。自建集成责任包括网络与 DNS 解析、组件安装、套接字（socket）权限配置、证书轮换与备份恢复。自研代码与数据责任主要是维护胶水配置与监控采集脚本，业务深度依赖各开源组件既有的管理与运行能力。</p>
+<h3 id="自研控制面复用协议内核">自研控制面，复用协议内核</h3>
+<p>典型做法是复用成熟的 MTA、投递代理与扫描内核，自研业务控制台与管理服务。集成责任在于维护内核组件与自研系统间的接口契约（如本地投递、过滤插件或查询代理）及进程生命周期。自研代码与数据责任包括研发域与账号管理、凭据与发件授权、路由编排、配置版本发布、配额策略与审计流水。</p>
+<h3 id="自研协议与存储内核">自研协议与存储内核</h3>
+<p>典型做法是完全自行编写所选承诺范围内的提交/接收网络服务、协议解析、持久队列与底层存储。集成责任需要承接协议范围内的网络高并发、状态机流转与容灾策略。自研代码与数据责任包括自行编写所选邮件传输命令解析、邮件内容格式解析、队列恢复、存储索引与状态同步代码。</p>
+<p>上述口径属于工程设计划分，而非 RFC 标准强制规定的分级。工程团队可根据承诺交付的能力集合选择模块与实现深度。</p>
+<h2 id="核心组件与失败责任边界">核心组件与失败责任边界</h2>
+<p>在模块化实现中，一套邮箱系统通常划分为七个核心子系统，各组件通过标准化或私有接口协同，并承担严格受限的故障边界：</p>
+<h3 id="mta-传输与持久队列">MTA 传输与持久队列</h3>
+<p>MTA 核心职责是负责 SMTP 接收与出站中继，管理磁盘持久化消息队列并调度重试。服务通过简单邮件传输协议（Simple Mail Transfer Protocol，SMTP，<a href="#ref-rfc5321">RFC 5321 §4.2.5</a>）对外提供传输；邮件提交代理（Mail Submission Agent，MSA）使用 SMTP 承担提交服务（<a href="#ref-rfc6409">RFC 6409 §1</a>）。在失败责任上，MTA 在 DATA 阶段返回最终 250 正响应后，即承担投递或中继责任；若后续无法投递，按 <a href="#ref-rfc5321">RFC 5321 §6.1</a> 触发失败通知（空反向路径例外）。系统必须满足约定的持久性（如落盘）后方可对客户端确认。</p>
+<h3 id="身份认证与账号目录">身份认证与账号目录</h3>
+<p>该组件管理域、租户、账号与凭据，提供认证与用户信息查询，通常通过内部 IPC、LDAP 或数据库查询接口交互。设计中必须严格区分身份认证（authentication）与发件授权（authorization）。认证组件或授权校验失败时应明确拒绝，不可降级放行。</p>
+<h3 id="最终投递与存储">最终投递与存储</h3>
+<p>该组件负责将邮件持久化写入目标用户邮箱，典型接口为本地邮件投递协议（Local Mail Transfer Protocol，LMTP，<a href="#ref-rfc2033">RFC 2033 §4.2</a>）或内部 RPC。组件按所选协议约定逐收件人返回状态；遇到资源暂不可用时返回 4xx 临时错误触发队列重试，永久策略超限则返回 5xx 错误。</p>
+<h3 id="索引与检索服务">索引与检索服务</h3>
+<p>核心职责是提取正文文本构建倒排索引，提供快速检索与分页，通常暴露私有查询 API 或对接内部全文检索引擎。全文索引是存储事实的派生检索视图，损坏时可重新构建；但协议分配的邮件唯一标识符（unique identifier，UID）等权威元数据不可随意删除。</p>
+<h3 id="邮箱访问服务">邮箱访问服务</h3>
+<p>该组件面向客户端提供消息读取、文件夹同步、标志修改与删除，支持 IMAP（<a href="#ref-rfc3501">RFC 3501 §2.3.1.1</a>）、POP3 或私有 HTTP API。组件负责维护多端同步一致性，在客户端断线或并发访问时不破坏底层存储状态。</p>
+<h3 id="反垃圾与安全扫描">反垃圾与安全扫描</h3>
+<p>核心职责是解析多用途互联网邮件扩展（Multipurpose Internet Mail Extensions，MIME）结构，执行规则、统计与指纹分析，输出处置判定。典型接口为过滤插件协议（如 Milter）或专用扫描请求 IPC。扫描器输出评分、处置动作与策略版本，最终阻断或接收由接入组件执行；系统必须明确超时策略（如放行或暂缓）。</p>
+<h3 id="控制台与管理服务">控制台与管理服务</h3>
+<p>该组件编排账号生命周期、路由规则、配额、配置版本发布与审计，对外暴露 RESTful HTTP API 或管理 RPC。其核心责任是保证配置版本发布可追踪，在组件无法生效时支持审计与回退补偿。</p>
+<p>在架构设计中，身份认证验证凭据真实性，而发件授权判定该身份是否有权使用指定信封发件人发信。全文检索索引可按需重建，但 <a href="#ref-rfc3501">RFC 3501 §2.3.1.1</a> 定义的递增 UID 与有效性标识（<code>UIDVALIDITY</code>）属于邮箱核心元数据，不可当作临时缓存清空。</p>
+<h2 id="一封邮件的数据流与控制流">一封邮件的数据流与控制流</h2>
+<p>为了理清组件交互，以“自研控制面 + 接入成熟内核”的架构为例，追踪一封包含附件的邮件处理流程。本文选择“在队列前通过同步接口接入扫描引擎”作为教学拓扑，明确区分队列前阻断与队列后异步重试。</p>
+<h3 id="1-配置预置控制流">1. 配置预置（控制流）</h3>
+<p>数据流流转前，控制面必须完成基础元数据发布：</p>
+<ol>
+<li>管理端提交变更请求，管理 API 执行操作者授权检查，校验通过后持久化期望配置版本（创建域 <code>example.com</code> 及账号 <code>alice@example.com</code>、<code>bob@example.com</code>）。</li>
+<li>控制面生成配置产物并向 MTA 与存储服务下发变更。</li>
+<li>组件加载配置并回报实际生效版本；若部分组件更新失败导致版本不一致，控制面记录失败并触发审计与重试，重试或回退同样必须等待组件实际回报生效版本。</li>
+</ol>
+<h3 id="2-构造与提交数据流">2. 构造与提交（数据流）</h3>
+<ol>
+<li><strong>草稿与附件处理</strong>：Alice 编写邮件。Webmail 后端先暂存上传附件，再读取附件内容构造 MIME 消息；草稿保存在客户端本地或服务端草稿箱。</li>
+<li><strong>连接建立与安全传输</strong>：Alice 的客户端连接提交端口（标准 TCP 587），在经过传输层安全（Transport Layer Security，TLS）保护且已建立授权的提交会话内准备发送邮件（本文省略底层传输协商细节）。</li>
+<li><strong>认证与授权校验</strong>：按 <a href="#ref-rfc6409">RFC 6409 §4.3</a> 建立授权会话（本文场景选用 AUTH 认证凭据），校验发件人 Alice 是否有权以 <code>alice@example.com</code> 发信。</li>
+<li><strong>事务协商</strong>：Alice 发送 <code>MAIL FROM:&#x3C;alice@example.com></code> 与 <code>RCPT TO:&#x3C;bob@example.com></code>，MTA 校验地址与本地域名配置，返回 250。</li>
+</ol>
+<h3 id="3-扫描排队与确认数据流">3. 扫描、排队与确认（数据流）</h3>
+<ol>
+<li><strong>数据传输</strong>：客户端发送 <code>DATA</code> 命令，流式发送符合格式的邮件头与 MIME 实体。</li>
+<li><strong>队列前扫描接入</strong>：在 DATA 最终响应前，MTA 将信封与原始内容提供给扫描适配器；扫描引擎解析 MIME 结构并返回处置建议（通过、打标或拒绝）及策略版本。</li>
+<li><strong>满足持久性与确认</strong>：MTA 满足约定持久性（如落盘写入队列 Spool）后，向客户端发送 <code>250 OK: queued as &#x3C;QueueID></code>。自此，投递责任正式由客户端移交至 MTA（<a href="#ref-rfc5321">RFC 5321 §4.2.5</a>）。</li>
+<li><strong>已发送副本同步</strong>：Webmail 后端在发信确认后通过内部 API 直接写入“已发送”文件夹（或由通用客户端通过 IMAP <code>APPEND</code> 保存，<a href="#ref-rfc3501">RFC 3501 §6.3.11</a>）；这属于独立动作，不代表收件方已送达。</li>
+</ol>
+<h3 id="4-本地投递出站与访问数据流">4. 本地投递、出站与访问（数据流）</h3>
+<ol>
+<li><strong>队列调度</strong>：MTA 队列管理器解析收件人路由。若收件人为外部域，则走 SMTP 出站连接移交远端；本文 <code>bob@example.com</code> 属于本地托管域，调度本地投递任务。</li>
+<li><strong>LMTP 投递交互</strong>：MTA 连接本地存储服务的 LMTP 接口（<a href="#ref-rfc2033">RFC 2033 §4.2</a>），按协议传输信封与正文。</li>
+<li><strong>存储提交</strong>：存储服务提交邮件内容与必要元数据，按约定返回 <code>250 OK</code>（全文索引允许异步延迟建立）。</li>
+<li><strong>队列移除</strong>：MTA 确认所有收件人状态均已结算后，将消息移出活动队列。</li>
+<li><strong>客户端读取</strong>：Bob 登录 IMAP 服务，获取邮件列表并读取正文，完成收发闭环。</li>
+</ol>
+<h2 id="基础设施依赖与管理面集成">基础设施依赖与管理面集成</h2>
+<p>邮件系统的稳定运行依赖基础环境配合：</p>
+<ul>
+<li><strong>DNS 与路由配置</strong>：入站需要 MX 记录与对应 A/AAAA 主机解析；出站按规划配置对应 DNS 记录（如 SPF、DKIM、DMARC）与反向解析（PTR），并选择直接外发或经由上游中继。</li>
+<li><strong>网络与传输保护</strong>：规划入站服务端口与出站连接策略，按域名配置合法 TLS 证书，并设定安全证书轮换机制。</li>
+<li><strong>凭据与目录库</strong>：维护域、账号、凭据哈希与路由映射，支持认证与查询。</li>
+<li><strong>磁盘存储</strong>：为队列与邮件存储规划足够的容量、I/O 吞吐与备份机制。</li>
+</ul>
+<p>在控制面自研中，配置变更应采用带版本追踪的流程，避免无审计直接修改运行时文件：</p>
+<ol>
+<li>管理端提交变更请求，管理 API 校验格式并持久化期望配置版本。</li>
+<li>系统生成配置产物并下发至组件驱动器。</li>
+<li>组件驱动器执行自检；若失败则记录审计并通知重试或回退。</li>
+<li>组件重载成功后回报实际生效版本，控制面完成状态确认。</li>
+</ol>
+<h2 id="局部失败场景与端到端验收设计">局部失败场景与端到端验收设计</h2>
+<p>为了验证系统在异常边界下的可靠性，需针对多收件人局部失败建立确定性处理。</p>
+<h3 id="局部失败验证案例多收件人投递的部分临时失败">局部失败验证案例：多收件人投递的部分临时失败</h3>
+<p>假设 Alice 向同系统的两个本地收件人发送同一封邮件：<code>bob@example.com</code> 与 <code>charlie@example.com</code>。MTA 排队后通过 LMTP（<a href="#ref-rfc2033">RFC 2033 §4.2</a>）向本地投递代理发起投递，以下为教学示意交互：</p>
+<pre class="astro-code astro-code-themes min-light night-owl" style="--shiki-light:#24292eff;--shiki-dark:#d6deeb;--shiki-light-bg:#ffffff;--shiki-dark-bg:#011627; overflow-x: auto;--file-name-offset: -0.75rem;" tabindex="0" data-language="plaintext"><code><span class="line"><span>S: 220 storage.local LMTP ready</span></span>
+<span class="line"><span>C: LHLO mta.local</span></span>
+<span class="line"><span>S: 250-storage.local</span></span>
+<span class="line"><span>S: 250 PIPELINING</span></span>
+<span class="line"><span>C: MAIL FROM:&#x3C;alice@example.com></span></span>
+<span class="line"><span>S: 250 2.1.0 OK</span></span>
+<span class="line"><span>C: RCPT TO:&#x3C;bob@example.com></span></span>
+<span class="line"><span>S: 250 2.1.5 OK</span></span>
+<span class="line"><span>C: RCPT TO:&#x3C;charlie@example.com></span></span>
+<span class="line"><span>S: 250 2.1.5 OK</span></span>
+<span class="line"><span>C: DATA</span></span>
+<span class="line"><span>S: 354 Start mail input; end with &#x3C;CRLF>.&#x3C;CRLF></span></span>
+<span class="line"><span>C: ... [邮件正文] ...</span></span>
+<span class="line"><span>C: .</span></span>
+<span class="line"><span>S: 250 2.1.5 &#x3C;bob@example.com> Delivered</span></span>
+<span class="line"><span>S: 452 4.2.2 &#x3C;charlie@example.com> Mailbox full: over quota</span></span></code></pre>
+<p>根据 LMTP 规范，服务端在 DATA 终结符后按 RCPT 顺序逐一返回状态：</p>
+<ol>
+<li><strong>Bob 成功</strong>：返回 <code>250 2.1.5</code>，该收件人投递责任移交存储。MTA 记录 Bob 已成功。</li>
+<li><strong>Charlie 临时失败</strong>：返回 <code>452 4.2.2</code>，表示存储受限。</li>
+<li><strong>独立重试调度</strong>：MTA 仅对 Charlie 按约定重试计划重新调度，成功且已记录的 Bob 在本次调度分支中不再重新投递。</li>
+<li><strong>确认丢失边界</strong>：若网络在应答返回瞬间中断导致确认丢失，MTA 仍可能因无法确认结果而重试，协议层面无法保证绝对恰好一次送达；系统不能单凭 Message-ID 字段作为全局唯一幂等键而静默丢弃邮件。</li>
+</ol>
+<h3 id="端到端系统验收场景待执行设计">端到端系统验收场景（待执行设计）</h3>
+<p>以下七项场景为工程团队在系统交付前应执行的健壮性验收设计：</p>
+<h3 id="权限与管理策略">权限与管理策略</h3>
+<p>分别测试禁用账号登录与仅撤销发件提交权两种动作。动作 A 应在约定传播期限内拒绝 IMAP 访问及发件认证；动作 B 应拒绝新发信授权，但不得自动阻断其正常登录 IMAP 读取历史邮件。验证判据是检查管理审计记录与各组件生效回报，核对在约定传播期限内 SMTP 与 IMAP 的协议返回行为。</p>
+<h3 id="持久化与进程重启">持久化与进程重启</h3>
+<p>在客户端发送 <code>.</code> 终结符、MTA 满足约定持久性写入并返回 250 的瞬间，重启 MTA 进程。预期系统重启后队列能自动扫描未完成任务，消息信封与正文完整保留，并恢复投递调度。证据提取点是检查队列 spool 目录对应任务文件，核验重启日志包含恢复调度记录。</p>
+<h3 id="反垃圾扫描超时">反垃圾扫描超时</h3>
+<p>模拟扫描引擎无响应导致扫描接口请求超时。预期接入组件按预设超时策略处置（如放行打标或返回 4xx 临时错误）。证据提取点是检查接入日志中的超时告警，核对邮件头告警标记或客户端收到的 4xx 错误码。</p>
+<h3 id="多收件人部分失败">多收件人部分失败</h3>
+<p>发送一封包含多个本地收件人的邮件，部分地址返回 4xx 临时失败或 5xx 永久失败。预期成功者记录成功；临时失败者独立排队重试；永久失败者触发退信通知（空反向路径例外）。证据提取点是检查队列调度日志中的分叉记录，验证成功收件人未因失败收件人而被重复调度。</p>
+<h3 id="多端访问同步">多端访问同步</h3>
+<p>客户端 A 标记邮件已读并删除，客户端 B 同时在线连接同一邮箱。预期服务端安全更新邮件标志与状态，双客户端按各自支持的同步方式获知最新状态。证据提取点是检查客户端网络交互与本地缓存状态，确认 UID 与 <code>UIDVALIDITY</code> 状态符合规范。</p>
+<h3 id="存储备份与恢复">存储备份与恢复</h3>
+<p>从备份还原邮件存储目录，随后写入新邮件。预期系统核对元数据映射；若无法保证原有映射，须按协议更换 <code>UIDVALIDITY</code> 触发客户端全量同步。证据提取点是检查恢复后新分配的 UID 与 <code>UIDVALIDITY</code>，确认客户端重新建立同步缓存。</p>
+<h3 id="版本升级与兼容回退">版本升级与兼容回退</h3>
+<p>执行配置或存储数据结构升级，并执行回退测试。预期事先确认数据格式兼容窗口；不可逆迁移必须有可验证的备份恢复路径；系统可恢复至前置版本。证据提取点是用受控副本验证回退或恢复后的邮件正文、UID 映射完整性，并校验收发与访问链路可用性。</p>
+<h2 id="用户界面与后续阅读导航">用户界面与后续阅读导航</h2>
+<p>明确核心架构后，上层扩展的边界随之清晰：</p>
+<ul>
+<li><strong>自研客户端界面能力</strong>：若自研 Webmail，业务代码需负责草稿箱暂存、附件暂存与 MIME 组装、发信与已发送副本保存、基于邮件头信息的会话组织、检索分页，以及 HTML 邮件安全呈现（如隔离不可信脚本执行、严格控制远端资源加载）。</li>
+<li><strong>选配协作服务</strong>：组织地址簿（如 CardDAV）、日历协同（如 CalDAV）、移动端推送唤醒与合规归档留存等能力，属于产品选配功能，可在邮件基础能力稳定后独立接入，避免与基础核心架构耦合。</li>
+<li><strong>后续阅读方向</strong>：邮箱后端系统的深入实现可沿着三条主线逐步展开：第一阶段聚焦传输进程模型、会话状态与持久队列调度；第二阶段深入账号认证目录接入、邮箱物理存储与索引同步；第三阶段落实反垃圾网关拓扑、检测规则判定与控制面策略发布。</li>
+</ul>
+<h2 id="参考资料">参考资料</h2>
+<ul>
+<li><a id="ref-rfc5598" href="https://www.rfc-editor.org/rfc/rfc5598.html#section-4" target="_blank" rel="noopener noreferrer">RFC 5598 §4: Internet Mail Architecture (2009-07)</a></li>
+<li><a id="ref-rfc5321" href="https://www.rfc-editor.org/rfc/rfc5321.html#section-4.2.5" target="_blank" rel="noopener noreferrer">RFC 5321 §4.2.5 &#x26; §6.1: Simple Mail Transfer Protocol (2008-10)</a></li>
+<li><a id="ref-rfc6409" href="https://www.rfc-editor.org/rfc/rfc6409.html#section-1" target="_blank" rel="noopener noreferrer">RFC 6409 §1 &#x26; §4.3: Message Submission for Mail (2011-11)</a></li>
+<li><a id="ref-rfc2033" href="https://www.rfc-editor.org/rfc/rfc2033.html#section-4.2" target="_blank" rel="noopener noreferrer">RFC 2033 §4.2: Local Mail Transfer Protocol (1996-10)</a></li>
+<li><a id="ref-rfc3501" href="https://www.rfc-editor.org/rfc/rfc3501.html#section-2.3.1.1" target="_blank" rel="noopener noreferrer">RFC 3501 §2.3.1.1 &#x26; §6.3.11: INTERNET MESSAGE ACCESS PROTOCOL - VERSION 4rev1 (2003-03)</a></li>
+</ul>
+<!--/email_off--></article><hr class="my-8 border-dashed"><div id="btt-btn-container" class="fixed inset-e-4 bottom-8 z-50 md:sticky md:inset-e-auto md:float-end md:me-1 translate-y-14 opacity-0 transition duration-500"><button data-button="back-to-top" class="group bg-background relative px-2 py-1 size-14 rounded-full shadow-xl md:h-8 md:w-fit md:rounded-md md:shadow-none md:focus-visible:rounded-none md:bg-background/35 md:bg-clip-padding md:backdrop-blur-lg"><span id="progress-indicator" class="absolute inset-0 -z-10 block size-14 scale-110 rounded-full bg-transparent md:hidden md:h-8 md:rounded-md"></span><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="inline-block rotate-90 md:hidden" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M5 12h14M5 12l6 6M5 12l6-6" /></svg><span class="group-hover:text-accent sr-only text-sm md:not-sr-only"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="inline-block size-4" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M12 5v14M16 9l-4-4M8 9l4-4" /></svg> 回到顶部</span></button></div><script data-astro-rerun>
+  function backToTop() {
+    const rootElement = document.documentElement;
+    const btnContainer = document.querySelector("#btt-btn-container");
+    const backToTopBtn = document.querySelector("[data-button='back-to-top']");
+    const progressIndicator = document.querySelector("#progress-indicator");
+
+    if (!rootElement || !btnContainer || !backToTopBtn || !progressIndicator)
+      return;
+
+    backToTopBtn.addEventListener("click", () => {
+      document.body.scrollTop = 0;
+      document.documentElement.scrollTop = 0;
+    });
+
+    let lastVisible = null;
+    function handleScroll() {
+      const scrollTotal = rootElement.scrollHeight - rootElement.clientHeight;
+      const scrollTop = rootElement.scrollTop;
+      const scrollPercent = Math.floor((scrollTop / scrollTotal) * 100);
+
+      progressIndicator.style.setProperty(
+        "background-image",
+        `conic-gradient(var(--accent), var(--accent) ${scrollPercent}%, transparent ${scrollPercent}%)`
+      );
+
+      const isVisible = scrollTop / scrollTotal > 0.3;
+
+      if (isVisible !== lastVisible) {
+        btnContainer.classList.toggle("opacity-100", isVisible);
+        btnContainer.classList.toggle("translate-y-0", isVisible);
+        btnContainer.classList.toggle("opacity-0", !isVisible);
+        btnContainer.classList.toggle("translate-y-14", !isVisible);
+        lastVisible = isVisible;
+      }
+    }
+
+    let ticking = false;
+    document.addEventListener("scroll", () => {
+      if (!ticking) {
+        window.requestAnimationFrame(() => {
+          handleScroll();
+          ticking = false;
+        });
+        ticking = true;
+      }
+    });
+  }
+  backToTop();
+</script><ul class="mt-4 mb-8 flex flex-wrap gap-4 sm:my-8"><li><a data-astro-transition-scope="astro-bztu2lml-1" href="/tags/邮箱系统/" class="flex items-center gap-0.5 border-foreground border-b-2 border-dashed hover:border-accent hover:text-accent hover:-mt-0.5 focus-visible:text-accent focus-visible:border-none text-sm"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="opacity-80 size-4" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M5 9h14M5 15h14M11 4 7 20M17 4l-4 16" /></svg>邮箱系统</a></li><li><a data-astro-transition-scope="astro-bztu2lml-2" href="/tags/消息队列/" class="flex items-center gap-0.5 border-foreground border-b-2 border-dashed hover:border-accent hover:text-accent hover:-mt-0.5 focus-visible:text-accent focus-visible:border-none text-sm"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="opacity-80 size-4" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M5 9h14M5 15h14M11 4 7 20M17 4l-4 16" /></svg>消息队列</a></li><li><a data-astro-transition-scope="astro-bztu2lml-3" href="/tags/数据存储/" class="flex items-center gap-0.5 border-foreground border-b-2 border-dashed hover:border-accent hover:text-accent hover:-mt-0.5 focus-visible:text-accent focus-visible:border-none text-sm"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="opacity-80 size-4" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M5 9h14M5 15h14M11 4 7 20M17 4l-4 16" /></svg>数据存储</a></li></ul><hr class="my-8 border-dashed"><div data-pagefind-ignore class="my-8 grid grid-cols-1 gap-6 sm:grid-cols-2"><a href="/posts/mail-enterprise-risk-control/" class="flex w-full gap-1 hover:opacity-75"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="inline-block flex-none rtl:rotate-180" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M5 12h14M5 12l6 6M5 12l6-6" /></svg><div><span>上一篇</span><div class="text-accent/85 text-sm">企业邮箱敏感操作控制与租户审计设计</div></div></a><a href="/posts/mail-domain-account-control-plane/" class="flex w-full justify-end gap-1 text-end hover:opacity-75 sm:col-start-2"><div><span>下一篇</span><div class="text-accent/85 text-sm">域、账号与路由配置的管理模型</div></div><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="inline-block flex-none rtl:rotate-180" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M5 12h14M13 18l6-6M13 6l6 6" /></svg></a></div></main><footer class="app-layout mt-auto"><div class="border-border flex flex-col items-center justify-between border-t py-6 sm:flex-row-reverse sm:py-4"><div class="flex flex-wrap items-center gap-1"><a href="https://github.com/SaromChars" title="Sarom Chars 的 GitHub" class="group inline-flex items-center gap-1 hover:text-accent p-2 hover:rotate-6 sm:p-1"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="inline-block size-6 scale-125 fill-transparent stroke-current stroke-2 opacity-90 group-hover:fill-transparent sm:scale-110" viewBox="0 0 24 24"><path stroke="none" d="M0 0h24v24H0z" /><path d="M9 19c-4.3 1.4-4.3-2.5-6-3m12 5v-3.5c0-1 .1-1.4-.5-2 2.8-.3 5.5-1.4 5.5-6a4.6 4.6 0 0 0-1.3-3.2 4.2 4.2 0 0 0-.1-3.2s-1.1-.3-3.5 1.3a12.3 12.3 0 0 0-6.2 0C6.5 2.8 5.4 3.1 5.4 3.1a4.2 4.2 0 0 0-.1 3.2A4.6 4.6 0 0 0 4 9.5c0 4.6 2.7 5.7 5.5 6-.6.6-.6 1.2-.5 2V21" /></svg><span class="sr-only">Sarom Chars 的 GitHub</span></a></div><div class="my-2 flex flex-col items-center whitespace-nowrap sm:flex-row"><span>版权 &#169; 2026</span><span class="hidden sm:inline">&nbsp;|&nbsp;</span><span>保留所有权利。</span></div></div></footer><script type="module">var e=`theme`,t=`light`,n=`dark`;function r(){return localStorage.getItem(e)||(window.matchMedia(`(prefers-color-scheme: dark)`).matches?n:t)}var i=window.__theme?.value??r();function a(){localStorage.setItem(e,i),o()}function o(){let e=document.firstElementChild;e?.setAttribute(`data-theme`,i),e?.classList.toggle(`dark`,i===n),document.querySelector(`#theme-btn`)?.setAttribute(`aria-label`,i);let t=window.getComputedStyle(document.body).backgroundColor;document.querySelector(`meta[name='theme-color']`)?.setAttribute(`content`,t)}function s(){o(),document.querySelector(`#theme-btn`)?.addEventListener(`click`,()=>{i=i===t?n:t,a()})}s(),document.addEventListener(`astro:after-swap`,s),document.addEventListener(`astro:before-swap`,e=>{let t=document.querySelector(`meta[name='theme-color']`)?.getAttribute(`content`);t&&e.newDocument.querySelector(`meta[name='theme-color']`)?.setAttribute(`content`,t)}),window.matchMedia(`(prefers-color-scheme: dark)`).addEventListener(`change`,({matches:e})=>{i=e?n:t,a()});</script></body></html><script type="module">var e=document.querySelector(`#article`);if(e?.querySelector(`a[href^="#ref-"]`)){let t=null,n=!1,r=document.createElement(`button`);r.type=`button`,r.className=`citation-return`,r.textContent=`返回阅读位置`,r.setAttribute(`data-pagefind-ignore`,``),e.addEventListener(`click`,n=>{if(n.button!==0||n.metaKey||n.ctrlKey||n.shiftKey||n.altKey)return;let i=n.target instanceof Element?n.target.closest(`a[href^="#ref-"]`):null;if(!i||!e.contains(i))return;let a=i.hash,o=document.getElementById(decodeURIComponent(a.slice(1)));o&&e.contains(o)&&(t={source:i,url:window.location.href,top:window.scrollY,left:window.scrollX,targetHash:a},o.insertAdjacentElement(`afterend`,r))}),r.addEventListener(`click`,()=>{if(!t||n)return;let e=t,i=i=>{r.remove(),window.requestAnimationFrame(()=>{window.requestAnimationFrame(()=>{e.source.focus({preventScroll:!0}),window.scrollTo({top:e.top,left:e.left,behavior:`instant`}),t=null,n=!1,i?.()})})};window.location.href===e.url?i():(n=!0,window.addEventListener(`popstate`,()=>{let e=window.history.scrollRestoration;window.history.scrollRestoration=`manual`,window.setTimeout(()=>{i(()=>{window.history.scrollRestoration=e})},0)},{once:!0}),window.history.back())}),window.addEventListener(`hashchange`,()=>{!n&&t&&window.location.hash!==t.targetHash&&(r.remove(),t=null)})}</script><script data-astro-rerun>
+  function createProgressBar() {
+    const progressContainer = document.createElement("div");
+    progressContainer.className =
+      "progress-container fixed top-0 z-10 h-1 w-full bg-background";
+
+    const progressBar = document.createElement("div");
+    progressBar.className = "progress-bar h-1 w-0 bg-accent";
+    progressBar.id = "myBar";
+
+    progressContainer.appendChild(progressBar);
+    document.body.appendChild(progressContainer);
+  }
+  createProgressBar();
+
+  function updateScrollProgress() {
+    document.addEventListener("scroll", () => {
+      const winScroll =
+        document.body.scrollTop || document.documentElement.scrollTop;
+      const height =
+        document.documentElement.scrollHeight -
+        document.documentElement.clientHeight;
+      const scrolled = (winScroll / height) * 100;
+      if (document) {
+        const myBar = document.getElementById("myBar");
+        if (myBar) {
+          myBar.style.width = scrolled + "%";
+        }
+      }
+    });
+  }
+  updateScrollProgress();
+
+  function addHeadingLinks() {
+    const headings = Array.from(
+      document.querySelectorAll("h2, h3, h4, h5, h6")
+    );
+    for (const heading of headings) {
+      heading.classList.add("group");
+      const link = document.createElement("a");
+      link.className =
+        "heading-link ms-2 no-underline opacity-75 md:opacity-0 md:group-hover:opacity-100 md:focus:opacity-100";
+      link.href = "#" + heading.id;
+
+      const span = document.createElement("span");
+      span.ariaHidden = "true";
+      span.innerText = "#";
+      link.appendChild(span);
+      heading.appendChild(link);
+    }
+  }
+  addHeadingLinks();
+
+  function attachCopyButtons() {
+    const copyButtonLabel = "Copy";
+    const codeBlocks = Array.from(document.querySelectorAll("pre"));
+
+    for (const codeBlock of codeBlocks) {
+      const wrapper = document.createElement("div");
+      wrapper.style.position = "relative";
+
+      const computedStyle = getComputedStyle(codeBlock);
+      const hasFileNameOffset =
+        computedStyle.getPropertyValue("--file-name-offset").trim() !== "";
+
+      const topClass = hasFileNameOffset
+        ? "top-(--file-name-offset)"
+        : "-top-3";
+
+      const copyButton = document.createElement("button");
+      copyButton.className = `copy-code absolute end-3 ${topClass} rounded bg-muted border border-muted px-2 py-1 text-xs leading-4 text-foreground font-medium`;
+      copyButton.innerHTML = copyButtonLabel;
+      codeBlock.setAttribute("tabindex", "0");
+      codeBlock.appendChild(copyButton);
+
+      codeBlock?.parentNode?.insertBefore(wrapper, codeBlock);
+      wrapper.appendChild(codeBlock);
+
+      copyButton.addEventListener("click", async () => {
+        await copyCode(codeBlock, copyButton);
+      });
+    }
+
+    async function copyCode(block, button) {
+      const code = block.querySelector("code");
+      const text = code?.innerText;
+
+      await navigator.clipboard.writeText(text ?? "");
+
+      button.innerText = "Copied";
+
+      setTimeout(() => {
+        button.innerText = copyButtonLabel;
+      }, 700);
+    }
+  }
+  attachCopyButtons();
+
+  /** Accessible image lightbox for article images. */
+  function initLightbox() {
+    const article = document.getElementById("article");
+    if (!article) return;
+
+    const prefersReducedMotion = () =>
+      window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+    let overlay = null;
+    let lastFocused = null;
+    let removeDragListeners = null;
+
+    // Defer attribute mutations so they don't push the LCP timestamp.
+    // Event listeners below use delegation and don't need the attributes to exist yet.
+    requestAnimationFrame(() => {
+      const images = Array.from(article.querySelectorAll("img"));
+      for (const image of images) {
+        if (image.closest("a")) continue;
+        image.setAttribute("role", "button");
+        image.setAttribute("tabindex", "0");
+        image.setAttribute("aria-haspopup", "dialog");
+        image.setAttribute(
+          "aria-label",
+          image.alt ? `Zoom image: ${image.alt}` : "Zoom image"
+        );
+      }
+    });
+
+    function open(src, alt, trigger) {
+      if (overlay) return;
+      lastFocused = trigger ?? document.activeElement;
+
+      overlay = document.createElement("div");
+      overlay.setAttribute("role", "dialog");
+      overlay.setAttribute("aria-modal", "true");
+      overlay.setAttribute(
+        "aria-label",
+        alt ? `Image preview: ${alt}` : "Image preview"
+      );
+      overlay.className =
+        "fixed inset-0 z-50 flex cursor-zoom-out items-center justify-center bg-black/70 backdrop-blur-sm opacity-0 transition-opacity duration-200 motion-reduce:transition-none";
+
+      const closeButton = document.createElement("button");
+      closeButton.type = "button";
+      closeButton.setAttribute("aria-label", "Close image preview");
+      closeButton.className =
+        "absolute end-4 top-4 z-1 flex size-11 items-center justify-center rounded bg-black/50 text-3xl leading-none text-white";
+      closeButton.innerHTML = "&#10005;";
+      closeButton.addEventListener("click", close);
+
+      const image = document.createElement("img");
+      image.src = src;
+      image.alt = "";
+      image.className =
+        "max-h-[90dvh] max-w-[90dvw] cursor-default object-contain transition-transform duration-100 ease-out motion-reduce:transition-none data-[zoom=drag]:cursor-grabbing data-[zoom=drag]:transition-none data-[zoom=in]:cursor-grab";
+
+      overlay.append(closeButton, image);
+      overlay.addEventListener("click", e => {
+        if (e.target === overlay && currentScale <= 1) close();
+      });
+
+      let currentScale = 1;
+      let translateX = 0;
+      let translateY = 0;
+      let initialDist = 0;
+      let initialScale = 1;
+      let panStartX = 0;
+      let panStartY = 0;
+      let panStartTranslateX = 0;
+      let panStartTranslateY = 0;
+      let lastTapTime = 0;
+
+      function applyTransform() {
+        image.style.transform = `scale(${currentScale}) translate(${translateX}px, ${translateY}px)`;
+        // A backdrop click only closes at fit size, so drop the zoom-out cursor while zoomed.
+        overlay?.classList.toggle("cursor-zoom-out", currentScale <= 1);
+      }
+
+      function resetTransform() {
+        currentScale = 1;
+        translateX = 0;
+        translateY = 0;
+        image.style.transform = "";
+        image.removeAttribute("data-zoom");
+        overlay?.classList.add("cursor-zoom-out");
+      }
+
+      // Keep the zoomed image from being panned past its edges.
+      function clampTranslate() {
+        if (!overlay) return;
+        const maxX = Math.max(
+          0,
+          (image.clientWidth - overlay.clientWidth / currentScale) / 2
+        );
+        const maxY = Math.max(
+          0,
+          (image.clientHeight - overlay.clientHeight / currentScale) / 2
+        );
+        translateX = Math.min(maxX, Math.max(-maxX, translateX));
+        translateY = Math.min(maxY, Math.max(-maxY, translateY));
+      }
+
+      overlay.addEventListener(
+        "touchstart",
+        e => {
+          const t = e.touches;
+          if (t.length === 2) {
+            image.setAttribute("data-zoom", "drag");
+            initialDist = Math.hypot(
+              t[1].clientX - t[0].clientX,
+              t[1].clientY - t[0].clientY
+            );
+            initialScale = currentScale;
+          } else if (t.length === 1) {
+            const now = Date.now();
+            if (now - lastTapTime < 300) {
+              e.preventDefault();
+              if (currentScale > 1) {
+                resetTransform();
+              } else {
+                currentScale = 2;
+                translateX = 0;
+                translateY = 0;
+                applyTransform();
+                image.setAttribute("data-zoom", "in");
+              }
+              lastTapTime = 0;
+              panStartX = t[0].clientX;
+              panStartY = t[0].clientY;
+              panStartTranslateX = translateX;
+              panStartTranslateY = translateY;
+            } else {
+              lastTapTime = now;
+              if (currentScale > 1) {
+                image.setAttribute("data-zoom", "drag");
+                panStartX = t[0].clientX;
+                panStartY = t[0].clientY;
+                panStartTranslateX = translateX;
+                panStartTranslateY = translateY;
+              }
+            }
+          }
+        },
+        { passive: false }
+      );
+
+      overlay.addEventListener(
+        "touchmove",
+        e => {
+          const t = e.touches;
+          if (t.length === 2) {
+            e.preventDefault();
+            const dist = Math.hypot(
+              t[1].clientX - t[0].clientX,
+              t[1].clientY - t[0].clientY
+            );
+            const oldScale = currentScale;
+            currentScale = Math.min(
+              4,
+              Math.max(1, initialScale * (dist / initialDist))
+            );
+
+            // Zoom to the geometric center of the two fingers
+            const midX = (t[0].clientX + t[1].clientX) / 2;
+            const midY = (t[0].clientY + t[1].clientY) / 2;
+            const ox = overlay.clientWidth / 2;
+            const oy = overlay.clientHeight / 2;
+            translateX =
+              (midX - ox) * (1 / currentScale - 1 / oldScale) + translateX;
+            translateY =
+              (midY - oy) * (1 / currentScale - 1 / oldScale) + translateY;
+            clampTranslate();
+            applyTransform();
+          } else if (t.length === 1) {
+            if (currentScale > 1) {
+              e.preventDefault();
+              image.setAttribute("data-zoom", "drag");
+              translateX =
+                panStartTranslateX + (t[0].clientX - panStartX) / currentScale;
+              translateY =
+                panStartTranslateY + (t[0].clientY - panStartY) / currentScale;
+              clampTranslate();
+              applyTransform();
+            } else {
+              e.preventDefault();
+            }
+          }
+        },
+        { passive: false }
+      );
+
+      overlay.addEventListener("touchend", e => {
+        if (e.touches.length === 0) {
+          if (currentScale > 1) {
+            image.setAttribute("data-zoom", "in");
+          } else {
+            image.removeAttribute("data-zoom");
+          }
+          if (currentScale <= 1.05) resetTransform();
+        }
+      });
+
+      overlay.addEventListener("touchcancel", e => {
+        if (e.touches.length === 0) {
+          if (currentScale > 1) {
+            image.setAttribute("data-zoom", "in");
+          } else {
+            image.removeAttribute("data-zoom");
+          }
+          if (currentScale <= 1.05) resetTransform();
+        }
+      });
+
+      overlay.addEventListener(
+        "wheel",
+        e => {
+          e.preventDefault();
+          const oldScale = currentScale;
+          const delta = -e.deltaY * 0.001;
+          currentScale = Math.min(4, Math.max(1, currentScale * (1 + delta)));
+
+          if (currentScale <= 1.05) {
+            resetTransform();
+          } else {
+            image.setAttribute("data-zoom", "in");
+            // Zoom to cursor: adjust translate so the point under cursor stays fixed
+            const ox = overlay.clientWidth / 2;
+            const oy = overlay.clientHeight / 2;
+            translateX =
+              (e.clientX - ox) * (1 / currentScale - 1 / oldScale) + translateX;
+            translateY =
+              (e.clientY - oy) * (1 / currentScale - 1 / oldScale) + translateY;
+            clampTranslate();
+            applyTransform();
+          }
+        },
+        { passive: false }
+      );
+
+      let isMouseDown = false;
+      let mouseStartX = 0;
+      let mouseStartY = 0;
+
+      overlay.addEventListener("mousedown", e => {
+        if (e.button !== 0 || currentScale <= 1) return;
+        if (e.target.closest("button")) return;
+        isMouseDown = true;
+        mouseStartX = e.clientX;
+        mouseStartY = e.clientY;
+        panStartTranslateX = translateX;
+        panStartTranslateY = translateY;
+        image.setAttribute("data-zoom", "drag");
+        e.preventDefault();
+      });
+
+      function onMouseMove(e) {
+        if (!isMouseDown || !overlay) return;
+        translateX =
+          panStartTranslateX + (e.clientX - mouseStartX) / currentScale;
+        translateY =
+          panStartTranslateY + (e.clientY - mouseStartY) / currentScale;
+        clampTranslate();
+        applyTransform();
+      }
+
+      function onMouseUp() {
+        if (!isMouseDown) return;
+        isMouseDown = false;
+        if (currentScale > 1) {
+          image.setAttribute("data-zoom", "in");
+        } else {
+          image.removeAttribute("data-zoom");
+        }
+      }
+
+      document.addEventListener("mousemove", onMouseMove);
+      document.addEventListener("mouseup", onMouseUp);
+      removeDragListeners = () => {
+        document.removeEventListener("mousemove", onMouseMove);
+        document.removeEventListener("mouseup", onMouseUp);
+      };
+
+      document.body.appendChild(overlay);
+      document.documentElement.style.overflow = "hidden";
+      document.addEventListener("keydown", onKeyDown);
+      window.__closeLightbox = close;
+
+      requestAnimationFrame(() => overlay?.classList.add("opacity-100"));
+      closeButton.focus();
+    }
+
+    function close() {
+      if (!overlay) return;
+      const el = overlay;
+      overlay = null;
+      el.classList.add("pointer-events-none");
+      window.__closeLightbox = null;
+
+      document.removeEventListener("keydown", onKeyDown);
+      removeDragListeners?.();
+      removeDragListeners = null;
+      document.documentElement.style.overflow = "";
+      lastFocused?.focus();
+      lastFocused = null;
+
+      if (prefersReducedMotion()) {
+        el.remove();
+        return;
+      }
+      const remove = () => el.remove();
+      el.addEventListener("transitionend", remove, { once: true });
+      setTimeout(remove, 250); // fallback in case transitionend never fires
+      el.classList.remove("opacity-100");
+    }
+
+    function onKeyDown(e) {
+      if (e.key === "Escape") {
+        close();
+      } else if (e.key === "Tab") {
+        trapFocus(e);
+      }
+    }
+
+    // Keep keyboard focus inside the open dialog.
+    function trapFocus(e) {
+      if (!overlay) return;
+      const focusables = overlay.querySelectorAll(
+        'a[href], button, [tabindex]:not([tabindex="-1"])'
+      );
+      if (focusables.length === 0) return;
+      const first = focusables[0];
+      const last = focusables[focusables.length - 1];
+      if (e.shiftKey && document.activeElement === first) {
+        e.preventDefault();
+        last.focus();
+      } else if (!e.shiftKey && document.activeElement === last) {
+        e.preventDefault();
+        first.focus();
+      }
+    }
+
+    function triggerFromEvent(e) {
+      const image = e.target.closest("img");
+      if (!image || !article.contains(image) || image.closest("a")) return null;
+      return image;
+    }
+
+    function activate(image) {
+      open(image.currentSrc || image.src, image.alt, image);
+    }
+
+    article.addEventListener("click", e => {
+      const image = triggerFromEvent(e);
+      if (!image) return;
+      e.preventDefault();
+      activate(image);
+    });
+
+    article.addEventListener("keydown", e => {
+      if (e.key !== "Enter" && e.key !== " " && e.key !== "Spacebar") return;
+      const image = triggerFromEvent(e);
+      if (!image) return;
+      e.preventDefault();
+      activate(image);
+    });
+  }
+  initLightbox();
+
+  if (!window.__lightboxSwapBound) {
+    window.__lightboxSwapBound = true;
+    document.addEventListener("astro:before-swap", () =>
+      window.__closeLightbox?.()
+    );
+  }
+
+  document.addEventListener("astro:after-swap", () =>
+    window.scrollTo({ left: 0, top: 0, behavior: "instant" })
+  );
+</script>
