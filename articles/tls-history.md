@@ -12,9 +12,9 @@ tags: [TLS, 网络安全]
 
 TLS（Transport Layer Security，传输层安全协议）源于 Netscape 的 SSL。1999 年，IETF 发布 TLS 1.0；TLS 1.2 的规范发表于 2008 年。TLS 1.3 这里按 2018 年 3 月 20 日公开的 draft-28 介绍，仍将它作为草案材料。[RFC 2246](#ref-rfc2246) · [RFC 5246](#ref-rfc5246) · [TLS 1.3 draft-28](#ref-draft-ietf-tls-tls13-28)
 
-## TLS 为什么会出现：可靠送达不等于安全送达
+## TLS 的起点：可靠传输与安全传输
 
-设想浏览器通过网络提交一段登录信息。如果应用直接发送明文，即使底层传输可以可靠地把字节送到另一端，也没有自动解决三个问题：经过链路的人能否读到内容、内容会不会被修改、连接的另一端是不是你想访问的服务。
+设想浏览器通过网络提交一段登录信息。如果应用直接发送明文，即使底层传输可以可靠地把字节送到另一端，仍留下链路窃听、内容篡改和对端身份冒充的风险。
 
 TLS 把这些目标组合起来：**保密性**保护内容，**完整性**帮助发现篡改，<strong>身份认证（authentication）</strong>帮助确认对端身份。实际 HTTPS 中通常由服务器出示数字证书（digital certificate），客户端验证证书和目标名称；是否认证客户端取决于应用需求。TLS 的保护范围也有边界：终端被控制、应用主动泄露数据、或用户向恶意网站提交信息，都不能只靠加密链路解决。[TLS 的目标，RFC 5246 §1](#ref-rfc5246-section-1)
 
@@ -24,7 +24,7 @@ TLS 把这些目标组合起来：**保密性**保护内容，**完整性**帮�
 
 下表记录协议及标准文档的关键节点。**RFC 的归档时间、协议首次出现的时间和浏览器实际淘汰的时间不是一回事。**
 
-| 时间 | 节点 | 应该记住什么 | 一手来源 |
+| 时间 | 节点 | 节点意义 | 一手来源 |
 | --- | --- | --- | --- |
 | 1995 年 | Netscape SSL 2.0 文档 | TLS 出现之前的 SSL 路线；RFC 6176 引用的原始 SSL 2.0 文档日期为 1995-02-09 | [RFC 6176 §6.2](#ref-rfc6176-section-6.2) |
 | 1996 年 | SSL 3.0 | 后来 TLS 1.0 的直接基础；RFC 6101 归档的是 1996-11-18 版本 | [RFC 6101 摘要](#ref-rfc6101) |
@@ -39,7 +39,7 @@ TLS 把这些目标组合起来：**保密性**保护内容，**完整性**帮�
 
 部署时可以参考 2015 年的 RFC 7525：要求支持并优先协商 TLS 1.2；对 TLS 1.0 / 1.1 使用 SHOULD NOT，并保留无更高版本可用时的例外。建议、禁止协商和规范状态变化需要分别看。[RFC 7525 §3.1.1](#ref-rfc7525-section-3.1.1)
 
-## SSL 为什么改叫 TLS：既有继承，也有协议变化
+## SSL 3.0 与 TLS 1.0 的继承关系和协议差异
 
 SSL 是 Secure Sockets Layer；TLS 是 Transport Layer Security。两者确有直接继承关系，但把 TLS 1.0 解释成“SSL 3.0 换个名字”会漏掉标准中的实质差异。
 
@@ -73,14 +73,14 @@ draft-28 中，TLS 1.3 把握手收紧：保留 AEAD 数据保护，移除静态
 
 | 阶段 | TLS 1.2（示意） | TLS 1.3 draft-28（示意） |
 | --- | --- | --- |
-| 客户端先说什么 | ClientHello：声明能力 | ClientHello：声明能力，并携带 key_share |
+| 客户端首条消息 | ClientHello：声明能力 | ClientHello：声明能力，并携带 key_share |
 | 服务器第一次回应 | ServerHello、Certificate、ServerKeyExchange、ServerHelloDone | ServerHello，随后发送受握手密钥保护的 EncryptedExtensions、Certificate、CertificateVerify、Finished |
 | 客户端下一步 | 验证服务器，发送 ClientKeyExchange、ChangeCipherSpec、Finished | 验证证书与握手证明，发送 Finished，随后可发应用数据 |
 | 后续 | 服务器发送 ChangeCipherSpec、Finished，客户端收到后可发应用数据 | 服务器验证客户端 Finished；完成此示例中的握手 |
 
 从客户端开始发 ClientHello，到它能够发出常规应用数据，这个简化场景里 TLS 1.2 需要约 **2 个网络往返（2-RTT）**，TLS 1.3 需要约 **1 个网络往返（1-RTT）**。这里没有计入 DNS、底层连接建立、证书验证耗时，也没有覆盖所有恢复路径。HelloRetryRequest 会增加往返，不能把这里的 1-RTT 直接等同于网页加载时间减半。[TLS 1.2 握手：RFC 5246 §7.3](#ref-rfc5246-section-7.3) · [TLS 1.3 草案握手：draft-28 §2](#ref-draft-ietf-tls-tls13-28-section-2)
 
-### 证书、公钥、会话密钥分别做什么
+### 证书、公钥与会话密钥在握手中的分工
 
 这部分可以接着阅读本站以前的[数字签名、证书与中间人攻击笔记](/2018/08/04/thinking_about_ruanyifeng_signature/)。旧笔记中的“用私钥加密摘要”是直观类比；理解现代协议时，应使用“签名算法与验签算法”的表述，不把所有签名都理解成公钥加密的逆过程。
 
@@ -93,7 +93,7 @@ draft-28 中，TLS 1.3 把握手收紧：保留 AEAD 数据保护，移除静态
 
 这些职责在握手里相互配合：只交换密钥而不认证对端，仍可能遭遇中间人攻击；只持有证书而不证明私钥持有，也不能完成这里描述的认证。[draft-28 §4.4](#ref-draft-ietf-tls-tls13-28-section-4.4) · [draft-28 §7](#ref-draft-ietf-tls-tls13-28-section-7)
 
-### 0-RTT 为什么不是“免费加速”
+### 0-RTT 早期数据的适用条件与重放风险
 
 draft-28 允许在特定的预共享密钥或恢复场景下发送早期数据（0-RTT）。它不是首次连接的通用能力，也没有与常规 1-RTT 数据完全相同的安全保证，尤其需要处理**跨连接重放**风险。[draft-28 §2.3](#ref-draft-ietf-tls-tls13-28-section-2.3)
 

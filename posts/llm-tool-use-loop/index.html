@@ -316,7 +316,7 @@
 
 
 <table><thead><tr><th align="left">优化方案</th><th align="left">相对 175B BC 基线偏好率</th><th align="left">算力与交互特征</th></tr></thead><tbody><tr><td align="left">175B PPO 强化学习</td><td align="left">58% 胜率（Figure 4）</td><td align="left">单次推理采样，需调优超参数与 KL 系数</td></tr><tr><td align="left">175B 拒绝采样（Best-of-64）</td><td align="left">68% 胜率（Figure 5）</td><td align="left">采样 64 条完整轨迹，RM 打分挑选最优</td></tr></tbody></table></div>
-<p>对于拒绝采样为何在该实验设置下显著超越纯 RL 的问题，作者在论文 §5.1 中提出了<strong>四种可能的解释（several possible reasons）</strong>：</p>
+<p>对该实验中拒绝采样优于纯 RL 的结果，论文 §5.1 提出了<strong>四种可能的解释（several possible reasons）</strong>：</p>
 <ul>
 <li><strong>尝试更多回答</strong>：拒绝采样直接投入了更多的推理期算力，增加了生成优质回答的机会；</li>
 <li><strong>环境的不可预测性</strong>：多次采样让系统能够探索不同的搜索词与网页，并在多次尝试后，对已找到的材料作事后评估；</li>

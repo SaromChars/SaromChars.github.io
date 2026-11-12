@@ -213,7 +213,7 @@
 <p>这一机制将原本模糊的“整篇回答是否真实”转化为更易判定的“回答陈述是否得到所附引文支持”。人类评估者主要比对陈述与引文片段，降低了判断难度，为后续训练奖励模型提供了噪声相对较低的偏好标签<a href="#ref-nakano-2021"><span id="citation-nakano-sec64-feedback">2 (§6.4)</span></a>。但引文抽取本身并不保证外部来源绝对客观真实，模型依然可能摘录片面甚至错误的内容。</p>
 <hr>
 <h2 id="3-验证机制与对齐策略的选择">3. 验证机制与对齐策略的选择</h2>
-<p>在获取外部材料后，如何确保系统不仅学会操作工具，而且在答案质量、事实准确性与推理成本之间取得平衡？WebGPT 比较了多阶段的训练与验证对齐策略<a href="#ref-nakano-2021"><span id="citation-nakano-sec32">2 (§3.2)</span></a>。</p>
+<p>WebGPT 将工具操作的学习、回答质量的评估与推理期选优纳入策略比较<a href="#ref-nakano-2021"><span id="citation-nakano-sec32">2 (§3.2)</span></a>。</p>
 <h3 id="31-行为克隆奖励模型与强化学习">3.1 行为克隆、奖励模型与强化学习</h3>
 <p>整个系统涉及四项技术环节，但并非线性的必经训练管线<a href="#ref-nakano-2021"><span id="citation-nakano-sec32-pipeline">2 (§3.2)</span></a>：</p>
 <ol>
@@ -252,7 +252,7 @@
 
 <table><thead><tr><th align="left">对比组合</th><th align="left">比较基准与任务设定</th><th align="left">胜率表现（平局计 50%）</th></tr></thead><tbody><tr><td align="left">175B RL vs. 175B BC</td><td align="left">强化学习微调 vs. 行为克隆基线</td><td align="left">58% 偏好胜率</td></tr><tr><td align="left">175B Best-of-64 vs. 175B BC</td><td align="left">拒绝采样 (64 候选) vs. 行为克隆基线</td><td align="left">68% 偏好胜率</td></tr><tr><td align="left">175B Best-of-64 vs. 人类示范员</td><td align="left">拒绝采样模型 vs. 人类使用浏览器解答</td><td align="left">56% 偏好胜率</td></tr></tbody></table></div>
 <p>如表 2 所示，175B 的 Best-of-64 模型相比纯 BC 模型取得了 68% 的人类偏好胜率；在针对人类示范员撰写答案的独立对比中，该模型也获得了 56% 的胜率。</p>
-<p>论文作者对“为什么拒绝采样在此类任务中表现突出”提出了几点分析推测<a href="#ref-nakano-2021"><span id="citation-nakano-sec51-reasons">2 (§5.1)</span></a>：</p>
+<p>论文作者提出了几项可能解释拒绝采样实验表现的因素<a href="#ref-nakano-2021"><span id="citation-nakano-sec51-reasons">2 (§5.1)</span></a>：</p>
 <ul>
 <li><strong>推理期探索的事后评估优势</strong>：网络搜索环境具有较强不确定性，拒绝采样允许模型尝试多条不同方向的独立浏览路径，并在掌握完整网页材料后由奖励模型进行事后评估（hindsight evaluation），从中挑选依据更充分的候选；</li>
 <li><strong>奖励模型的脆弱性与策略熵衰减</strong>：RL 在与同一个奖励模型反复迭代时容易过度拟合该模型的评分漏洞，且 RL 优化会降低策略分布的熵（entropy），损害浏览探索的多样性；</li>

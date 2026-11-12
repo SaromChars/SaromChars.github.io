@@ -172,7 +172,7 @@
 <p>对于冒用本域地址的外部伪造风险，应当结合经验证的身份和来源信息进行综合鉴别，而不能在 SMTP 握手阶段简单地按域名黑名单一刀切。</p>
 <hr>
 <h2 id="动作选择rcpt-响应data-终结与接受后处置">动作选择：RCPT 响应、DATA 终结与接受后处置</h2>
-<p>当判定引擎认为会话或邮件存在嫌疑时，应当在哪个阶段采取何种动作，直接决定了系统的责任划分与发件人的排错感知。</p>
+<p>对可疑会话或邮件，接收端在 RCPT、DATA 结束时或接管邮件后采取的处置，直接决定了系统的责任划分与发件人的排错感知。</p>
 <pre class="astro-code astro-code-themes min-light night-owl" style="--shiki-light:#24292eff;--shiki-dark:#d6deeb;--shiki-light-bg:#ffffff;--shiki-dark-bg:#011627; overflow-x: auto;--file-name-offset: -0.75rem;" tabindex="0" data-language="plaintext"><code><span class="line"><span>发信方客户端                                      接收方 MTA</span></span>
 <span class="line"><span>     |                                                |</span></span>
 <span class="line"><span>     |---- MAIL FROM:&#x3C;sender@example.net> ----------->|</span></span>

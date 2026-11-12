@@ -201,7 +201,7 @@
 <table><thead><tr><th align="left">核心维度</th><th align="left">POP3（RFC 1939）</th><th align="left">IMAP4rev1（RFC 3501）</th></tr></thead><tbody><tr><td align="left"><strong>标准默认端口</strong></td><td align="left">TCP 110</td><td align="left">TCP 143</td></tr><tr><td align="left"><strong>设计核心目标</strong></td><td align="left">离线转存：将邮件下载到本地后从服务器清理（亦可按策略保留）</td><td align="left">在线维护：远端存储作为权威主本，多端共享同步</td></tr><tr><td align="left"><strong>邮箱层级管理</strong></td><td align="left">仅支持单一平铺收件箱（maildrop）</td><td align="left">支持完整树状目录与层级文件夹（<code>CREATE</code>、<code>RENAME</code> 等）</td></tr><tr><td align="left"><strong>消息定位机制</strong></td><td align="left">会话内临时分配的十进制编号（1 到 n）及 maildrop 级 <code>UIDL</code></td><td align="left">易变的序列号（Sequence Number）与邮箱级唯一标识符（UID）</td></tr><tr><td align="left"><strong>消息部分提取</strong></td><td align="left">仅可选 <code>TOP</code>（读取头部与前 n 行正文）</td><td align="left">细粒度 <code>FETCH</code>（支持结构解析、头部字段筛选、正文片段与子部件按字节范围抓取）</td></tr><tr><td align="left"><strong>状态标志同步</strong></td><td align="left">协议原生无持久标志（仅会话内瞬态标记待删除）</td><td align="left">内置系统标准标志（<code>\Seen</code>、<code>\Answered</code>、<code>\Deleted</code> 等）与自定义关键字</td></tr><tr><td align="left"><strong>并发访问模型</strong></td><td align="left">强制独占排他锁，单邮箱拒绝并发会话</td><td align="left">支持多客户端同时选择同一邮箱，提供状态变更广播机制</td></tr></tbody></table></div>
 <hr>
 <h2 id="消息寻址与标识uid-与-uidvalidity-机制">消息寻址与标识：UID 与 UIDVALIDITY 机制</h2>
-<p>在邮件长久存取与多端协同场景中，如何跨网络重连准确追踪“某封具体邮件”是保证一致性的关键。</p>
+<p>在长期存取邮件和多端协同的场景中，网络重连后仍能准确识别同一封邮件，是保证一致性的关键。</p>
 <h3 id="1-pop3-的会话消息编号与-uidl-扩展">1. POP3 的会话消息编号与 UIDL 扩展</h3>
 <p>在基础 POP3 规范中，服务端仅在进入事务处理状态时为邮箱中的邮件从 1 开始顺次分配数字编号（RFC 1939 第 4 节）。这种编号完全由当前邮箱内邮件的即时排列决定，一旦某次会话删除了前面的邮件，后续会话中该编号对应的实体就会发生偏移。</p>
 <p>为了支持在客户端保留邮件副本，RFC 1939 第 7 节引入了可选的 <code>UIDL</code>（列出跨会话识别标识，Unique-ID Listing）命令。服务端为每封邮件分配一个由 1 到 70 个可打印 ASCII 字符（范围 0x21 至 0x7E）构成的标识字符串：</p>
@@ -221,7 +221,7 @@
 <p>单个 32 位的 UID 仅在当前特定邮箱实例中有效。RFC 3501 提出了 <strong><code>UIDVALIDITY</code></strong>（UID 有效性值）与 <strong><code>UIDNEXT</code></strong>（预期下一 UID）机制：</p>
 <ol>
 <li><strong>三元组唯一指代</strong>：依据 RFC 3501 第 2.3.1.1 节第 4 条，在特定服务器上，<strong>邮箱名称（mailbox name）+ UIDVALIDITY + UID</strong> 构成的三元组，在逻辑上永远指代同一封不可改变的邮件实体。</li>
-<li><strong>何时变更有效性值</strong>：如果前一会话的 UID 无法继续持久保留（例如底层物理消息存储被非 IMAP 工具重排导致无法维持严格递增而必须重新生成 UID），服务端<strong>必须</strong>使用一个比旧值更大的全新 <code>UIDVALIDITY</code>。在同名邮箱被删除后又重新建立时，服务端必须能够跟踪旧邮箱实例的 UID 并保证新实例绝不复用旧 UID，否则必须为新实例分配一个全新的 <code>UIDVALIDITY</code>，以防止新旧映射发生冲突。</li>
+<li><strong>UIDVALIDITY 的变更条件</strong>：如果前一会话的 UID 无法继续持久保留（例如底层物理消息存储被非 IMAP 工具重排导致无法维持严格递增而必须重新生成 UID），服务端<strong>必须</strong>使用一个比旧值更大的全新 <code>UIDVALIDITY</code>。在同名邮箱被删除后又重新建立时，服务端必须能够跟踪旧邮箱实例的 UID 并保证新实例绝不复用旧 UID，否则必须为新实例分配一个全新的 <code>UIDVALIDITY</code>，以防止新旧映射发生冲突。</li>
 <li><strong>客户端缓存处理</strong>：客户端打开邮箱时读取 <code>UIDVALIDITY</code>。一旦检测到服务端通报的 <code>UIDVALIDITY</code> 发生变更，必须判定该邮箱下所有先前缓存的 UID 映射全面失效，进而作废旧映射并在客户端重新同步建立。</li>
 <li><strong>新增检测与 UIDNEXT 语义</strong>：选择邮箱时，服务端还会返回 <code>UIDNEXT</code>。在 <code>UIDVALIDITY</code> 不变的前提下，它提供了新增邮件的预期下界（即后续新到邮件的 UID 均大于或等于该值，但不保证恰好分配该数值）。客户端通过比对 <code>UIDNEXT</code> 是否增大，即可断定自上次检查以来是否有新邮件被投递过（即使某些新邮件在此期间已随即被 expunge）。</li>
 </ol>
